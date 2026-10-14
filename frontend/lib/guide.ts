@@ -145,3 +145,17 @@ export async function loadGuide(onStatus: (s: string) => void,
     },
   };
 }
+
+// 탭을 오가도 모델을 한 번만 불러오도록 페이지들이 공유하는 로더. 상태 문구는 구독한 화면 모두에 전달한다.
+let shared: Promise<Guide> | null = null;
+let lastStatus = "가이드 검색 준비 중";
+const listeners = new Set<(s: string) => void>();
+const emit = (s: string) => { lastStatus = s; listeners.forEach((l) => l(s)); };
+
+export function getGuide(onStatus: (s: string) => void): { guide: Promise<Guide>; unsubscribe: () => void } {
+  listeners.add(onStatus);
+  onStatus(lastStatus);
+  shared ??= loadGuide(emit).then((g) => { emit(`가이드 검색 준비됨 (${g.sections.length}개 항목)`); return g; })
+    .catch((e) => { shared = null; emit(`가이드 검색 사용 불가: ${e instanceof Error ? e.message : e}`); throw e; });
+  return { guide: shared, unsubscribe: () => listeners.delete(onStatus) };
+}

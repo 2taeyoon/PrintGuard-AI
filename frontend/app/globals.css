@@ -10,30 +10,21 @@ body { font-family: var(--font); font-size: 1.6rem; line-height: 150%; letter-sp
 a { color: inherit; text-decoration: none; }
 h1, h2, h3, h4 { margin: 0; }
 
-/* ---------- 셸: 왼쪽 고정 사이드바 + 본문 ---------- */
+/* ---------- 셸: 상단 헤더 + 본문 ---------- */
 .RouteApp { min-height: 100vh; }
-.sidebar { position: fixed; inset: 0 auto 0 0; width: var(--sidebar); z-index: 999; background: var(--white);
-  border-right: 1px solid var(--borderSubtle); display: flex; flex-direction: column; transition: transform 0.3s ease; }
-.sidebar_head { height: var(--sidebarHead); display: flex; align-items: center; justify-content: space-between; padding: 0 24px;
-  border-bottom: 1px solid var(--borderSubtle); }
-.sidebar_brand { font-size: 2.0rem; font-weight: 700; color: var(--black); }
-.sidebar_desc { padding: 16px 24px 8px; font-size: 1.4rem; color: var(--blacklight); }
-.menu { list-style: none; margin: 0; padding: 8px 12px; display: flex; flex-direction: column; gap: 4px; }
-.menu a { display: flex; align-items: center; justify-content: space-between; min-height: 40px; padding: 8px 12px; border-radius: 4px;
-  font-size: 1.6rem; color: var(--blackmute); transition: 0.3s ease; }
-.menu a.on { background: var(--themaLight); color: var(--black); font-weight: 700; }
-.menu .count { font-size: 1.2rem; font-weight: 600; padding: 0 8px; border-radius: 999px; background: var(--thema); color: var(--white); }
+.topbar { position: sticky; top: 0; z-index: 900; background: var(--white); border-bottom: 1px solid var(--borderSubtle); }
+.topbar_inner { display: flex; align-items: center; gap: 32px; height: 72px; padding: 0 64px; }
+.brand { font-size: 2.0rem; font-weight: 700; color: var(--black); white-space: nowrap; }
+.topmenu { display: flex; align-items: center; gap: 4px; }
+.topmenu a { display: inline-flex; align-items: center; min-height: 40px; padding: 8px 16px; border-radius: 4px; font-size: 1.6rem;
+  color: var(--blackmute); white-space: nowrap; transition: 0.3s ease; }
+.topmenu a.on { background: var(--themaLight); color: var(--black); font-weight: 700; }
+.topbar_desc { margin-left: auto; font-size: 1.4rem; color: var(--blackmute); white-space: nowrap; }
 .icon_btn { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 0;
   border-radius: 4px; background: transparent; color: var(--blackmute); font-size: 1.8rem; cursor: pointer; transition: 0.3s ease; }
-.sidebar_reopen { position: fixed; inset: 0 auto 0 0; width: 20px; z-index: 999; border: 0; padding: 0; cursor: pointer;
-  background: var(--bgMuted); border-right: 1px solid var(--borderSubtle); color: var(--blackmute); }
-.overlay { display: none; }
-.header { display: none; }
-.content { margin-left: var(--sidebar); transition: margin-left 0.3s ease; }
-.RouteApp.collapsed .sidebar { transform: translateX(-100%); }
-.RouteApp.collapsed .content { margin-left: 20px; }
+.menu_btn { display: none; min-width: 40px; min-height: 40px; }
 @media (hover: hover) {
-  .menu a:hover { background: var(--themaLight); color: var(--black); }
+  .topmenu a:hover { background: var(--themaLight); color: var(--black); }
   .icon_btn:hover { background: var(--bgMuted); color: var(--black); }
 }
 
@@ -55,7 +46,7 @@ button { font: inherit; font-size: 1.6rem; cursor: pointer; padding: 8px 16px; m
 button:disabled { opacity: 0.5; cursor: wait; }
 button.ghost { background: var(--white); color: var(--thema); }
 @media (hover: hover) {
-  button:not(:disabled):not(.icon_btn):not(.sidebar_reopen):not(.pill):hover { background: var(--themaBright); border-color: var(--themaBright); color: var(--white); }
+  button:not(:disabled):not(.icon_btn):not(.pill):hover { background: var(--themaBright); border-color: var(--themaBright); color: var(--white); }
 }
 .err { color: var(--redBright); padding: 12px 0; font-size: 1.6rem; }
 .chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 999px; font-size: 1.2rem; font-weight: 600;
@@ -154,8 +145,7 @@ details.guide summary { cursor: pointer; font-size: 1.4rem; color: var(--thema);
 .leaflet-popup-content a { color: var(--thema); font-weight: 600; }
 
 @media print {
-  .sidebar, .sidebar_reopen, .header, .overlay, form.upload, form.ask, .pages, .badge, button { display: none !important; }
-  .content { margin-left: 0 !important; }
+  .topbar, form.upload, form.ask, .pages, .badge, button { display: none !important; }
   .common_wrap { padding: 0; }
   .ws { display: block; height: auto; }
 }

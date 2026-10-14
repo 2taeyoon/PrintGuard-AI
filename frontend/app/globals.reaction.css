@@ -10,6 +10,8 @@
 }
 @media (max-width: 1024px) {
   .common_wrap { padding: 32px 32px 64px; }
+  .topbar_inner { padding: 0 32px; gap: 16px; }
+  .topbar_desc { display: none; }
   .ws { grid-template-columns: 1fr; height: auto; }
   .pages { flex-direction: row; }
   .mapwrap { grid-template-columns: 1fr; }
@@ -18,14 +20,12 @@
 }
 @media (max-width: 768px) {
   html { font-size: 54.5%; }
-  .sidebar { transform: translateX(-100%); }
-  .sidebar_reopen { display: none; }
-  .content, .RouteApp.collapsed .content { margin-left: 0; }
-  .RouteApp.open .sidebar { transform: none; }
-  .RouteApp.open .overlay { display: block; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4); z-index: 998; }
-  .header { display: flex; position: sticky; top: 0; z-index: 900; height: 56px; align-items: center; gap: 12px; padding: 0 16px;
-    background: var(--white); border-bottom: 1px solid var(--borderSubtle); }
-  .header .sidebar_brand { font-size: 2.0rem; }
+  .topbar_inner { height: 56px; padding: 0 16px; gap: 12px; }
+  .topbar_desc { display: none; }
+  .menu_btn { display: inline-flex; margin-left: auto; }
+  .topmenu { display: none; position: absolute; top: 56px; left: 0; right: 0; flex-direction: column; align-items: stretch; gap: 4px;
+    padding: 8px 16px 16px; background: var(--white); border-bottom: 1px solid var(--borderSubtle); box-shadow: 0 0 20px 0 var(--borderStrong); }
+  .RouteApp.open .topmenu { display: flex; }
   .papers, .riskgrid { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {

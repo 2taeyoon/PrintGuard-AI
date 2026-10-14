@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import type { Analysis, Issue, Sev } from "@/lib/analyze";
 import type { IntentName } from "@/lib/color";
 import type { Guide, Hit } from "@/lib/guide";
+import { GuideBadge, GuideCard } from "./guide-ui";
 import { FINISHES, GROUPS, loadPapers, surface, type FinishId, type Paper, type PaperDb } from "@/lib/papers";
 import { assess, inputFrom, type Risk } from "@/lib/risk";
 
@@ -59,8 +60,6 @@ export default function Home() {
   const [guide, setGuide] = useState<Guide | null>(null);
   const [guideStatus, setGuideStatus] = useState("가이드 검색 준비 중");
   const [hits, setHits] = useState<Record<number, Hit[]>>({});
-  const [q, setQ] = useState("");
-  const [qHits, setQHits] = useState<Hit[] | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const docRef = useRef<PdfDoc>(null);
 
@@ -70,16 +69,19 @@ export default function Home() {
 
   useEffect(() => {
     let alive = true;
+    let unsub = () => {};
     import("@/lib/guide")
       .then((m) => {
         // 개발 모드에서만: 브라우저 그대로(int8 wasm) 검색 점수를 재는 평가 스크립트가 쓴다
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         if (process.env.NODE_ENV === "development") (window as any).__loadGuide = m.loadGuide;
-        return m.loadGuide((s) => alive && setGuideStatus(s));
+        const r = m.getGuide((s) => alive && setGuideStatus(s));
+        unsub = r.unsubscribe;
+        return r.guide;
       })
-      .then((g) => { if (alive) { setGuide(g); setGuideStatus(`가이드 검색 준비됨 (${g.sections.length}개 항목)`); } })
-      .catch((e) => alive && setGuideStatus(`가이드 검색 사용 불가: ${e instanceof Error ? e.message : e}`));
-    return () => { alive = false; };
+      .then((g) => { if (alive) setGuide(g); })
+      .catch(() => { /* 상태 문구로 표시됨 */ });
+    return () => { alive = false; unsub(); };
   }, []);
 
   useEffect(() => {
@@ -134,10 +136,6 @@ export default function Home() {
     } finally { setBusy(false); }
   }
 
-  async function ask(e: FormEvent) {
-    e.preventDefault();
-    if (guide && q.trim()) setQHits(await guide.search(q.trim(), 3));
-  }
 
   const count = (s: Sev) => res?.issues.filter((i) => i.severity === s).length ?? 0;
   const pageIssues = res?.issues.filter((i) => i.page === page) ?? [];
@@ -149,9 +147,8 @@ export default function Home() {
     <div className="common_wrap">
       <header className="page_head">
         <h1>PDF 검수</h1>
-        <span className={`badge${guide ? "" : " loading"}`} role="status" aria-live="polite">
-          {!guide && !guideStatus.startsWith("가이드 검색 사용 불가") && <span className="spinner" aria-hidden="true" />}{guideStatus || "가이드 준비 중"}</span>
-        <p className="lead">폰트·도련·해상도·색·문구를 검사하고, 고른 종이로 인쇄 색 차이와 불량 위험을 예측합니다. 파일은 서버로 보내지 않습니다.</p>
+        <GuideBadge ready={!!guide} status={guideStatus} />
+        <p className="lead">폰트·도련·해상도·색·문구를 검사하고, 고른 종이로 인쇄 색 차이와 불량 위험을 예측합니다. 오탈자 등은 자동으로 고치지 않고 수정 제안만 보여 주니 원본 파일에서 직접 고치세요. 파일은 서버로 보내지 않습니다.</p>
       </header>
 
       <form className="upload panel" onSubmit={submit}>
@@ -224,13 +221,6 @@ export default function Home() {
         )}
       </form>
 
-      <form className="upload ask panel" onSubmit={ask}>
-        <label>인쇄 가이드에 질문 (임베딩 + BM25 하이브리드 검색)
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="예: 흰 글자가 출력에서 사라지는 이유는?" disabled={!guide} />
-        </label>
-        <button disabled={!guide || !q.trim()}>찾기</button>
-      </form>
-      {qHits && <div className="answers">{qHits.map((h) => <GuideCard key={h.section.title} h={h} />)}</div>}
 
       {err && <div className="err">{err}</div>}
       {!res && !busy && !err && (
@@ -315,7 +305,7 @@ export default function Home() {
                   <h4><span className={`sev-${i.severity}`}>{SEV_LABEL[i.severity]}</span> · {i.page}쪽 · {i.title}
                     <span className="src">{SRC[i.source]}</span></h4>
                   <p>{i.detail}</p>
-                  <p><b>수정:</b> {i.fix}</p>
+                  <p><b>수정 제안(직접 수정):</b> {i.fix}</p>
                   {hits[i.id]?.length ? (
                     <details className="guide" open={sel === i.id}>
                       <summary>관련 인쇄 가이드 ({hits[i.id].length})</summary>
@@ -345,14 +335,4 @@ function HeatCanvas({ heat, style }: { heat: NonNullable<Issue["heat"]>; style: 
     c.getContext("2d")?.putImageData(new ImageData(new Uint8ClampedArray(heat.rgba), heat.w, heat.h), 0, 0);
   }, [heat]);
   return <canvas ref={ref} className="heat" style={style} />;
-}
-
-function GuideCard({ h }: { h: Hit }) {
-  const [head, ...rest] = h.section.text.split("\n");
-  return (
-    <div className="gcard">
-      <div className="gh">{h.section.doc} › {head}</div>
-      <div className="gb">{rest.join(" ")}</div>
-    </div>
-  );
 }

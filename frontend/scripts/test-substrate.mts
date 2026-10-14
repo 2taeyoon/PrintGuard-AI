@@ -6,8 +6,9 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { deltaE2000 } from "../lib/color";
 import { xyzToLab, labToXyz, correctSubstrate, type Xyz } from "../lib/substrate";
 
+const spec = "lcms-wasm";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const mod: any = await import("lcms-wasm");
+const mod: any = await import(spec);
 const lcms = await mod.instantiate();
 const lab = lcms.cmsCreateLab4Profile(null);
 const lv = [0, 51, 102, 153, 204, 255];
