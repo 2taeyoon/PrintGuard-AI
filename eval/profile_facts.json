@@ -1,0 +1,362 @@
+{
+ "swop": {
+  "file": "RSWOP.icm",
+  "desc": "Agfa : Swop Standard",
+  "copyright": "Copyright (c) 2000 Microsoft Corporation",
+  "tac_max_relative": 272.9,
+  "tac_p999_relative": 262.0,
+  "tac_max_perceptual": 294.1,
+  "tac_p999_perceptual": 276.5,
+  "paper_white_lab_abs": [
+   96.1,
+   1.0,
+   0.0
+  ],
+  "cmyk400_lab_abs": [
+   7.1,
+   0.0,
+   0.0
+  ],
+  "k100_lab_abs": [
+   11.8,
+   0.0,
+   0.0
+  ]
+ },
+ "coated": {
+  "file": "PSOcoated_v3.icc",
+  "desc": "PSO Coated v3",
+  "copyright": "This profile is made available by ECI European Color Initiative (www.eci.org), with permission of Heidelberger Druckmaschinen AG (www.heidelberg.com), and may be used, embedded and exchanged without restriction. It may not be distributed, sold or altered without written permission of ECI European Color Initiative. Color Toolbox 17.0.0 - (c) Copyright 2015 Heidelberger Druckmaschinen AG. All Rights Reserved.",
+  "tac_max_relative": 296.1,
+  "tac_p999_relative": 283.1,
+  "tac_max_perceptual": 298.4,
+  "tac_p999_perceptual": 285.4,
+  "paper_white_lab_abs": [
+   94.9,
+   2.0,
+   -6.0
+  ],
+  "cmyk400_lab_abs": [
+   12.2,
+   0.0,
+   5.0
+  ],
+  "k100_lab_abs": [
+   16.1,
+   0.0,
+   0.0
+  ]
+ },
+ "uncoated": {
+  "file": "PSOuncoated_v3_FOGRA52.icc",
+  "desc": "PSO Uncoated v3 (FOGRA52)",
+  "copyright": "This profile is made available by ECI European Color Initiative (www.eci.org), with permission of Heidelberger Druckmaschinen AG (www.heidelberg.com), and may be used, embedded and exchanged without restriction. It may not be distributed, sold or altered without written permission of ECI European Color Initiative. Color Toolbox 17.0.0 - (c) Copyright 2015 Heidelberger Druckmaschinen AG. All Rights Reserved.",
+  "tac_max_relative": 292.2,
+  "tac_p999_relative": 281.2,
+  "tac_max_perceptual": 294.1,
+  "tac_p999_perceptual": 277.3,
+  "paper_white_lab_abs": [
+   93.3,
+   3.0,
+   -10.0
+  ],
+  "cmyk400_lab_abs": [
+   26.3,
+   1.0,
+   1.0
+  ],
+  "k100_lab_abs": [
+   32.5,
+   1.0,
+   0.0
+  ]
+ },
+ "sc": {
+  "file": "PSOsc-b_paper_v3_FOGRA54.icc",
+  "desc": "PSO SC-B Paper v3 (FOGRA54)",
+  "copyright": "Color Toolbox 17.00.50.2 - (c) Copyright 2000-2016 Heidelberger Druckmaschinen AG. Alle Rechte vorbehalten.",
+  "tac_max_relative": 268.2,
+  "tac_p999_relative": 260.4,
+  "tac_max_perceptual": 269.0,
+  "tac_p999_perceptual": 262.7,
+  "paper_white_lab_abs": [
+   88.2,
+   0.0,
+   4.0
+  ],
+  "cmyk400_lab_abs": [
+   17.6,
+   0.0,
+   -2.0
+  ],
+  "k100_lab_abs": [
+   27.5,
+   1.0,
+   2.0
+  ]
+ },
+ "board": {
+  "file": "APTEC_PC10_CardBoard_2023_v1.icc",
+  "desc": "APTEC_PC10_CardBoard_2023_v1.icc",
+  "copyright": "Copyright X-Rite, Inc. This profile is made available by Advanced Printing Technology Centre, with permission of X-Rite, Inc., and may be used without restriction.  It may not be altered. It may not be distributed, sold or altered without written permission of Advanced Printing Technology Centre except for single site use.",
+  "tac_max_relative": 332.9,
+  "tac_p999_relative": 298.0,
+  "tac_max_perceptual": 334.1,
+  "tac_p999_perceptual": 296.1,
+  "paper_white_lab_abs": [
+   94.9,
+   1.0,
+   -1.0
+  ],
+  "cmyk400_lab_abs": [
+   10.6,
+   -1.0,
+   2.0
+  ],
+  "k100_lab_abs": [
+   14.1,
+   0.0,
+   0.0
+  ]
+ },
+ "jc2011": {
+  "file": "JapanColor2011Coated.icc",
+  "desc": "Japan Color 2011 Coated",
+  "copyright": "Copyright X-Rite, Inc.",
+  "tac_max_relative": 338.0,
+  "tac_p999_relative": 322.0,
+  "tac_max_perceptual": 349.8,
+  "tac_p999_perceptual": 326.7,
+  "paper_white_lab_abs": [
+   94.1,
+   0.0,
+   -1.0
+  ],
+  "cmyk400_lab_abs": [
+   9.8,
+   0.0,
+   3.0
+  ],
+  "k100_lab_abs": [
+   16.5,
+   2.0,
+   3.0
+  ]
+ },
+ "fogra47": {
+  "file": "Uncoated_Fogra47L_VIGC_300.icc",
+  "desc": "Uncoated_Fogra47L_VIGC_300.icc",
+  "copyright": "Copyright X-Rite, Inc.",
+  "tac_max_relative": 274.9,
+  "tac_p999_relative": 258.4,
+  "tac_max_perceptual": 293.7,
+  "tac_p999_perceptual": 256.1,
+  "paper_white_lab_abs": [
+   94.9,
+   0.0,
+   -2.0
+  ],
+  "cmyk400_lab_abs": [
+   23.5,
+   2.0,
+   2.0
+  ],
+  "k100_lab_abs": [
+   31.0,
+   1.0,
+   1.0
+  ]
+ },
+ "fogra39": {
+  "file": "Coated_Fogra39L_VIGC_300.icc",
+  "desc": "Coated_Fogra39L_VIGC_300.icc",
+  "copyright": "Copyright X-Rite, Inc.",
+  "tac_max_relative": 285.5,
+  "tac_p999_relative": 265.5,
+  "tac_max_perceptual": 293.3,
+  "tac_p999_perceptual": 264.7,
+  "paper_white_lab_abs": [
+   94.9,
+   0.0,
+   -2.0
+  ],
+  "cmyk400_lab_abs": [
+   8.6,
+   0.0,
+   2.0
+  ],
+  "k100_lab_abs": [
+   16.1,
+   0.0,
+   0.0
+  ]
+ },
+ "isocoatedv2": {
+  "file": "ISOcoated_v2_eci.icc",
+  "desc": "ISO Coated v2 (ECI)",
+  "copyright": "PrintOpen 5.2.0 - (c) Copyright 2000-2006 Heidelberger Druckmaschinen AG. All Rights Reserved.",
+  "tac_max_relative": 323.1,
+  "tac_p999_relative": 307.5,
+  "tac_max_perceptual": 329.8,
+  "tac_p999_perceptual": 307.8,
+  "paper_white_lab_abs": [
+   94.9,
+   0.0,
+   -2.0
+  ],
+  "cmyk400_lab_abs": [
+   8.6,
+   0.0,
+   2.0
+  ],
+  "k100_lab_abs": [
+   16.1,
+   0.0,
+   0.0
+  ]
+ },
+ "yellowish": {
+  "file": "ISOuncoatedyellowish.icc",
+  "desc": "ISO Uncoated Yellowish",
+  "copyright": "Printopen 4.0.5.2 - Copyright (c) 2000-2002 Heidelberger Druckmaschinen AG, All Rights Reserved.",
+  "tac_max_relative": 320.0,
+  "tac_p999_relative": 315.7,
+  "tac_max_perceptual": 320.0,
+  "tac_p999_perceptual": 300.4,
+  "paper_white_lab_abs": [
+   96.1,
+   -1.0,
+   4.0
+  ],
+  "cmyk400_lab_abs": [
+   26.3,
+   1.0,
+   3.0
+  ],
+  "k100_lab_abs": [
+   29.8,
+   2.0,
+   2.0
+  ]
+ },
+ "lwc_imp": {
+  "file": "PSO_LWC_Improved_eci.icc",
+  "desc": "PSO LWC Improved (ECI)",
+  "copyright": "This profile is made available by ECI European Color Initiative, with permission of Heidelberger Druckmaschinen AG, and may be used, embedded, exchanged, and shared without restriction. It may not be altered or sold without written permission of ECI European Color Initiative. Color Tool 3.5.1 - (c) Copyright 2000-2009 Heidelberger Druckmaschinen AG. All Rights Reserved.",
+  "tac_max_relative": 294.9,
+  "tac_p999_relative": 283.9,
+  "tac_max_perceptual": 296.5,
+  "tac_p999_perceptual": 283.1,
+  "paper_white_lab_abs": [
+   92.2,
+   0.0,
+   -2.0
+  ],
+  "cmyk400_lab_abs": [
+   11.8,
+   0.0,
+   2.0
+  ],
+  "k100_lab_abs": [
+   20.0,
+   1.0,
+   2.0
+  ]
+ },
+ "lwc_std": {
+  "file": "PSO_LWC_Standard_eci.icc",
+  "desc": "PSO LWC Standard (ECI)",
+  "copyright": "This profile is made available by ECI European Color Initiative, with permission of Heidelberger Druckmaschinen AG, and may be used, embedded, exchanged, and shared without restriction. It may not be altered or sold without written permission of ECI European Color Initiative. Color Tool 3.5.1 - (c) Copyright 2000-2009 Heidelberger Druckmaschinen AG. All Rights Reserved.",
+  "tac_max_relative": 296.9,
+  "tac_p999_relative": 285.9,
+  "tac_max_perceptual": 296.5,
+  "tac_p999_perceptual": 284.7,
+  "paper_white_lab_abs": [
+   89.8,
+   0.0,
+   1.0
+  ],
+  "cmyk400_lab_abs": [
+   11.4,
+   0.0,
+   2.0
+  ],
+  "k100_lab_abs": [
+   20.0,
+   1.0,
+   2.0
+  ]
+ },
+ "mfc": {
+  "file": "PSO_MFC_Paper_eci.icc",
+  "desc": "PSO MFC Paper (ECI)",
+  "copyright": "This profile is made available by ECI European Color Initiative, with permission of Heidelberger Druckmaschinen AG, and may be used, embedded, exchanged, and shared without restriction. It may not be altered or sold without written permission of ECI European Color Initiative. Color Tool 3.0.0 - (c) Copyright 2000-2007 Heidelberger Druckmaschinen AG. All Rights Reserved.",
+  "tac_max_relative": 276.9,
+  "tac_p999_relative": 272.9,
+  "tac_max_perceptual": 279.2,
+  "tac_p999_perceptual": 272.5,
+  "paper_white_lab_abs": [
+   90.2,
+   0.0,
+   0.0
+  ],
+  "cmyk400_lab_abs": [
+   14.5,
+   3.0,
+   3.0
+  ],
+  "k100_lab_abs": [
+   23.5,
+   1.0,
+   2.0
+  ]
+ },
+ "snp": {
+  "file": "PSO_SNP_Paper_eci.icc",
+  "desc": "PSO SNP Paper (ECI)",
+  "copyright": "This profile is made available by ECI European Color Initiative, with permission of Heidelberger Druckmaschinen AG, and may be used, embedded, exchanged, and shared without restriction. It may not be altered or sold without written permission of ECI European Color Initiative. Color Tool 3.0.0 - (c) Copyright 2000-2007 Heidelberger Druckmaschinen AG. All Rights Reserved.",
+  "tac_max_relative": 259.2,
+  "tac_p999_relative": 255.3,
+  "tac_max_perceptual": 259.2,
+  "tac_p999_perceptual": 254.1,
+  "paper_white_lab_abs": [
+   82.4,
+   0.0,
+   3.0
+  ],
+  "cmyk400_lab_abs": [
+   18.4,
+   1.0,
+   1.0
+  ],
+  "k100_lab_abs": [
+   27.8,
+   1.0,
+   1.0
+  ]
+ },
+ "inp": {
+  "file": "PSO_INP_Paper_eci.icc",
+  "desc": "PSO INP Paper (ECI)",
+  "copyright": "This profile is made available by ECI European Color Initiative, with permission of Heidelberger Druckmaschinen AG, and may be used, embedded, exchanged, and shared without restriction. It may not be altered or sold without written permission of ECI European Color Initiative. Color Tool 11.0.0 - (c) Copyright 2000-2011 Heidelberger Druckmaschinen AG. All Rights Reserved.",
+  "tac_max_relative": 263.5,
+  "tac_p999_relative": 256.1,
+  "tac_max_perceptual": 259.6,
+  "tac_p999_perceptual": 254.9,
+  "paper_white_lab_abs": [
+   87.8,
+   0.0,
+   2.0
+  ],
+  "cmyk400_lab_abs": [
+   22.0,
+   1.0,
+   1.0
+  ],
+  "k100_lab_abs": [
+   32.2,
+   1.0,
+   3.0
+  ]
+ }
+}

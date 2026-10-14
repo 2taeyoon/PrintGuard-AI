@@ -1,0 +1,35 @@
+/* 브레이크포인트 (순서 유지: 1680, 1536, 1280, 1024, 768, 640). 글자 크기는 루트만 줄인다. */
+@media (max-width: 1680px) {
+  .riskgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 1280px) {
+  html { font-size: 58.5%; }
+  .papers { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .riskgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ws { grid-template-columns: 96px minmax(0, 1fr) 320px; }
+}
+@media (max-width: 1024px) {
+  .common_wrap { padding: 32px 32px 64px; }
+  .ws { grid-template-columns: 1fr; height: auto; }
+  .pages { flex-direction: row; }
+  .mapwrap { grid-template-columns: 1fr; }
+  .map { height: 480px; }
+  .shoplist { height: auto; max-height: 640px; }
+}
+@media (max-width: 768px) {
+  html { font-size: 54.5%; }
+  .sidebar { transform: translateX(-100%); }
+  .sidebar_reopen { display: none; }
+  .content, .RouteApp.collapsed .content { margin-left: 0; }
+  .RouteApp.open .sidebar { transform: none; }
+  .RouteApp.open .overlay { display: block; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4); z-index: 998; }
+  .header { display: flex; position: sticky; top: 0; z-index: 900; height: 56px; align-items: center; gap: 12px; padding: 0 16px;
+    background: var(--white); border-bottom: 1px solid var(--borderSubtle); }
+  .header .sidebar_brand { font-size: 2.0rem; }
+  .papers, .riskgrid { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  html { font-size: 50.5%; }
+  .common_wrap { padding: 16px 16px 32px; }
+  .page_head h1 { font-size: 2.8rem; }
+}

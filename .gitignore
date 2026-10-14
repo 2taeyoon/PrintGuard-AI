@@ -1,0 +1,20 @@
+# 의존성·빌드 산출물
+node_modules/
+.next/
+out/
+build/
+*.tsbuildinfo
+__pycache__/
+*.log
+
+# 재배포가 허용되지 않는 ICC 프로파일 (ECI·X-Rite·Microsoft 라이선스) — README의 받는 법 참고
+*.icc
+*.icm
+
+# 용량이 큰 모델·런타임 파일 (README의 받는 법 참고)
+frontend/public/models/
+frontend/public/ort/
+
+# 로컬 환경
+.env*
+.DS_Store

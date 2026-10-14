@@ -1,0 +1,62 @@
+{
+ "PSOcoated_v3.icc": {
+  "tac": 300,
+  "condition": "ISO 12647-2:2013 PS1 premium coated (FOGRA51)",
+  "source": "ECI 'Neue Druckbedingungen nach ISO 12647-2:2013' 2015 p.11"
+ },
+ "PSOuncoated_v3_FOGRA52.icc": {
+  "tac": 300,
+  "condition": "ISO 12647-2:2013 PS5 wood-free uncoated (FOGRA52)",
+  "source": "ECI 2015 p.12"
+ },
+ "ISOcoated_v2_eci.icc": {
+  "tac": 330,
+  "condition": "paper type 1 and 2, gloss or matt coated (FOGRA39L)",
+  "source": "ISOcoated_v2_info.pdf (eci_offset_2009.zip)"
+ },
+ "ISOuncoatedyellowish.icc": {
+  "tac": 320,
+  "condition": "paper type 5, uncoated yellowish (FOGRA30L)",
+  "source": "ISOuncoatedyellowish_info.pdf"
+ },
+ "PSO_LWC_Improved_eci.icc": {
+  "tac": 300,
+  "condition": "improved LWC (FOGRA45L)",
+  "source": "PSO_LWC_Improved_eci_info.pdf"
+ },
+ "PSO_LWC_Standard_eci.icc": {
+  "tac": 300,
+  "condition": "standard LWC (FOGRA46L)",
+  "source": "PSO_LWC_Standard_eci_info.pdf"
+ },
+ "PSO_MFC_Paper_eci.icc": {
+  "tac": 280,
+  "condition": "MFC machine finished coating (FOGRA41L)",
+  "source": "PSO_MFC_Paper_eci_info.pdf"
+ },
+ "PSO_SNP_Paper_eci.icc": {
+  "tac": 260,
+  "condition": "SNP standard newsprint (FOGRA42L)",
+  "source": "PSO_SNP_Paper_eci_info.pdf"
+ },
+ "PSO_INP_Paper_eci.icc": {
+  "tac": 260,
+  "condition": "INP improved news print (FOGRA48L)",
+  "source": "PSO_INP_eci_info.pdf (eci_offset_profiles_inp.zip)"
+ },
+ "PSOsc-b_paper_v3_FOGRA54.icc": {
+  "tac": 270,
+  "condition": "ISO 12647-2:2013 PS6 super calendered SC-B (FOGRA54)",
+  "source": "registry.color.org/profile-registry"
+ },
+ "APTEC_PC10_CardBoard_2023_v1.icc": {
+  "tac": 340,
+  "condition": "APTEC Coated CardBoard, premium coated",
+  "source": "registry.color.org/profile-registry"
+ },
+ "JapanColor2011Coated.icc": {
+  "tac": 350,
+  "condition": "Japan Color 2011, paper type 1 premium coated 127.9 g/m2",
+  "source": "registry.color.org (profile list, cmyk-registry/jcs2011)"
+ }
+}
