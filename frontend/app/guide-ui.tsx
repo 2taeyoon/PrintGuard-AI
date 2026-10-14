@@ -83,3 +83,22 @@ export function GuideResult({ h, rank, query }: { h: Hit; rank: number; query: s
     </li>
   );
 }
+
+// 임베딩 모델을 불러오는 동안 화면 전체를 덮는 로딩 화면. 상태 문구의 "NN%"로 진행 막대를 그린다.
+export function ModelLoadingScreen({ status }: { status: string }) {
+  const m = status.match(/(\d+)%/);
+  const pct = m ? Math.min(100, +m[1]) : null;
+  return (
+    <div className="loading_screen" role="alertdialog" aria-modal="true" aria-busy="true" aria-labelledby="loading-title">
+      <div className="loading_box">
+        <span className="spinner big" aria-hidden="true" />
+        <h2 id="loading-title">임베딩 모델 불러오는 중</h2>
+        <p className="loading_status" aria-live="polite">{status || "준비 마무리 중"}</p>
+        <div className={`progress${pct === null ? " indeterminate" : ""}`} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct ?? undefined}>
+          <span style={pct === null ? undefined : { width: `${pct}%` }} />
+        </div>
+        <p className="note">처음 한 번은 모델 파일(약 118MB)을 읽고 가이드 항목을 임베딩합니다. 다음부터는 브라우저 캐시로 빨라집니다.</p>
+      </div>
+    </div>
+  );
+}

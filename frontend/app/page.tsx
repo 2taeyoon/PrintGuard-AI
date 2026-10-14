@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import type { Analysis, Issue, Sev } from "@/lib/analyze";
 import type { IntentName } from "@/lib/color";
 import type { Guide, Hit } from "@/lib/guide";
-import { GuideBadge, GuideCard } from "./guide-ui";
+import { GuideBadge, GuideCard, ModelLoadingScreen } from "./guide-ui";
 import { FINISHES, GROUPS, loadPapers, surface, type FinishId, type Paper, type PaperDb } from "@/lib/papers";
 import { assess, inputFrom, type Risk } from "@/lib/risk";
 
@@ -145,6 +145,7 @@ export default function Home() {
 
   return (
     <div className="common_wrap">
+      {!guide && !guideStatus.startsWith("가이드 검색 사용 불가") && <ModelLoadingScreen status={guideStatus} />}
       <header className="page_head">
         <h1>PDF 검수</h1>
         <GuideBadge ready={!!guide} status={guideStatus} />
