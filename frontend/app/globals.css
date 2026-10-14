@@ -177,3 +177,18 @@ form.upload label input[list] { min-width: 240px; }
   animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
+.brandpick { display: flex; gap: 8px; align-items: center; }
+.brandpick input { flex: 1; }
+button.small { font-size: 1.4rem; padding: 4px 12px; white-space: nowrap; }
+/* 인쇄 가이드 결과: 세로 목록, 순위, 하이라이트 */
+.gresults { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.gresult { display: flex; gap: 16px; background: var(--white); border: 1px solid var(--borderLight); border-radius: 4px; padding: 16px 24px; }
+.grank { flex: none; width: 28px; height: 28px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 1.4rem; font-weight: 700; background: var(--bgMuted); color: var(--blacklight); }
+.gresult:first-child .grank { background: var(--thema); color: var(--white); }
+.gmain { min-width: 0; }
+.gdoc { font-size: 1.2rem; font-weight: 600; color: var(--blackmute); }
+.gtitle { font-size: 1.8rem; font-weight: 700; margin: 4px 0 8px; }
+.gtext { margin: 0; font-size: 1.6rem; line-height: 170%; color: var(--black); }
+.mk-chunk { background: var(--themaLight); }
+mark.mk-term { background: var(--themaPoint); color: var(--black); font-weight: 700; padding: 0 2px; border-radius: 3px; }

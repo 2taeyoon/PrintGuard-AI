@@ -164,8 +164,9 @@ export default function Home() {
         <label>세로(mm)<input type="number" value={h} onChange={(e) => { setH(+e.target.value); setSize("직접 입력"); }} /></label>
         <label>도련(mm)<input type="number" step="0.5" value={bleed} onChange={(e) => setBleed(+e.target.value)} /></label>
         <label>종이 종류
-          <select value={paper?.kind === "brand" ? "" : paperId} onChange={(e) => e.target.value && pickPaper(e.target.value)} disabled={!db}>
-            {paper?.kind === "brand" && <option value="">브랜드: {paper.name}</option>}
+          {/* 브랜드를 골라도 이 칸은 그 브랜드가 속한 종류를 보여 준다. 종류를 다시 고르면 브랜드 선택은 풀린다 */}
+          <select value={paper ? (paper.kind === "brand" ? paper.type : paper.id) : paperId} disabled={!db}
+            onChange={(e) => { pickPaper(e.target.value); setBrandQ(""); }}>
             {GROUPS.map((g) => (
               <optgroup key={g} label={g}>
                 {db?.papers.filter((p) => p.kind === "type" && p.group === g).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -173,13 +174,18 @@ export default function Home() {
             ))}
           </select>
         </label>
-        <label>브랜드 종이로 찾기 ({db ? db.papers.filter((p) => p.kind === "brand").length : 0}종)
-          <input list="brand-list" value={brandQ} placeholder="예: 랑데뷰, 반누보, 스타드림" disabled={!db}
-            onChange={(e) => {
-              setBrandQ(e.target.value);
-              const hit = db?.papers.find((p) => p.kind === "brand" && brandLabel(p) === e.target.value);
-              if (hit) pickPaper(hit.id);
-            }} />
+        <label>브랜드 종이로 찾기 ({db ? db.papers.filter((p) => p.kind === "brand").length : 0}종, 선택)
+          <span className="brandpick">
+            <input list="brand-list" value={brandQ} placeholder="예: 랑데뷰, 반누보, 스타드림" disabled={!db}
+              onChange={(e) => {
+                setBrandQ(e.target.value);
+                const hit = db?.papers.find((p) => p.kind === "brand" && brandLabel(p) === e.target.value);
+                if (hit) pickPaper(hit.id);
+              }} />
+            {paper?.kind === "brand" && (
+              <button type="button" className="ghost small" onClick={() => { pickPaper(paper.type); setBrandQ(""); }}>해제</button>
+            )}
+          </span>
           <datalist id="brand-list">
             {db?.papers.filter((p) => p.kind === "brand").map((p) => <option key={p.id} value={brandLabel(p)} />)}
           </datalist>
