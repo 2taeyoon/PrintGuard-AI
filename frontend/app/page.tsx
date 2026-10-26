@@ -135,9 +135,11 @@ function Home() {
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (!file || !paper || !profile) return;
+    const askPaper = mode === "agent" && paperId === "unknown"; // 에이전트가 종이 후보를 묻는다
+    if (!file || ((!paper || !profile) && !askPaper)) return;
     setBusy(true); setErr(""); setRes(null); setSel(null); setPage(1); setHits({}); setAgentJob(null);
     if (mode === "agent") return runAgent(file);
+    if (!paper || !profile) { setBusy(false); return; }
     try {
       const data = new Uint8Array(await file.arrayBuffer());
       const pdfjs = await import("pdfjs-dist");
@@ -199,7 +201,8 @@ function Home() {
     pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
     docRef.current = await pdfjs.getDocument({ data: pdfData.current!.slice() }).promise;
     setRes({ ...analysis, filename: v.filename });
-    setUsedPaper(paper);
+    const usedId = v.results.risk?.paper?.id ?? v.results.paper_choice?.paper_id ?? paperId;
+    setUsedPaper(db?.papers.find((x) => x.id === usedId) ?? paper);
     setRisks(rs);
     setHits(hs);
     setBusy(false);
@@ -216,8 +219,8 @@ function Home() {
       {mode === "direct" && !guide && !guideStatus.startsWith("가이드 검색 사용 불가") && <ModelLoadingScreen status={guideStatus} onSkip={() => setMode("agent")} />}
       <header className="page_head">
         <h1>PDF 검수</h1>
-        <GuideBadge ready={!!guide} status={guideStatus} />
-        <p className="lead">폰트·도련·해상도·색·문구를 검사하고, 고른 종이로 인쇄 색 차이와 불량 위험을 예측합니다. 오탈자 등은 자동으로 고치지 않고 수정 제안만 보여 주니 원본 파일에서 직접 고치세요. 파일은 서버로 보내지 않습니다.</p>
+        {mode === "direct" ? <GuideBadge ready={!!guide} status={guideStatus} /> : <span className="badge">가이드 검색은 guide 에이전트가 합니다</span>}
+        <p className="lead">폰트·도련·해상도·색·문구를 검사하고, 고른 종이로 인쇄 색 차이와 불량 위험을 예측합니다. 오탈자 등은 자동으로 고치지 않고 수정 제안만 보여 주니 원본 파일에서 직접 고치세요. {mode === "direct" ? "파일은 어디로도 보내지 않습니다." : "파일은 이 PC에서 도는 에이전트에만 보냅니다."}</p>
       </header>
 
       <div className="modebar" role="tablist" aria-label="검사 방식">
@@ -249,6 +252,7 @@ function Home() {
           {/* 브랜드를 골라도 이 칸은 그 브랜드가 속한 종류를 보여 준다. 종류를 다시 고르면 브랜드 선택은 풀린다 */}
           <select value={paper ? (paper.kind === "brand" ? paper.type : paper.id) : paperId} disabled={!db}
             onChange={(e) => { pickPaper(e.target.value); setBrandQ(""); }}>
+            {mode === "agent" && <option value="unknown">모름 — 에이전트가 후보 추천</option>}
             {GROUPS.map((g) => (
               <optgroup key={g} label={g}>
                 {db?.papers.filter((p) => p.kind === "type" && p.group === g).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -297,7 +301,7 @@ function Home() {
           </select>
         </label>
         <label>총 잉크량 한도(%)<input type="number" value={tac} onChange={(e) => setTac(+e.target.value)} /></label>
-        <button disabled={!file || busy || !profile || (mode === "agent" && !agentUp)}>{busy ? "검사 중…" : mode === "agent" ? "에이전트에 맡기기" : "검사 시작"}</button>
+        <button disabled={!file || busy || (!profile && !(mode === "agent" && paperId === "unknown")) || (mode === "agent" && !agentUp)}>{busy ? "검사 중…" : mode === "agent" ? "에이전트에 맡기기" : "검사 시작"}</button>
         {res && <button type="button" className="ghost" onClick={() => window.print()}>보고서 인쇄/PDF 저장</button>}
         {paper && profile && (
           <div className="paperpick">
@@ -315,7 +319,7 @@ function Home() {
         <QuestionCard q={agentJob.question} busy={busy} onAnswer={answer} />
       )}
       {err && <div className="err">{err}</div>}
-      {!res && !busy && !err && (
+      {!res && !busy && !err && !agentJob && (
         <div className="empty">PDF를 선택하고 ‘검사 시작’을 누르세요. 파일은 서버로 보내지 않습니다.<br />
           테스트용 샘플: <code>PrintGuard/samples/defective_a5.pdf</code></div>
       )}

@@ -57,3 +57,16 @@ def test_partial_job_is_not_reused():
         JOBS[a["context_id"]].status = "completed_partial"  # 일부 에이전트가 실패했던 것처럼
         b = c.post("/jobs", files={"file": ("a.pdf", PDF + b"p", "application/pdf")}, data={"options": json.dumps(opts)}).json()["data"]
         assert b["context_id"] != a["context_id"] and b["duplicate"] is False
+
+
+def test_unknown_paper_asks_then_runs_color_with_choice():
+    with TestClient(app) as c:
+        opts = {"finish": "none", "paper_id": "unknown"}
+        r = c.post("/jobs", files={"file": ("a.pdf", PDF + b"u", "application/pdf")}, data={"options": json.dumps(opts)}).json()["data"]
+        j = wait(c, r["context_id"], {"input-required"})
+        assert j["question"]["field"] == "paper_id" and "color" not in j["results"]  # 종이를 모르면 색 검사를 미룬다
+        c.post(f"/jobs/{r['context_id']}/answer", json={"value": "art"})
+        j = wait(c, r["context_id"], {"completed", "completed_partial"})
+        skills = [s["skill"] for s in j["steps"]]
+        assert skills.index("recommend_paper") < skills.index("predict_color") < skills.index("assess_risk")
+        assert j["results"]["paper_choice"]["paper_id"] == "art"

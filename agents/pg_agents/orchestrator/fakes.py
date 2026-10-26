@@ -20,6 +20,11 @@ FAKE_OUT = {
 async def fake_caller(agent: str, req: AgentRequest) -> AgentResult:
     await asyncio.sleep(0.05)
     log_event(req.meta.context_id, "request_received", source=f"{agent}(fake)", requester="orchestrator", skill=req.skill)
+    if req.skill == "recommend_paper":
+        if req.input.get("chosen"):
+            return AgentResult(meta=req.meta, status=TaskStatus.COMPLETED, output={"paper_id": req.input["chosen"]})
+        return AgentResult(meta=req.meta, status=TaskStatus.INPUT_REQUIRED, reason_code=InputReason.CUSTOMER_INPUT,
+                           question={"field": "paper_id", "text": "어떤 종이에 인쇄하나요?", "options": [{"value": "art", "label": "아트지"}]})
     if req.skill == "assess_risk" and req.input.get("finish") == "unknown":
         return AgentResult(meta=req.meta, status=TaskStatus.INPUT_REQUIRED, reason_code=InputReason.CUSTOMER_INPUT,
                            question={"field": "finish", "text": "후가공이 있나요?", "options": [{"value": "none", "label": "없음"}]})
