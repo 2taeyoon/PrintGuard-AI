@@ -76,3 +76,16 @@ export function toScreen(v: JobView): { analysis: Analysis; risks: (Risk & { hit
 }
 export type JobRow = { context_id: string; status: string; filename: string; created: number };
 export const listJobs = async () => j<JobRow[]>(await fetch(`${ORCH}/jobs`));
+
+// ---- 5단계: 목업 인쇄소 견적(B)·주문(C, 사람 승인)·보고서(A). 상태를 바꾸는 일은 모두 safety 관문을 거친다 ----
+export type AgentReply = { status: string; outcome: string | null; output: Record<string, any>; question: Record<string, any> | null }; // eslint-disable-line @typescript-eslint/no-explicit-any
+export type Review = { review_id: string; status: string; expires_at: string; decided_by: string | null; action: string; amount: number; summary: string };
+const post = async <T,>(path: string, body?: unknown, headers: Record<string, string> = {}) =>
+  j<T>(await fetch(`${ORCH}${path}`, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body ?? {}) }));
+export const requestQuote = (ctx: string, partner: string, copies: number) => post<AgentReply>(`/jobs/${ctx}/quote`, { partner, copies });
+export const placeOrder = (ctx: string) => post<AgentReply>(`/jobs/${ctx}/order`);
+export const compileReport = (ctx: string) => post<AgentReply>(`/jobs/${ctx}/report`);
+export const listReviews = async (ctx?: string) => j<Review[]>(await fetch(`${ORCH}/reviews${ctx ? `?context_id=${encodeURIComponent(ctx)}` : ""}`));
+/** 사람이 승인·거절한다. 목 모드의 사람 토큰(human:<이름>)을 보낸다. 에이전트 토큰으로는 safety가 거부한다 */
+export const decideReview = (id: string, approve: boolean, who = "web-user") => // 헤더 값은 ASCII만 된다
+  post<Review>(`/reviews/${id}/decide`, { approve }, { Authorization: `Bearer human:${who}` });

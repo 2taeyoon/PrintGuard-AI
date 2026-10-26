@@ -58,8 +58,12 @@ def rules(text: str) -> list[dict[str, Any]]:
         want = "율" if (not final or jong == 4) else "률"  # jong 4 = ㄴ
         # '규율'·'자율'처럼 규칙에 맞는 말은 그대로 통과한다(앞 음절 받침만 본다)
         if suf != want:
-            out.append({"kind": "rate", "original": prev + suf, "suggestion": prev + want, "reason": "모음·ㄴ 받침 뒤는 '율', 그 밖에는 '률'로 적습니다",
-                        "source": "rules", "start": m.start(1), "end": m.end(2)})
+            a = m.start(1)
+            while a > 0 and "가" <= text[a - 1] <= "힣":  # 낱말 처음부터 보여 준다(재활용율 → 재활용률)
+                a -= 1
+            word = text[a:m.start(1)] + prev
+            out.append({"kind": "rate", "original": word + suf, "suggestion": word + want, "reason": "모음·ㄴ 받침 뒤는 '율', 그 밖에는 '률'로 적습니다",
+                        "source": "rules", "start": a, "end": m.end(2)})
     return out
 
 

@@ -21,15 +21,16 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import httpx
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
+from ..client import call_agent, new_meta
 from ..common_log import log_event, query
 from ..config import PORTS, STORE, agent_url, ensure_dirs, set_agent_name
-from ..contracts import AgentCard
+from ..contracts import AgentCard, AgentRequest
 from .engine import Engine, Job
 from .fakes import fake_caller
-from .plan import build_plan
+from .plan import _color, _size, build_plan, paper_id
 
 NAME = "orchestrator"
 DEPTS = [n for n in PORTS if n != NAME]
@@ -138,3 +139,85 @@ async def answer(ctx: str, body: dict[str, Any]) -> dict[str, Any]:
     set_agent_name(NAME)
     asyncio.create_task(app.state.engines[ctx].answer(job, body.get("value")))
     return {"data": {"context_id": ctx, "status": "working"}, "meta": {}}
+
+
+# ---------- 5단계: 인쇄소 견적·주문(목업)·사람 승인·보고서 ----------
+async def _ask(agent: str, skill: str, ctx: str, inp: dict[str, Any]) -> dict[str, Any]:
+    set_agent_name(NAME)
+    r = await call_agent(agent, AgentRequest(meta=new_meta(ctx, seconds=60), skill=skill, input=inp))
+    return r.model_dump(mode="json", exclude={"meta"})
+
+
+def _job(ctx: str) -> Job:
+    if ctx not in JOBS:
+        raise HTTPException(404, "없는 의뢰")
+    return JOBS[ctx]
+
+
+@app.get("/shops")
+async def shops(q: str = "", sido: str = "", limit: int = 20) -> dict[str, Any]:
+    return {"data": await _ask("shop", "find_shops", "ctx_shop_search", {"q": q, "sido": sido, "limit": limit}), "meta": {}}
+
+
+@app.post("/jobs/{ctx}/quote")
+async def quote(ctx: str, body: dict[str, Any]) -> dict[str, Any]:
+    """사양은 검수 결과(쪽수)와 의뢰 옵션(크기·도련·종이)에서 만든다. 부수와 협력사만 사용자가 고른다."""
+    j = _job(ctx)
+    pf = j.results.get("preflight") or {}
+    spec = {**{k: v for k, v in _size(j).items() if k != "pdf_ref"}, "pages": pf.get("pages", 1), "copies": int(body.get("copies") or 100),
+            "paper_id": paper_id(j)}
+    r = await _ask("shop", "request_quote", ctx, {"pdf_ref": j.pdf_ref, "partner": body.get("partner"), "spec": {**spec, **(body.get("spec") or {})}})
+    if r["status"] == "completed":
+        j.results["quote"] = r["output"]["quote"]
+        j.results.pop("order", None)
+    return {"data": r, "meta": {}}
+
+
+@app.post("/jobs/{ctx}/order")
+async def order(ctx: str) -> dict[str, Any]:
+    """처음 부르면 사람 승인 대기(input-required), 승인 뒤 다시 부르면 주문이 생긴다."""
+    j = _job(ctx)
+    if "quote" not in j.results:
+        raise HTTPException(409, "견적을 먼저 받으세요")
+    r = await _ask("shop", "place_order", ctx, {"quote_id": j.results["quote"]["quote_id"]})
+    if r["status"] == "completed":
+        j.results["order"] = r["output"]["order"]
+    return {"data": r, "meta": {}}
+
+
+@app.get("/reviews")
+async def reviews(context_id: str | None = None) -> dict[str, Any]:
+    async with httpx.AsyncClient(timeout=5) as c:
+        r = await c.get(f"{agent_url('safety')}/reviews", params={"context_id": context_id} if context_id else None)
+    return r.json()
+
+
+@app.post("/reviews/{review_id}/decide")
+async def decide_review(review_id: str, body: dict[str, Any], authorization: str | None = Header(None)) -> dict[str, Any]:
+    """사람 토큰을 그대로 safety에 넘긴다(오케스트레이터는 대신 승인하지 않는다)."""
+    async with httpx.AsyncClient(timeout=5) as c:
+        r = await c.post(f"{agent_url('safety')}/reviews/{review_id}/decide", json=body, headers={"Authorization": authorization or ""})
+    if r.status_code != 200:
+        raise HTTPException(r.status_code, r.json().get("detail", "거절"))
+    return r.json()
+
+
+@app.post("/jobs/{ctx}/report")
+async def report(ctx: str) -> dict[str, Any]:
+    j = _job(ctx)
+    res = j.results
+    co = res.get("color") or {}
+    issues = [{"severity": x.get("severity"), "title": x.get("title"), "page": x.get("page")}
+              for x in [*(res.get("preflight") or {}).get("issues", []), *co.get("issues", [])]]
+    inp = {"pdf_ref": j.pdf_ref, "filename": j.filename, "pages": (res.get("preflight") or {}).get("pages"), "paper_id": paper_id(j),
+           "paper_name": ((res.get("risk") or {}).get("paper") or {}).get("name"), "issues": issues,
+           "proofread": [{k: s.get(k) for k in ("page", "kind_label", "original", "suggestion")} for s in (res.get("proofread") or {}).get("suggestions", [])],
+           "risks": [{"title": r.get("name"), "level": r.get("level")} for r in (res.get("risk") or {}).get("risks", [])],
+           "quote": res.get("quote"), "order": res.get("order")}
+    if co.get("color_report"):
+        inp["color"] = {"input": {k: v for k, v in _color(j).items() if k != "pdf_ref"}, "mean_de": co["color_report"].get("weightedMeanDE"),
+                        "profile": co.get("profile")}
+    r = await _ask("report", "compile_report", ctx, inp)
+    if r["status"] == "completed":
+        j.results["report"] = {k: r["output"][k] for k in ("markdown", "path", "verified")}
+    return {"data": r, "meta": {}}

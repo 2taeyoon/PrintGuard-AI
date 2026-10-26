@@ -24,6 +24,7 @@ NODE = {"preflight": "agents/preflight.ts", "color": "agents/color.ts", "paper":
 
 
 def main(names: list[str]) -> None:
+    sys.stdout.reconfigure(encoding="utf-8")  # cp949 콘솔에서 출력하다 런처가 죽고 자식까지 끄는 일을 막는다
     LOGS.mkdir(parents=True, exist_ok=True)
     want = names or [*PY, *NODE]
     procs = []

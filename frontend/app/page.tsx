@@ -7,6 +7,7 @@ import type { IntentName } from "@/lib/color";
 import type { Guide, Hit } from "@/lib/guide";
 import { GuideBadge, GuideCard, ModelLoadingScreen } from "./guide-ui";
 import { AgentProgress, QuestionCard } from "./agent-ui";
+import { CommercePanel } from "./commerce-ui";
 import { FINISHES, GROUPS, loadPapers, surface, type FinishId, type Paper, type PaperDb } from "@/lib/papers";
 import { assess, inputFrom, type Risk } from "@/lib/risk";
 import { answerJob, createJob, orchestratorUp, toScreen, waitJob, type JobView } from "@/lib/agentClient";
@@ -414,6 +415,7 @@ function Home() {
           </div>
         </>
       )}
+      {mode === "agent" && res && agentJob?.status === "completed" && <CommercePanel key={agentJob.context_id} ctx={agentJob.context_id} />}
       <div className="disclaimer">
         이 검수 결과는 인쇄소의 최종 승인과 사람의 교정을 대체하지 않으며, 색상은 실제 인쇄 결과를 보장하지 않는 위험 예측입니다.
         색 공간은 PDF 안의 정보를 읽은 값이고, 이미지 매칭은 가로·세로 픽셀 수로 하므로 같은 크기의 이미지가 여러 개면 틀릴 수 있습니다.
