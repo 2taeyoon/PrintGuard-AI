@@ -17,7 +17,7 @@ const SEV_LABEL: Record<Sev, string> = { high: "인쇄 위험", medium: "수정 
 const SIZES: Record<string, [number, number]> = {
   "A5 (148×210)": [148, 210], "A4 (210×297)": [210, 297], "B5 (176×250)": [176, 250], "직접 입력": [0, 0],
 };
-const SRC: Record<string, string> = { rule: "규칙", heuristic: "휴리스틱" };
+const SRC: Record<string, string> = { rule: "규칙", heuristic: "휴리스틱", proofread: "교정 에이전트" };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type PdfDoc = any;
@@ -333,7 +333,7 @@ function Home() {
             ))}
             <span className="chip">RGB 이미지<b>{res.colorSummary.rgb ?? 0}</b></span>
             <label className="chip heatsw"><input type="checkbox" checked={showHeat} onChange={(e) => setShowHeat(e.target.checked)} /> 색 차이 지도(ΔE00&gt;5)</label>
-            <span className="note">AI 문맥 교정(LLM)은 연결하지 않았습니다. 표기·수치 검사는 규칙 기반입니다.</span>
+            <span className="note">{mode === "agent" ? "오탈자는 교정 에이전트(규칙+Kiwi)가 제안만 합니다. 자동으로 고치지 않습니다." : "AI 문맥 교정(LLM)은 연결하지 않았습니다. 표기·수치 검사는 규칙 기반입니다."}</span>
           </div>
           {res.colorReport && (
             <div className="summary colorrep panel">

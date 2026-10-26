@@ -53,12 +53,19 @@ export function toScreen(v: JobView): { analysis: Analysis; risks: (Risk & { hit
   const colorIssues = (co.issues ?? []) as (Issue & { key: string; heat?: { w: number; h: number; rgba: string } })[];
   const base = ((pf.issues ?? []) as (Issue & { key: string })[]).filter((it) => !(colorIssues.length && it.title === "RGB 이미지 포함"));
   const toHit = (h: { doc: string; title: string; text: string; child: string; score: number }): Hit => ({ section: { doc: h.doc, title: h.title, text: h.text }, score: h.score, child: h.child });
-  const all = [...base.map((it) => ({ ...it, heat: undefined })), ...colorIssues.map((it) => ({ ...it, heat: it.heat ? { w: it.heat.w, h: it.heat.h, rgba: b64(it.heat.rgba) } : undefined }))];
+  // 교정 에이전트의 제안: 자동으로 고치지 않으므로 '수정 제안'으로만 보여 준다
+  type Sug = { key: string; page: number; original: string; suggestion: string; reason: string; kind: string; kind_label: string; source: string; rect: number[] | null };
+  const proof = ((v.results.proofread?.suggestions ?? []) as Sug[]).map((s) => ({
+    key: s.key, id: 0, kind: "typo", severity: s.kind === "typo" || s.kind === "llm" ? "low" : "medium", page: s.page,
+    title: `${s.kind_label}: '${s.original}' → '${s.suggestion}'`, detail: `${s.reason} (탐지: ${s.source === "rules" ? "규칙" : s.source === "kiwi_typo" ? "Kiwi 오타 모델" : s.source})`,
+    fix: "원본 파일에서 직접 고치세요. 자동으로 고치지 않습니다.", rect: s.rect, source: "proofread" as const, heat: undefined,
+  })) as unknown as (Issue & { key: string })[];
+  const all = [...base.map((it) => ({ ...it, heat: undefined })), ...colorIssues.map((it) => ({ ...it, heat: it.heat ? { w: it.heat.w, h: it.heat.h, rgba: b64(it.heat.rgba) } : undefined })), ...proof];
   const order = { high: 0, medium: 1, low: 2 } as const;
   all.sort((a, b) => order[a.severity] - order[b.severity] || a.page - b.page);
   const hits: Record<number, Hit[]> = {};
   const issues: Issue[] = all.map((it, i) => {
-    hits[i + 1] = (gd[`issue:${it.key}`] ?? []).map(toHit);
+    hits[i + 1] = (gd[`issue:${it.key}`] ?? gd[`proof:${it.key}`] ?? []).map(toHit);
     const rest: Partial<typeof it> = { ...it };
     delete rest.key;
     return { ...rest, id: i + 1 } as Issue;

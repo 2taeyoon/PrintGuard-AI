@@ -6,7 +6,7 @@ export type Sev = "high" | "medium" | "low";
 export type Issue = {
   id: number; kind: string; severity: Sev; page: number; title: string; detail: string; fix: string;
   rect: number[] | null; // 페이지 좌상단 기준 [x0,y0,x1,y1] (pt)
-  source: "rule" | "heuristic";
+  source: "rule" | "heuristic" | "proofread";
   metrics?: ColorMetrics; // 색 차이 측정값 (RGB 이미지)
   heat?: { w: number; h: number; rgba: Uint8ClampedArray }; // ΔE 지도
 };
