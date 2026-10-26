@@ -1,12 +1,15 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { FormEvent, Suspense, useEffect, useRef, useState } from "react";
 import type { Analysis, Issue, Sev } from "@/lib/analyze";
 import type { IntentName } from "@/lib/color";
 import type { Guide, Hit } from "@/lib/guide";
 import { GuideBadge, GuideCard, ModelLoadingScreen } from "./guide-ui";
+import { AgentProgress, QuestionCard } from "./agent-ui";
 import { FINISHES, GROUPS, loadPapers, surface, type FinishId, type Paper, type PaperDb } from "@/lib/papers";
 import { assess, inputFrom, type Risk } from "@/lib/risk";
+import { answerJob, createJob, orchestratorUp, toScreen, waitJob, type JobView } from "@/lib/agentClient";
 
 const LEVEL_LABEL = { high: "높음", medium: "중간", low: "낮음", na: "판단 불가" } as const;
 
@@ -19,7 +22,13 @@ const SRC: Record<string, string> = { rule: "규칙", heuristic: "휴리스틱" 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type PdfDoc = any;
 
-export default function Home() {
+export default function HomePage() {
+  return <Suspense><Home /></Suspense>;
+}
+
+function Home() {
+  const sp = useSearchParams();
+  const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [size, setSize] = useState("A5 (148×210)");
   const [w, setW] = useState(148);
@@ -51,6 +60,13 @@ export default function Home() {
     const k = key === "auto" ? paper?.profile : key;
     if (k && db) setTac(db.profiles[k].tac);
   }
+  // 검사 방식: direct = 이 브라우저 안에서 바로, agent = 로컬 에이전트들이 A2A로 나눠 검사
+  // 주소의 ?mode=agent로 시작 모드를 기억한다(에이전트 모드로 열면 브라우저 임베딩 모델을 아예 불러오지 않는다)
+  const [mode, setModeState] = useState<"direct" | "agent">(sp.get("mode") === "agent" ? "agent" : "direct");
+  const setMode = (m: "direct" | "agent") => { setModeState(m); router.replace(m === "agent" ? "/?mode=agent" : "/", { scroll: false }); };
+  const [agentUp, setAgentUp] = useState<boolean | null>(null);
+  const [agentJob, setAgentJob] = useState<JobView | null>(null);
+  const pdfData = useRef<Uint8Array | null>(null);
   const [showHeat, setShowHeat] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -68,6 +84,16 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (mode !== "agent") return;
+    let alive = true;
+    const check = () => orchestratorUp().then((ok) => alive && setAgentUp(ok));
+    check();
+    const t = setInterval(check, 5000);
+    return () => { alive = false; clearInterval(t); };
+  }, [mode]);
+
+  useEffect(() => {
+    if (mode !== "direct") return; // 에이전트 모드에서는 가이드 검색을 guide 에이전트가 한다
     let alive = true;
     let unsub = () => {};
     import("@/lib/guide")
@@ -82,7 +108,7 @@ export default function Home() {
       .then((g) => { if (alive) setGuide(g); })
       .catch(() => { /* 상태 문구로 표시됨 */ });
     return () => { alive = false; unsub(); };
-  }, []);
+  }, [mode]);
 
   useEffect(() => {
     const doc = docRef.current;
@@ -110,7 +136,8 @@ export default function Home() {
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!file || !paper || !profile) return;
-    setBusy(true); setErr(""); setRes(null); setSel(null); setPage(1); setHits({});
+    setBusy(true); setErr(""); setRes(null); setSel(null); setPage(1); setHits({}); setAgentJob(null);
+    if (mode === "agent") return runAgent(file);
     try {
       const data = new Uint8Array(await file.arrayBuffer());
       const pdfjs = await import("pdfjs-dist");
@@ -137,6 +164,47 @@ export default function Home() {
   }
 
 
+  // ---------- 에이전트 모드 ----------
+  async function runAgent(f: File) {
+    try {
+      pdfData.current = new Uint8Array(await f.arrayBuffer());
+      const opts = { width_mm: w, height_mm: h, bleed_mm: bleed, paper_id: paperId, profile: profileKey, intent, tac_limit: tac,
+        paper_color: paperColor, finish, gsm };
+      const { context_id } = await createJob(f, opts);
+      await settle(await waitJob(context_id, setAgentJob));
+    } catch (x) {
+      setErr(`에이전트 검사에 실패했습니다. 에이전트를 켰는지 확인하세요(agents/run_agents.py). (${x instanceof Error ? x.message : x})`);
+      setBusy(false);
+    }
+  }
+
+  async function answer(value: string) {
+    if (!agentJob) return;
+    setBusy(true);
+    try {
+      await answerJob(agentJob.context_id, value);
+      await new Promise((r) => setTimeout(r, 200));
+      await settle(await waitJob(agentJob.context_id, setAgentJob));
+    } catch (x) {
+      setErr(`답을 전달하지 못했습니다. (${x instanceof Error ? x.message : x})`);
+      setBusy(false);
+    }
+  }
+
+  async function settle(v: JobView) {
+    if (v.status === "input-required") { setBusy(false); return; } // 질문 카드를 보여 주고 답을 기다린다
+    if (v.status === "failed") { setErr("에이전트 검사가 실패했습니다. '에이전트' 탭의 소통 기록을 확인하세요."); setBusy(false); return; }
+    const { analysis, risks: rs, hits: hs } = toScreen(v);
+    const pdfjs = await import("pdfjs-dist");
+    pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+    docRef.current = await pdfjs.getDocument({ data: pdfData.current!.slice() }).promise;
+    setRes({ ...analysis, filename: v.filename });
+    setUsedPaper(paper);
+    setRisks(rs);
+    setHits(hs);
+    setBusy(false);
+  }
+
   const count = (s: Sev) => res?.issues.filter((i) => i.severity === s).length ?? 0;
   const pageIssues = res?.issues.filter((i) => i.page === page) ?? [];
   const perPage = (p: number) => res?.issues.filter((i) => i.page === p && i.severity === "high").length ?? 0;
@@ -145,12 +213,25 @@ export default function Home() {
 
   return (
     <div className="common_wrap">
-      {!guide && !guideStatus.startsWith("가이드 검색 사용 불가") && <ModelLoadingScreen status={guideStatus} />}
+      {mode === "direct" && !guide && !guideStatus.startsWith("가이드 검색 사용 불가") && <ModelLoadingScreen status={guideStatus} onSkip={() => setMode("agent")} />}
       <header className="page_head">
         <h1>PDF 검수</h1>
         <GuideBadge ready={!!guide} status={guideStatus} />
         <p className="lead">폰트·도련·해상도·색·문구를 검사하고, 고른 종이로 인쇄 색 차이와 불량 위험을 예측합니다. 오탈자 등은 자동으로 고치지 않고 수정 제안만 보여 주니 원본 파일에서 직접 고치세요. 파일은 서버로 보내지 않습니다.</p>
       </header>
+
+      <div className="modebar" role="tablist" aria-label="검사 방식">
+        <button type="button" role="tab" aria-selected={mode === "direct"} className={`pill${mode === "direct" ? " on" : ""}`} onClick={() => setMode("direct")}>
+          바로 검사 <span className="count">브라우저 안</span></button>
+        <button type="button" role="tab" aria-selected={mode === "agent"} className={`pill${mode === "agent" ? " on" : ""}`} onClick={() => setMode("agent")}>
+          에이전트 검사 <span className="count">A2A</span></button>
+        <span className="note">
+          {mode === "direct" ? "모든 계산을 이 브라우저 안에서 합니다. 파일은 어디로도 보내지 않습니다."
+            : agentUp === null ? "에이전트 연결 확인 중…"
+            : agentUp ? <>로컬 에이전트(사전 검사·색·종이·가이드…)가 나눠서 검사합니다. 파일은 이 PC의 에이전트에만 보냅니다. <a href="/agents">소통 기록 보기</a></>
+            : <span className="sev-high">에이전트가 꺼져 있습니다. <code>agents</code> 폴더에서 <code>python run_agents.py</code>로 켜세요.</span>}
+        </span>
+      </div>
 
       <form className="upload panel" onSubmit={submit}>
         <label>PDF 파일
@@ -216,7 +297,7 @@ export default function Home() {
           </select>
         </label>
         <label>총 잉크량 한도(%)<input type="number" value={tac} onChange={(e) => setTac(+e.target.value)} /></label>
-        <button disabled={!file || busy || !profile}>{busy ? "검사 중…" : "검사 시작"}</button>
+        <button disabled={!file || busy || !profile || (mode === "agent" && !agentUp)}>{busy ? "검사 중…" : mode === "agent" ? "에이전트에 맡기기" : "검사 시작"}</button>
         {res && <button type="button" className="ghost" onClick={() => window.print()}>보고서 인쇄/PDF 저장</button>}
         {paper && profile && (
           <div className="paperpick">
@@ -229,6 +310,10 @@ export default function Home() {
       </form>
 
 
+      {mode === "agent" && agentJob && <AgentProgress job={agentJob} />}
+      {mode === "agent" && agentJob?.status === "input-required" && agentJob.question && (
+        <QuestionCard q={agentJob.question} busy={busy} onAnswer={answer} />
+      )}
       {err && <div className="err">{err}</div>}
       {!res && !busy && !err && (
         <div className="empty">PDF를 선택하고 ‘검사 시작’을 누르세요. 파일은 서버로 보내지 않습니다.<br />

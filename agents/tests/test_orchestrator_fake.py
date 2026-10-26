@@ -46,3 +46,14 @@ def test_idempotent_same_pdf_same_options():
 def test_rejects_non_pdf():
     with TestClient(app) as c:
         assert c.post("/jobs", files={"file": ("a.txt", b"hello", "text/plain")}).status_code == 400
+
+
+def test_partial_job_is_not_reused():
+    from pg_agents.orchestrator.app import JOBS
+    with TestClient(app) as c:
+        opts = {"finish": "none", "paper_id": "snow"}
+        a = c.post("/jobs", files={"file": ("a.pdf", PDF + b"p", "application/pdf")}, data={"options": json.dumps(opts)}).json()["data"]
+        wait(c, a["context_id"], {"completed", "completed_partial"})
+        JOBS[a["context_id"]].status = "completed_partial"  # 일부 에이전트가 실패했던 것처럼
+        b = c.post("/jobs", files={"file": ("a.pdf", PDF + b"p", "application/pdf")}, data={"options": json.dumps(opts)}).json()["data"]
+        assert b["context_id"] != a["context_id"] and b["duplicate"] is False

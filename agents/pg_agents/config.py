@@ -12,8 +12,8 @@ LOG_DB = Path(os.environ.get("PG_COMMON_LOG_DB", DATA / "common_log.sqlite"))
 MAX_PATH_LENGTH = 3
 
 PORTS: dict[str, int] = {
-    "orchestrator": 8100, "safety": 8101, "preflight": 8102, "color": 8103, "guide": 8104,
-    "paper": 8105, "proofread": 8106, "shop": 8107, "report": 8108,
+    "orchestrator": 8700, "safety": 8701, "preflight": 8702, "color": 8703, "guide": 8704,
+    "paper": 8705, "proofread": 8706, "shop": 8707, "report": 8708,
 }
 
 _name: ContextVar[str] = ContextVar("pg_agent_name", default="anonymous")

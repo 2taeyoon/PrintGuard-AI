@@ -205,3 +205,37 @@ mark.mk-term { background: var(--themaPoint); color: var(--black); font-weight: 
 .progress.indeterminate span { position: absolute; width: 30%; animation: slide 1.2s ease-in-out infinite; }
 @keyframes slide { from { left: -30%; } to { left: 100%; } }
 @media (prefers-reduced-motion: reduce) { .progress.indeterminate span { animation-duration: 3.6s; } }
+/* 검사 방식 전환과 에이전트 진행 */
+.modebar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 16px; }
+.modebar .note { flex: 1; min-width: 240px; }
+.modebar a { color: var(--thema); }
+.agent_progress .ap_head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+.agent_progress .ap_head a { margin-left: auto; color: var(--thema); }
+.ap_steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.ap_steps li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border-left: 3px solid var(--borderStrong); background: var(--bgMuted); font-size: 1.4rem; }
+.ap_steps li.st-completed { border-left-color: var(--greenBright); }
+.ap_steps li.st-input-required { border-left-color: var(--thema); }
+.ap_steps li.st-failed, .ap_steps li.st-rejected, .ap_steps li.st-canceled { border-left-color: var(--redBright); }
+.ap_steps code { font-size: 1.2rem; color: var(--blacklight); }
+.chip.st-completed { background: var(--themaLight); color: var(--thema); }
+.chip.st-input-required { background: var(--themaPoint); color: var(--black); }
+.question { border-color: var(--thema); }
+.question h3 { font-size: 1.8rem; margin: 8px 0; }
+.q_opts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.q_opts button { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; }
+.q_opts small { font-size: 1.2rem; color: var(--blacklight); font-weight: 400; }
+/* 에이전트 탭 */
+.agent_grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px 16px; margin-bottom: 24px; }
+.acard { background: var(--white); border: 1px solid var(--borderLight); border-radius: 4px; padding: 16px 24px; }
+.acard.off { background: var(--bgMuted); }
+.acard h3 { font-size: 1.8rem; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
+.acard h3 code, .acard li code { font-size: 1.2rem; color: var(--blacklight); }
+.acard p { font-size: 1.4rem; margin: 0 0 8px; }
+.acard ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.acard li { font-size: 1.4rem; }
+.timeline { list-style: none; margin: 0; padding: 0; max-height: 640px; overflow: auto; font-size: 1.4rem; }
+.timeline li { display: grid; grid-template-columns: 96px 200px 1fr auto; gap: 12px; padding: 8px 4px; border-bottom: 1px solid var(--borderSubtle); }
+.timeline .t { color: var(--blackmute); font-variant-numeric: tabular-nums; }
+.timeline li.k-job_opened, .timeline li.k-job_closed { background: var(--themaLight); }
+.timeline li.k-input_required { background: var(--themaPoint); }
+.timeline li.st-rejected, .timeline li.st-failed, .timeline li.k-task_status { color: var(--redBright); }

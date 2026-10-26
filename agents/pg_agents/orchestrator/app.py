@@ -1,4 +1,4 @@
-"""오케스트레이터(총괄) :8100.
+"""오케스트레이터(총괄) :8700.
 
 앱용 API
 - POST /jobs (multipart: file=PDF, options=JSON)  → {context_id, status}. 같은 PDF·같은 옵션이면 이전 job을 돌려준다(멱등성)
@@ -43,7 +43,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="PrintGuard orchestrator", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["http://127.0.0.1:3000", "http://localhost:3000"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(CORSMiddleware, allow_origin_regex=r"http://(127\.0\.0\.1|localhost):\d+", allow_methods=["*"], allow_headers=["*"])
 JOBS: dict[str, Job] = {}
 BY_KEY: dict[str, str] = {}
 FAKE = os.environ.get("PG_FAKE_AGENTS") == "1"
@@ -63,6 +63,17 @@ async def registry() -> dict[str, dict[str, Any]]:
                 out[d] = {"status": "off", "card": None}
         await asyncio.gather(*(one(d) for d in DEPTS))
     return out
+
+
+@app.get("/health")
+async def health() -> dict[str, Any]:
+    return {"data": {"status": "ok", "agent": NAME, "fake": FAKE}, "meta": {}}
+
+
+@app.get("/jobs")
+async def list_jobs() -> dict[str, Any]:
+    rows = sorted(JOBS.values(), key=lambda j: -j.created)[:30]
+    return {"data": [{"context_id": j.context_id, "status": j.status, "filename": j.filename, "created": j.created} for j in rows], "meta": {}}
 
 
 @app.get("/agents")
@@ -85,7 +96,8 @@ async def create_job(file: UploadFile = File(...), options: str = Form("{}")) ->
     sha = hashlib.sha256(data).hexdigest()
     (STORE / f"{sha}.pdf").write_bytes(data)
     key = hashlib.sha256((sha + json.dumps(opts, sort_keys=True)).encode()).hexdigest()[:24]
-    if key in BY_KEY and JOBS[BY_KEY[key]].status in ("completed", "completed_partial", "working", "input-required"):
+    # 같은 PDF·같은 옵션은 이전 의뢰를 돌려준다(멱등성). 단, 실패가 섞인 의뢰(completed_partial·failed)는 다시 실행한다
+    if key in BY_KEY and JOBS[BY_KEY[key]].status in ("completed", "working", "input-required"):
         j = JOBS[BY_KEY[key]]
         log_event(j.context_id, "duplicate_job", source=NAME, payload={"idempotency_key": key})
         return {"data": {"context_id": j.context_id, "status": j.status, "duplicate": True}, "meta": {}}

@@ -7,6 +7,7 @@
   .papers { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .riskgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ws { grid-template-columns: 96px minmax(0, 1fr) 320px; }
+  .agent_grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 1024px) {
   .common_wrap { padding: 32px 32px 64px; }
@@ -26,7 +27,8 @@
   .topmenu { display: none; position: absolute; top: 56px; left: 0; right: 0; flex-direction: column; align-items: stretch; gap: 4px;
     padding: 8px 16px 16px; background: var(--white); border-bottom: 1px solid var(--borderSubtle); box-shadow: 0 0 20px 0 var(--borderStrong); }
   .RouteApp.open .topmenu { display: flex; }
-  .papers, .riskgrid { grid-template-columns: 1fr; }
+  .papers, .riskgrid, .agent_grid { grid-template-columns: 1fr; }
+  .timeline li { grid-template-columns: 80px 1fr; }
 }
 @media (max-width: 640px) {
   html { font-size: 50.5%; }

@@ -44,7 +44,7 @@ def create_agent_app(card: AgentCard, handlers: Mapping[str, Handler]) -> FastAP
         yield
 
     app = FastAPI(title=f"PrintGuard {card.name} agent", lifespan=lifespan)
-    app.add_middleware(CORSMiddleware, allow_origins=["http://127.0.0.1:3000", "http://localhost:3000"], allow_methods=["*"], allow_headers=["*"])
+    app.add_middleware(CORSMiddleware, allow_origin_regex=r"http://(127\.0\.0\.1|localhost):\d+", allow_methods=["*"], allow_headers=["*"])
 
     @app.get("/.well-known/agent-card.json")
     async def agent_card() -> dict[str, Any]:
