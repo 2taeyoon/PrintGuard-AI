@@ -53,6 +53,7 @@ cp agents/.env.example agents/.env      # Windows: copy agents\.env.example agen
 ```ini
 # agents/.env
 GEMINI_API_KEY=발급받은_키
+PG_LLM_MODEL=gemini-2.5-flash-lite    # 무료 등급이 있는 모델(기본값)
 PG_PROOF_METHODS=rules,kiwi_typo,llm
 LANGSMITH_API_KEY=발급받은_키
 LANGSMITH_PROJECT=printguard
@@ -60,8 +61,8 @@ LANGSMITH_PROJECT=printguard
 
 | 기능 | 환경변수 | 받는 곳 | 쓰는 법 |
 | --- | --- | --- | --- |
-| LLM 교정 제안(규칙·Kiwi에 더해) | `GEMINI_API_KEY`, 모델은 `PG_LLM_MODEL`(기본 `gemini-2.5-flash`), `PG_PROOF_METHODS` | [Google AI Studio](https://aistudio.google.com/apikey) | `.env`에 넣고 `cd agents && python run_agents.py` |
-| LLM 교정기 정량평가 | 위와 같음 | 위와 같음 | `python eval/proofread/eval_proofread.py` (키가 있으면 LLM 조합이 표에 더해짐. API 호출 61회) |
+| LLM 교정 제안(규칙·Kiwi에 더해) | `GEMINI_API_KEY`, 모델은 `PG_LLM_MODEL`(기본 `gemini-2.5-flash-lite` — 무료 등급), `PG_PROOF_METHODS` | [Google AI Studio](https://aistudio.google.com/apikey) | `.env`에 넣고 `cd agents && python run_agents.py` |
+| LLM 교정기 정량평가 | 위와 같음 | 위와 같음 | `python eval/proofread/eval_proofread.py` (키가 있으면 LLM 조합이 표에 더해짐. API 호출 61회 — 무료 등급 하루 한도 안) |
 | 추적을 LangSmith로 보내기 | `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT`(기본 `printguard`) | [LangSmith](https://smith.langchain.com) → Settings → API Keys | `cd agents && python -m pg_agents.langsmith_export <context_id>` |
 
 `.env`를 읽는 곳은 `run_agents.py`(자식 에이전트까지 물려 줌), `pg_agents.mcp_server`, `pg_agents.langsmith_export`, 교정 평가 스크립트입니다. 앱(브라우저) 쪽 설정은 Next.js 규칙대로 `frontend/.env.local`에 둡니다 — 지금 쓰는 값은 오케스트레이터 주소 하나입니다(`NEXT_PUBLIC_PG_ORCHESTRATOR=http://127.0.0.1:8700`).
