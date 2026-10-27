@@ -253,3 +253,26 @@ mark.mk-term { background: var(--themaPoint); color: var(--black); font-weight: 
 .timeline li.k-job_opened, .timeline li.k-job_closed { background: var(--themaLight); }
 .timeline li.k-input_required { background: var(--themaPoint); }
 .timeline li.st-rejected, .timeline li.st-failed, .timeline li.k-task_status { color: var(--redBright); }
+/* 의뢰 추적 워터폴(공통 로그의 요청↔결과 짝). 측정한 구간만 그린다 */
+.waterfall { list-style: none; margin: 0 0 12px; padding: 0; font-size: 1.4rem; }
+.waterfall li { display: grid; grid-template-columns: 240px 1fr 72px; gap: 12px; align-items: center; padding: 4px 0; }
+.waterfall .wf_who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.waterfall .wf_who code { font-size: 1.2rem; color: var(--blacklight); }
+.waterfall .wf_who .note { font-size: 1.2rem; }
+.wf_track { position: relative; height: 14px; background: var(--bgMuted); border-radius: 999px; }
+.wf_bar { position: absolute; top: 0; height: 14px; min-width: 3px; border-radius: 999px; background: var(--thema); }
+.wf_bar.st-input-required { background: var(--themaPoint); }
+.wf_bar.st-rejected, .wf_bar.st-failed, .wf_bar.st-canceled { background: var(--redBright); }
+.wf_bar.open { background: repeating-linear-gradient(135deg, var(--themaBright) 0 6px, var(--themaLight) 6px 12px); }
+.wf_ms { text-align: right; color: var(--blackmute); font-variant-numeric: tabular-nums; }
+.gatelist { list-style: none; margin: 0; padding: 0; font-size: 1.4rem; border-top: 1px solid var(--borderSubtle); }
+.gatelist li { display: grid; grid-template-columns: 72px 1fr; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--borderSubtle); }
+.gatelist .t { color: var(--blackmute); text-align: right; font-variant-numeric: tabular-nums; }
+.gatelist code { font-size: 1.2rem; color: var(--blacklight); }
+.gatelist .chip { margin-left: 8px; }
+.gatelist li.st-rejected b, .gatelist li.st-expired b { color: var(--redBright); }
+.gatelist li.st-pending_review b { color: var(--thema); }
+@media (max-width: 768px) {
+  .waterfall li { grid-template-columns: 1fr 64px; }
+  .waterfall .wf_track { grid-column: 1 / -1; }
+}

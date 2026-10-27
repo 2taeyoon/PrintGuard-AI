@@ -46,6 +46,8 @@ class Job:
 
     def public(self) -> dict[str, Any]:
         return {"context_id": self.context_id, "status": self.status, "filename": self.filename, "options": self.options,
+                # pdf_ref·answers는 MCP 쓰기 도구(견적·보고서)가 의뢰 상태만으로 입력을 만들 때 쓴다
+                "answers": self.answers, "pdf_ref": self.pdf_ref,
                 "steps": self.steps, "question": self.question, "results": self.results}
 
 

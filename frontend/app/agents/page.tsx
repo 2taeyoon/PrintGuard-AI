@@ -2,7 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
-import { listAgents, listJobs, listLogs, orchestratorUp, type AgentInfo, type JobRow, type LogRow } from "@/lib/agentClient";
+import { getTrace, listAgents, listJobs, listLogs, orchestratorUp, type AgentInfo, type JobRow, type LogRow, type Trace } from "@/lib/agentClient";
 import { agentLabel } from "../agent-ui";
 
 const KIND: Record<string, string> = {
@@ -10,6 +10,8 @@ const KIND: Record<string, string> = {
   input_answered: "답 받음", job_closed: "의뢰 종료", job_failed: "의뢰 실패", duplicate_job: "같은 의뢰(멱등성)",
 };
 const GRADE: Record<string, string> = { read: "조회", A: "A 즉시 실행", B: "B 교차검증", C: "C 사람 승인" };
+const DECISION: Record<string, string> = { executed: "실행", pending_review: "사람 승인 대기", rejected: "거절", approved: "승인", expired: "기한 지나 거절" };
+const secs = (ms: number) => `${(ms / 1000).toFixed(ms < 10000 ? 2 : 1)}초`;
 
 export default function AgentsPageWrap() {
   return <Suspense><AgentsPage /></Suspense>;
@@ -22,6 +24,7 @@ function AgentsPage() {
   const [jobs, setJobs] = useState<JobRow[]>([]);
   const [ctx, setCtx] = useState<string>(sp.get("ctx") ?? "");
   const [logs, setLogs] = useState<LogRow[]>([]);
+  const [trace, setTrace] = useState<Trace | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -34,6 +37,7 @@ function AgentsPage() {
       if (!alive) return;
       setAgents(a); setJobs(js);
       setLogs(await listLogs(ctx || undefined));
+      setTrace(ctx ? await getTrace(ctx) : null);  // 추적은 의뢰를 하나 고를 때만(전체 워터폴은 뜻이 없다)
     };
     tick();
     const t = setInterval(tick, 2000);
@@ -67,6 +71,55 @@ function AgentsPage() {
             ) : <p className="note">아직 켜지지 않았거나 만들어지지 않은 에이전트입니다.</p>}
           </article>
         ))}
+      </section>
+
+      {/* 의뢰별 추적: 공통 로그의 요청↔결과 짝으로 만든 구간이다. 측정하지 않은 시간은 그리지 않는다(열린 구간은 줄무늬) */}
+      <section className="panel">
+        <div className="toolbar">
+          <strong>의뢰 추적</strong>
+          {trace && trace.spans.length > 0 ? (
+            <>
+              <span className="chip">전체 {secs(trace.total_ms)}</span>
+              {trace.agents.map((a) => (
+                <span key={a.agent} className="chip">{agentLabel(a.agent)} {a.calls}회 · {secs(a.ms)}{a.open ? " · 진행 중" : ""}</span>
+              ))}
+              <span className="note">공통 로그 {trace.lines}줄 기준 · 시작 {trace.t0?.slice(11, 19)}</span>
+            </>
+          ) : <span className="note">{ctx ? "이 의뢰에는 아직 구간이 없습니다." : "아래 목록에서 의뢰를 하나 고르면 에이전트별 워터폴이 나옵니다."}</span>}
+        </div>
+        {trace && trace.spans.length > 0 && (
+          <ol className="waterfall">
+            {trace.spans.map((s, i) => {
+              const total = Math.max(trace.total_ms, 1);
+              const ms = s.ms ?? total - s.start_ms;
+              return (
+                <li key={i}>
+                  <span className="wf_who"><b>{agentLabel(s.agent)}</b> <code>{s.skill}</code>{s.requester && <span className="note"> ← {agentLabel(s.requester)}</span>}</span>
+                  <span className="wf_track">
+                    <span className={`wf_bar st-${s.status ?? "working"}${s.open ? " open" : ""}`} style={{ left: `${(s.start_ms / total) * 100}%`, width: `${Math.max((ms / total) * 100, 0.8)}%` }}
+                      title={`${s.start_ms}~${s.end_ms ?? "?"}ms${s.outcome ? ` · ${s.outcome}` : ""}`} />
+                  </span>
+                  <span className="wf_ms">{s.open ? "진행 중" : secs(ms)}</span>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+        {trace && trace.gates.length > 0 && (
+          <ul className="gatelist">
+            {trace.gates.map((g, i) => (
+              <li key={i} className={`st-${g.decision ?? ""}`}>
+                <span className="t">{secs(g.at_ms)}</span>
+                <span>{g.kind === "human_review" ? "사람 승인" : "안전 관문"} · <code>{g.action}</code>
+                  {g.grade && <span className="chip grade">{GRADE[g.grade] ?? g.grade}</span>}
+                  <b> {DECISION[g.decision ?? ""] ?? g.decision}</b>
+                  {g.requester && <> · {agentLabel(g.requester)}</>}
+                  {!!g.amount && <> · {g.amount.toLocaleString()}원</>}
+                  {g.reason && <span className="note"> {g.reason}</span>}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section className="panel">

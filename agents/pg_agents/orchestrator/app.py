@@ -28,9 +28,10 @@ from ..client import call_agent, new_meta
 from ..common_log import log_event, query
 from ..config import PORTS, STORE, agent_url, ensure_dirs, set_agent_name
 from ..contracts import AgentCard, AgentRequest
+from ..tracing import build_trace
 from .engine import Engine, Job
 from .fakes import fake_caller
-from .plan import _color, _size, build_plan, paper_id
+from .plan import build_plan, quote_spec, report_input
 
 NAME = "orchestrator"
 DEPTS = [n for n in PORTS if n != NAME]
@@ -85,6 +86,12 @@ async def agents() -> dict[str, Any]:
 @app.get("/logs")
 async def logs(context_id: str | None = None, limit: int = 300) -> dict[str, Any]:
     return {"data": query(context_id, limit), "meta": {}}
+
+
+@app.get("/trace")
+async def trace(context_id: str, limit: int = 2000) -> dict[str, Any]:
+    """공통 로그로 만든 의뢰별 추적(에이전트 탭 워터폴). 로그에 있는 것만 담는다."""
+    return {"data": build_trace(context_id, limit), "meta": {}}
 
 
 @app.post("/jobs")
@@ -163,10 +170,8 @@ async def shops(q: str = "", sido: str = "", limit: int = 20) -> dict[str, Any]:
 async def quote(ctx: str, body: dict[str, Any]) -> dict[str, Any]:
     """사양은 검수 결과(쪽수)와 의뢰 옵션(크기·도련·종이)에서 만든다. 부수와 협력사만 사용자가 고른다."""
     j = _job(ctx)
-    pf = j.results.get("preflight") or {}
-    spec = {**{k: v for k, v in _size(j).items() if k != "pdf_ref"}, "pages": pf.get("pages", 1), "copies": int(body.get("copies") or 100),
-            "paper_id": paper_id(j)}
-    r = await _ask("shop", "request_quote", ctx, {"pdf_ref": j.pdf_ref, "partner": body.get("partner"), "spec": {**spec, **(body.get("spec") or {})}})
+    spec = quote_spec(j, int(body.get("copies") or 100), body.get("spec"))
+    r = await _ask("shop", "request_quote", ctx, {"pdf_ref": j.pdf_ref, "partner": body.get("partner"), "spec": spec})
     if r["status"] == "completed":
         j.results["quote"] = r["output"]["quote"]
         j.results.pop("order", None)
@@ -205,19 +210,7 @@ async def decide_review(review_id: str, body: dict[str, Any], authorization: str
 @app.post("/jobs/{ctx}/report")
 async def report(ctx: str) -> dict[str, Any]:
     j = _job(ctx)
-    res = j.results
-    co = res.get("color") or {}
-    issues = [{"severity": x.get("severity"), "title": x.get("title"), "page": x.get("page")}
-              for x in [*(res.get("preflight") or {}).get("issues", []), *co.get("issues", [])]]
-    inp = {"pdf_ref": j.pdf_ref, "filename": j.filename, "pages": (res.get("preflight") or {}).get("pages"), "paper_id": paper_id(j),
-           "paper_name": ((res.get("risk") or {}).get("paper") or {}).get("name"), "issues": issues,
-           "proofread": [{k: s.get(k) for k in ("page", "kind_label", "original", "suggestion")} for s in (res.get("proofread") or {}).get("suggestions", [])],
-           "risks": [{"title": r.get("name"), "level": r.get("level")} for r in (res.get("risk") or {}).get("risks", [])],
-           "quote": res.get("quote"), "order": res.get("order")}
-    if co.get("color_report"):
-        inp["color"] = {"input": {k: v for k, v in _color(j).items() if k != "pdf_ref"}, "mean_de": co["color_report"].get("weightedMeanDE"),
-                        "profile": co.get("profile")}
-    r = await _ask("report", "compile_report", ctx, inp)
+    r = await _ask("report", "compile_report", ctx, report_input(j))
     if r["status"] == "completed":
         j.results["report"] = {k: r["output"][k] for k in ("markdown", "path", "verified")}
     return {"data": r, "meta": {}}

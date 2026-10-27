@@ -77,6 +77,16 @@ export function toScreen(v: JobView): { analysis: Analysis; risks: (Risk & { hit
 export type JobRow = { context_id: string; status: string; filename: string; created: number };
 export const listJobs = async () => j<JobRow[]>(await fetch(`${ORCH}/jobs`));
 
+// ---- 6단계: 추적(공통 로그의 요청↔결과 짝으로 만든 구간·관문·사건). 로그에 있는 것만 담긴다 ----
+export type TraceSpan = { agent: string; skill: string | null; requester: string | null; start_ms: number; end_ms: number | null; ms: number | null;
+  status: string | null; outcome: string | null; grade: string | null; open: boolean; unpaired?: boolean };
+export type TraceGate = { at_ms: number; kind: string; source: string; requester: string | null; action: string | null; decision: string | null;
+  grade: string | null; reason: string | null; amount: number | null; review_id: string | null; execution_id: string | null };
+export type Trace = { context_id: string; t0: string | null; total_ms: number; spans: TraceSpan[]; gates: TraceGate[];
+  events: { at_ms: number; kind: string; source: string; skill: string | null; status: string | null; outcome: string | null }[];
+  agents: { agent: string; calls: number; ms: number; open: number }[]; lines: number };
+export const getTrace = async (ctx: string) => j<Trace>(await fetch(`${ORCH}/trace?context_id=${encodeURIComponent(ctx)}`));
+
 // ---- 5단계: 목업 인쇄소 견적(B)·주문(C, 사람 승인)·보고서(A). 상태를 바꾸는 일은 모두 safety 관문을 거친다 ----
 export type AgentReply = { status: string; outcome: string | null; output: Record<string, any>; question: Record<string, any> | null }; // eslint-disable-line @typescript-eslint/no-explicit-any
 export type Review = { review_id: string; status: string; expires_at: string; decided_by: string | null; action: string; amount: number; summary: string };

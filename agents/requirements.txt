@@ -1,0 +1,16 @@
+# 에이전트 실행에 필요한 파이썬 패키지(2026-10-27에 설치해 테스트 58개를 통과한 버전). conda env `dev`(python 3.12) 기준.
+#   conda create -y -n dev python=3.12 nodejs=22   # Node 에이전트(preflight·color·paper)도 이 환경의 node로 돈다
+#   conda activate dev && pip install -r requirements.txt
+fastapi==0.162.0              # 에이전트 서버 뼈대(pg_agents/server.py)
+uvicorn==0.54.0
+python-multipart==0.0.32      # 오케스트레이터 POST /jobs의 PDF 업로드
+httpx==0.28.1                 # 에이전트끼리 A2A 호출
+pydantic==2.14.1              # A2A 계약(contracts.py)
+numpy==2.5.4                  # guide의 BM25·점수 정규화
+pymupdf==2.0                  # proofread의 쪽별 글·위치(import fitz — 2.0에서는 쓸 때 경고가 난다)
+kiwipiepy==0.24.1             # proofread 오타·띄어쓰기 탐지
+sentence-transformers==6.2.0  # guide의 e5-small 임베딩(torch 포함, 첫 요청 때 불러온다)
+mcp==2.3.0                    # MCP 서버(pg_agents/mcp_server.py). 1.x(FastMCP)에서도 돈다
+pytest==9.1.1
+pytest-asyncio==1.4.1
+langsmith==0.14.12            # (선택) LANGSMITH_API_KEY를 사용자가 직접 넣었을 때만 쓴다

@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // 받아 와서 그대로 두는 외부 번들(pdf.js worker, lcms-wasm, onnxruntime-web wasm 글루)은 검사하지 않는다
+    "public/**",
   ]),
 ]);
 
