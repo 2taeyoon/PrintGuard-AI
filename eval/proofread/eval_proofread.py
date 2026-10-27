@@ -163,3 +163,6 @@ if LLM_ON:  # 실제 API 호출 수(캐시 적중은 뺀다)
     res["llm"] += f", API 호출 {det.DETECTORS['llm'].cache_info().misses}회"
 res["samples"] = [{"text": DOCS[0]["text"][:400], "errors": DOCS[0]["errors"]}]
 (HERE / "results.json").write_text(json.dumps(res, ensure_ascii=False, indent=1), encoding="utf-8")
+# 앱의 '왜 이렇게' 탭이 읽는 사본(평가 문서 본문은 빼고 수치만)
+pub = {k: v for k, v in res.items() if k != "samples"}
+(ROOT / "frontend" / "public" / "data" / "proofread_eval.json").write_text(json.dumps(pub, ensure_ascii=False), encoding="utf-8")

@@ -10,6 +10,7 @@ const TABS = [
   { href: "/papers", label: "종이 안내" },
   { href: "/shops", label: "인쇄소 지도" },
   { href: "/agents", label: "에이전트" },
+  { href: "/why", label: "왜 이렇게" },
 ];
 
 // 상단 헤더 셸. 768px 이하에서는 메뉴 버튼으로 메뉴를 펼친다.
