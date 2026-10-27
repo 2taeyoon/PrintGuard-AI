@@ -19,7 +19,7 @@ h1, h2, h3, h4 { margin: 0; }
 /* 메뉴 칸이 헤더 높이를 그대로 채운다. 호버 칸과 선택된 칸은 같은 상자(72px, 모서리 각짐) */
 .topmenu a { display: inline-flex; align-items: center; justify-content: center; height: 72px; padding: 0 20px; border-radius: 0;
   font-size: 1.6rem; font-weight: 600; line-height: 1; color: var(--blackmute); white-space: nowrap; transition: background 0.2s ease, color 0.2s ease; }
-.topmenu a.on { background: var(--themaLight); color: var(--thema); }
+.topmenu a.on { background: var(--thema); color: var(--white); }   /* 선택된 칸도 호버와 같은 모양 */
 .topbar_desc { margin-left: auto; font-size: 1.4rem; color: var(--blackmute); white-space: nowrap; }
 .icon_btn { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 0;
   border-radius: 4px; background: transparent; color: var(--blackmute); font-size: 1.8rem; cursor: pointer; transition: 0.3s ease; }
@@ -57,7 +57,9 @@ button.ghost { background: var(--white); color: var(--thema); }
 .note { color: var(--blackmute); font-size: 1.4rem; }
 .empty { padding: 64px 16px; text-align: center; color: var(--blackmute); font-size: 1.6rem; }
 .disclaimer { margin-top: 24px; padding-top: 16px; font-size: 1.4rem; color: var(--blackmute); border-top: 1px solid var(--borderLight); }
-.warn { background: var(--bgMuted); border-left: 3px solid var(--redBright); color: var(--black); padding: 8px 12px; font-size: 1.4rem; margin: 8px 0; }
+/* 주의 상자: 왼쪽 선 대신 붉은 면으로 알린다(파란 '그래서 고른 것' 상자와 같은 방식) */
+.warn { background: var(--redLight); color: var(--black); padding: 12px 16px; border-radius: 4px; font-size: 1.4rem; margin: 8px 0; }
+.warn b { color: var(--redBright); }
 .noauto { display: inline-flex; align-items: center; font-size: 1.2rem; font-weight: 600; padding: 4px 8px; border-radius: 999px;
   background: var(--themaPoint); color: var(--thema); margin-left: 4px; vertical-align: middle; line-height: 100%; }
 .sev-high { color: var(--redBright); } .sev-medium { color: var(--purpleBright); } .sev-low { color: var(--greenBright); }
@@ -456,3 +458,17 @@ mark.mk-term { background: var(--themaPoint); color: var(--black); font-weight: 
 .ev_table tr.is-pick > td:first-child { box-shadow: inset 3px 0 0 0 var(--thema); }
 .ev_table tr.is-pick > td.best { background: var(--themaPoint); }
 @media (hover: hover) { .ev_table tbody tr.is-pick:hover > td { background: var(--themaPoint); } }
+/* 상자 왼쪽의 색 막대는 쓰지 않는다. 뜻(심각도·상태·강조)은 배경 면과 글자로 알린다 */
+.card, .gcard, .ap_steps li, .cm_quote, .skills li, .ev_pick { border-left: 0; }
+.card.high, .card.medium, .card.low { border-left-color: transparent; }
+.gcard { border-color: var(--borderSubtle); }
+.skills li { padding-left: 0; }
+.ap_steps li.st-completed { background: var(--themaLight); }
+.ap_steps li.st-input-required { background: var(--themaPoint); }
+.ap_steps li.st-failed, .ap_steps li.st-rejected, .ap_steps li.st-canceled { background: var(--redLight); }
+.cm_quote { background: var(--themaLight); border-radius: 4px; }
+.ev_pick { border-radius: 4px; }
+.ev_table tr.is-pick > td:first-child { box-shadow: none; }
+/* 표 안의 숫자도 왼쪽 정렬로 통일한다(자릿수만 고정 폭으로) */
+.ev_table .n, .ev_table th.n, .qa_table .n, .qa_table th.n, .pcard th, .pcard td { text-align: left; }
+.gatelist .t, .wf_ms, .ev_bars .b_val, .qa_bars .b_val { text-align: left; }

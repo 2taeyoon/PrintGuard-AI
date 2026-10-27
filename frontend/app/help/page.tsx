@@ -63,7 +63,7 @@ export default function WhyPage() {
   return (
     <main className="common_wrap">
       <header className="page_head">
-        <h1>도움말 · 평가</h1>
+        <h1>도움말 · 평가 측정표</h1>
         <p className="lead">기능마다 왜 그 방법을 골랐는지, 무엇을 재서 그렇게 정했는지, 그래서 어떤 한계를 안고 읽어야 하는지 적었습니다.
           질문을 누르면 답이 펼쳐집니다. 숫자는 모두 이 저장소의 평가 스크립트로 직접 잰 값이고, 재지 않은 것은 ‘재지 않았다’고 적었습니다.
           측정표 전체는 <a href="#eval">이 페이지 아래쪽</a>에 이어집니다.</p>
