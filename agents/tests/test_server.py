@@ -96,3 +96,11 @@ def test_load_env_files(tmp_path, monkeypatch):
 def test_load_env_files_without_file(tmp_path):
     from pg_agents.config import load_env_files
     assert load_env_files((tmp_path / "없는.env",)) == []
+
+
+def test_root_explains_itself():
+    """포트를 브라우저로 열어 본 사람에게 여기가 API라는 것과 skill 목록을 알려 준다."""
+    r = client.get("/").json()["data"]
+    assert r["agent"] == "dummy" and "127.0.0.1:8752" in r["note"]
+    assert [s["id"] for s in r["skills"]] == ["echo", "bad"]
+    assert "POST /a2a" in r["endpoints"]

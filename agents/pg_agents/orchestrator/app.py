@@ -67,6 +67,17 @@ async def registry() -> dict[str, dict[str, Any]]:
     return out
 
 
+@app.get("/")
+async def root() -> dict[str, Any]:
+    """브라우저로 포트를 열어 본 사람에게 여기가 무엇인지 알려 준다(사람이 보는 화면은 앱 쪽이다)."""
+    return {"data": {"agent": NAME, "description": "검수 의뢰를 받아 부서 에이전트에게 나눠 맡기는 총괄",
+                     "note": "사람이 보는 화면이 아니라 API입니다. 앱은 http://127.0.0.1:8752 — 에이전트 탭에서 상태·소통 기록·추적을 봅니다.",
+                     "endpoints": {"GET /health": "살아 있는지", "GET /agents": "부서 에이전트 상태와 공개 카드",
+                                   "POST /jobs": "PDF 검수 의뢰(멀티파트)", "GET /jobs/{context_id}": "의뢰 상태·결과",
+                                   "GET /logs?context_id=": "공통 로그", "GET /trace?context_id=": "의뢰별 추적(워터폴)",
+                                   "GET /shops": "인쇄소 찾기", "GET /reviews": "사람 승인 대기열"}}, "meta": {}}
+
+
 @app.get("/health")
 async def health() -> dict[str, Any]:
     return {"data": {"status": "ok", "agent": NAME, "fake": FAKE}, "meta": {}}

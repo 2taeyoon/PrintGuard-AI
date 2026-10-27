@@ -46,6 +46,15 @@ def create_agent_app(card: AgentCard, handlers: Mapping[str, Handler]) -> FastAP
     app = FastAPI(title=f"PrintGuard {card.name} agent", lifespan=lifespan)
     app.add_middleware(CORSMiddleware, allow_origin_regex=r"http://(127\.0\.0\.1|localhost):\d+", allow_methods=["*"], allow_headers=["*"])
 
+    @app.get("/")
+    async def root() -> dict[str, Any]:
+        """브라우저로 포트를 열어 본 사람에게 여기가 무엇인지 알려 준다(사람이 보는 화면은 앱 쪽이다)."""
+        return {"data": {"agent": card.name, "description": card.description,
+                         "note": "사람이 보는 화면이 아니라 에이전트 API입니다. 앱은 http://127.0.0.1:8752 (에이전트 탭에서 이 카드를 볼 수 있습니다).",
+                         "endpoints": {"GET /health": "살아 있는지", "GET /.well-known/agent-card.json": "할 수 있는 일(skill)과 등급",
+                                       "POST /a2a": "다른 에이전트가 일을 맡기는 곳(토큰 필요)"},
+                         "skills": [{"id": s.id, "grade": s.grade, "description": s.description} for s in card.skills]}, "meta": {}}
+
     @app.get("/.well-known/agent-card.json")
     async def agent_card() -> dict[str, Any]:
         return card.model_dump(mode="json")
