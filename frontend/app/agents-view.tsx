@@ -1,7 +1,7 @@
 "use client";
 
 // 에이전트 화면 본체: 왼쪽에 에이전트 목록(기본 접힘, 누르면 그 자리에서 skill을 펼친다), 오른쪽에 의뢰 추적과 소통 기록.
-// '에이전트' 탭과 '인쇄 검수'의 에이전트 검사 모드에서 같은 컴포넌트를 쓴다.
+// '인쇄 검수'에서 에이전트 검사 모드를 고르면 이 화면이 그 자리에 펼쳐진다(따로 된 탭은 없앴다).
 import { useEffect, useState } from "react";
 import { getTrace, listAgents, listJobs, listLogs, orchestratorUp, type AgentInfo, type JobRow, type LogRow, type Trace } from "@/lib/agentClient";
 import { agentLabel, skillLabel, SkillName } from "./agent-ui";
@@ -15,6 +15,31 @@ const GRADE: Record<string, string> = { read: "조회", A: "A 즉시 실행", B:
 const DECISION: Record<string, string> = { executed: "실행", pending_review: "사람 승인 대기", rejected: "거절", approved: "승인", expired: "기한 지나 거절" };
 const STATUS: Record<string, string> = { on: "켜짐", fake: "가짜", off: "꺼짐" };
 const secs = (ms: number) => `${(ms / 1000).toFixed(ms < 10000 ? 2 : 1)}초`;
+
+/** 에이전트가 전부 살아 있는지 한눈에 보는 뱃지. 접어 둔 상태에서도 보이게 제목 옆에 붙인다 */
+export function AgentHealth() {
+  const [agents, setAgents] = useState<Record<string, AgentInfo> | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    const tick = () => listAgents().then((a) => { if (alive) setAgents(a); }).catch(() => { if (alive) setAgents(null); });
+    tick();
+    const t = setInterval(tick, 5000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+
+  if (!agents) return <span className="chip bad">에이전트 연결 안 됨</span>;
+  const rows = Object.entries(agents);
+  const off = rows.filter(([, a]) => a.status === "off").map(([n]) => agentLabel(n));
+  const fake = rows.filter(([, a]) => a.status === "fake").map(([n]) => agentLabel(n));
+  const ok = off.length === 0;
+  return (
+    <span className={`chip ${ok ? "good" : "bad"}`} title={ok ? "모두 응답합니다" : `꺼짐: ${off.join(", ")}`}>
+      에이전트 {rows.length - off.length}/{rows.length} {ok ? "정상" : `꺼짐 ${off.length}개`}
+      {fake.length > 0 && ` · 가짜 ${fake.length}개`}
+    </span>
+  );
+}
 
 export default function AgentsView({ initialCtx = "", showWarn = true }: { initialCtx?: string; showWarn?: boolean }) {
   // initialCtx가 바뀌면(검사 중에 새 의뢰가 생기면) 그 의뢰로 따라간다. 사용자가 직접 고른 뒤에는 그대로 둔다.

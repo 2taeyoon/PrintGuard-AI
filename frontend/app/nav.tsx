@@ -8,7 +8,6 @@ const TABS = [
   { href: "/", label: "인쇄 검수" },
   { href: "/papers", label: "종이 안내" },
   { href: "/shops", label: "인쇄소 지도" },
-  { href: "/agents", label: "에이전트" },
   { href: "/help", label: "도움말·평가" },
 ];
 

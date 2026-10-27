@@ -23,7 +23,7 @@ export default function Shops() {
   const [shops, setShops] = useState<Shop[]>([]);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [err, setErr] = useState("");
-  const [sido, setSido] = useState("서울특별시");
+  const [sido, setSido] = useState("전체"); // 처음에는 전국을 보여 준다
   const [q, setQ] = useState("");
   const [bookOnly, setBookOnly] = useState(false);
   const [ready, setReady] = useState(false);
