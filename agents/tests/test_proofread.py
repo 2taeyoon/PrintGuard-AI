@@ -102,9 +102,9 @@ def test_gemini_default_model_and_rate_limit_retry(monkeypatch):
 
     assert _gemini("프롬프트", "key") == "[]"
     assert len(urls) == 3 and waits == [0.01, 0.01]
-    assert "gemini-2.5-flash-lite:generateContent" in urls[0]
+    assert "gemini-3.5-flash-lite:generateContent" in urls[0]
 
-    monkeypatch.setenv("PG_LLM_MODEL", "gemini-2.5-flash")
+    monkeypatch.setenv("PG_LLM_MODEL", "gemini-3.5-flash")
     seq.append(Res(200, "[]"))
     _gemini("프롬프트", "key")
-    assert "gemini-2.5-flash:generateContent" in urls[-1]
+    assert "gemini-3.5-flash:generateContent" in urls[-1]

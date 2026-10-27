@@ -53,7 +53,7 @@ cp agents/.env.example agents/.env      # Windows: copy agents\.env.example agen
 ```ini
 # agents/.env
 GEMINI_API_KEY=발급받은_키
-PG_LLM_MODEL=gemini-2.5-flash-lite    # 무료 등급이 있는 모델(기본값)
+PG_LLM_MODEL=gemini-3.5-flash-lite    # 무료 등급이 있는 모델(기본값)
 PG_PROOF_METHODS=rules,kiwi_typo,llm
 LANGSMITH_API_KEY=발급받은_키
 LANGSMITH_PROJECT=printguard
@@ -61,7 +61,7 @@ LANGSMITH_PROJECT=printguard
 
 | 기능 | 환경변수 | 받는 곳 | 쓰는 법 |
 | --- | --- | --- | --- |
-| LLM 교정 제안(규칙·Kiwi에 더해) | `GEMINI_API_KEY`, 모델은 `PG_LLM_MODEL`(기본 `gemini-2.5-flash-lite` — 무료 등급), `PG_PROOF_METHODS` | [Google AI Studio](https://aistudio.google.com/apikey) | `.env`에 넣고 `cd agents && python run_agents.py` |
+| LLM 교정 제안(규칙·Kiwi에 더해) | `GEMINI_API_KEY`, 모델은 `PG_LLM_MODEL`(기본 `gemini-3.5-flash-lite` — 무료 등급. `gemini-2.5-*`는 신규 키에 제공되지 않음), `PG_PROOF_METHODS` | [Google AI Studio](https://aistudio.google.com/apikey) | `.env`에 넣고 `cd agents && python run_agents.py` |
 | LLM 교정기 정량평가 | 위와 같음 | 위와 같음 | `python eval/proofread/eval_proofread.py` (키가 있으면 LLM 조합이 표에 더해짐. API 호출 121회 — 무료 등급 하루 한도 안, 분당 한도에 걸리면 기다렸다 다시 부름) |
 | 추적을 LangSmith로 보내기 | `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT`(기본 `printguard`) | [LangSmith](https://smith.langchain.com) → Settings → API Keys | `cd agents && python -m pg_agents.langsmith_export <context_id>` |
 
@@ -89,7 +89,8 @@ LangSmith로 나가는 것은 공통 로그로 만든 추적(에이전트·skill
 - 불량 위험도는 학습 모델이 아니라 점수표이며, 실제 불량 데이터로 보정하지 않았습니다.
 - 인허가 '영업/정상'은 신고 기준이라 실제 영업 여부와 다를 수 있습니다.
 - 에이전트 모드의 견적·주문은 목업 협력사 대상이고 단가도 시연용입니다. 실제 인쇄소에는 아무것도 보내지 않습니다. 사람 승인 토큰도 목 모드(`human:<이름>`)뿐입니다.
-- 교정은 제안만 하며 자동으로 고치지 않습니다. 평가셋이 규칙과 겹쳐 재현율이 부풀어 있습니다(실제 원고로 다시 재야 함). LLM 교정기와 LangSmith 추적은 사용자가 `GEMINI_API_KEY`·`LANGSMITH_API_KEY`를 직접 넣을 때만 씁니다 — 키를 찾거나 읽지 않습니다.
+- 교정은 제안만 하며 자동으로 고치지 않습니다. 합성 평가셋(문서 60개)에서 기본 조합(규칙+Kiwi 오타)은 재현율 60.3%·정밀도 99.5%, LLM을 더하면 98.1%·97.8%입니다(`gemini-3.5-flash-lite`, 2026-10-27). 규칙 기반 쪽은 오류를 넣는 규칙과 찾는 규칙이 겹쳐 재현율이 부풀어 있어 실제 원고로 다시 재야 합니다.
+- 기본값은 로컬 조합입니다. LLM을 켜면 PDF 본문이 외부 API로 나가므로(앱의 나머지 계산은 모두 기기 안) `PG_PROOF_METHODS`로 직접 켜야 합니다. LLM 교정기와 LangSmith 추적은 사용자가 `GEMINI_API_KEY`·`LANGSMITH_API_KEY`를 직접 넣을 때만 씁니다 — 키를 찾거나 읽지 않습니다.
 - 오케스트레이터의 의뢰 목록은 메모리에만 있어 재시작하면 사라집니다(safety·shop 기록과 공통 로그는 SQLite에 남아 추적은 유지됩니다).
 
 ## 데이터 출처

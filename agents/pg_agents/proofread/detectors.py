@@ -145,7 +145,7 @@ def _gemini(prompt: str, key: str, *, tries: int = 4) -> str:
     import time
 
     import httpx
-    model = os.environ.get("PG_LLM_MODEL", "gemini-2.5-flash-lite")
+    model = os.environ.get("PG_LLM_MODEL", "gemini-3.5-flash-lite")
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     body = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0}}
     for i in range(tries):
