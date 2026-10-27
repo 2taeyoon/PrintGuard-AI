@@ -101,7 +101,7 @@ METHODS = {"규칙": ["rules"], "Kiwi 오타": ["kiwi_typo"], "Kiwi 띄어쓰기
 
 
 # LLM 교정기는 GEMINI_API_KEY가 있을 때만 평가에 넣는다(키가 없으면 조합을 아예 넣지 않는다 — 빈 결과를 0점으로 적지 않기 위해).
-# 같은 글을 방법 조합마다 다시 묻지 않도록 호출을 캐시한다(문서 60개 + 원문 1개 = API 호출 61회).
+# 같은 글을 방법 조합마다 다시 묻지 않도록 호출을 캐시한다(문서 60개의 오류본·원문 + 전체 원문 1개 = API 호출 121회).
 load_env_files()  # agents/.env 또는 레포 루트 .env의 GEMINI_API_KEY를 쓴다
 LLM_MODEL = os.environ.get("PG_LLM_MODEL", "gemini-2.5-flash")
 LLM_ON = bool(os.environ.get("GEMINI_API_KEY"))
