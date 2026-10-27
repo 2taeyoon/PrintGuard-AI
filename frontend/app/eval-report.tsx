@@ -49,7 +49,7 @@ function Section({ id, title, lead, source, children }: { id: string; title: str
   );
 }
 
-const Head = () => <h2 className="qa_group" id="eval">측정표 — 무엇과 비교해서 골랐나</h2>;
+const Head = () => <h2 className="qa_group" id="eval">평가 측정표 — 무엇과 비교해서 골랐나</h2>;
 
 /** 표를 읽기 전에 결론부터: 이 수치라서 이것을 골랐다 */
 const Pick = ({ children }: { children: React.ReactNode }) => (

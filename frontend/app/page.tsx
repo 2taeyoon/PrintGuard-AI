@@ -234,7 +234,7 @@ function Home() {
 
   return (
     <div className="common_wrap">
-      {mode === "direct" && !guide && !guideStatus.startsWith("가이드 검색 사용 불가") && <ModelLoadingScreen status={guideStatus} onSkip={() => setMode("agent")} />}
+      {mode === "direct" && !guide && !guideStatus.startsWith("가이드 검색 사용 불가") && <ModelLoadingScreen status={guideStatus} />}
       <header className="page_head">
         <h1>인쇄 검수</h1>
         {mode === "direct" ? <GuideBadge ready={!!guide} status={guideStatus} /> : <span className="badge">가이드 검색은 guide 에이전트가 합니다</span>}

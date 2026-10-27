@@ -16,6 +16,8 @@
   --borderSubtle: #f2f2f2;
   --shadow: rgba(0, 0, 0, 0.08);
   --redBright: #ff3b30;
+  --redLight: #ffecea;   /* 주의 상자 배경(붉은 계열의 옅은 면) */
+  --redPoint: #ffd5d1;
   --greenBright: #34c759;
   --purpleBright: #af52de;
 
