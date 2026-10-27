@@ -1,9 +1,11 @@
 "use client";
 
-// 도움말 탭 — 각 기능을 왜 그렇게 만들었는지, 무엇을 쟀는지, 그래서 무엇을 주의해야 하는지.
+// 도움말·평가 탭 — 각 기능을 왜 그렇게 만들었는지, 무엇을 쟀는지, 그래서 무엇을 주의해야 하는지.
+// 질문(Q)은 모두 접힌 채로 시작하고, 누른 것만 펼쳐진다. 아래쪽에 측정표 전체(평가)가 이어 붙는다.
 // 교정 비교 수치는 하드코딩하지 않고 평가 결과 파일(public/data/proofread_eval.json)을 읽는다. 다시 재면 이 화면도 바뀐다.
 import Image from "next/image";
 import { useEffect, useState } from "react";
+import EvalReport from "../eval-report";
 
 type Method = {
   methods: string[]; recall: number; recall_ci: [number, number]; precision: number; precision_ci: [number, number];
@@ -18,10 +20,10 @@ const KIND: [string, string][] = [["known_misuse", "사전에 있는 오용"], [
 const LOCAL = "규칙+Kiwi 오타";          // 앱 기본값(기기 안에서만)
 const WITH_LLM = "규칙+Kiwi 오타+LLM";   // 키를 넣고 켤 때
 
-/** 질문 하나. 펼치면 '왜 → 어떻게 → 결과 → 주의' 순서로 읽힌다 */
-function QA({ q, open, children }: { q: string; open?: boolean; children: React.ReactNode }) {
+/** 질문 하나. 처음에는 접혀 있고(질문만 보인다), 누르면 '왜 → 어떻게 → 결과 → 주의' 순서로 펼쳐진다 */
+function QA({ q, children }: { q: string; children: React.ReactNode }) {
   return (
-    <details className="qa" open={open}>
+    <details className="qa">
       <summary><span>{q}</span></summary>
       <div className="qa_body">{children}</div>
     </details>
@@ -61,9 +63,10 @@ export default function WhyPage() {
   return (
     <main className="common_wrap">
       <header className="page_head">
-        <h1>도움말</h1>
+        <h1>도움말 · 평가</h1>
         <p className="lead">기능마다 왜 그 방법을 골랐는지, 무엇을 재서 그렇게 정했는지, 그래서 어떤 한계를 안고 읽어야 하는지 적었습니다.
-          숫자는 모두 이 저장소의 평가 스크립트로 직접 잰 값이고, 재지 않은 것은 ‘재지 않았다’고 적었습니다. 측정표 전체는 <a href="/eval">평가</a> 탭에 있습니다.</p>
+          질문을 누르면 답이 펼쳐집니다. 숫자는 모두 이 저장소의 평가 스크립트로 직접 잰 값이고, 재지 않은 것은 ‘재지 않았다’고 적었습니다.
+          측정표 전체는 <a href="#eval">이 페이지 아래쪽</a>에 이어집니다.</p>
       </header>
 
       <section className="panel qa_intro">
@@ -77,7 +80,7 @@ export default function WhyPage() {
 
       <h2 className="qa_group">검사·검색</h2>
 
-      <QA q="가이드 검색에 왜 LLM이 아니라 임베딩 모델을 썼나요?" open>
+      <QA q="가이드 검색에 왜 LLM이 아니라 임베딩 모델을 썼나요?">
         <Why>인쇄 가이드는 틀리면 비용이 드는 정보입니다(도련 3mm, 잉크량 한도 같은 값). LLM이 문장을 새로 만들면 그럴듯하지만 틀린 값이 섞일 수 있어서,
           <b> 답을 만들지 않고 가이드 원문 절을 찾아 그대로 보여 주는 쪽</b>을 택했습니다. 대신 사용자가 가이드와 다른 단어로 물어도 찾아야 하니 단어 일치만으로는 부족했습니다.</Why>
         <How>청킹 4종 × 임베딩 모델 4종을 질문 92개로 비교하고, 임베딩(dense)과 단어 검색(2-gram BM25)을 각각 z-정규화해 <b>0.5 : 0.5</b>로 섞었습니다.
@@ -86,8 +89,8 @@ export default function WhyPage() {
           그래서 <b>브라우저에 올릴 수 있는 작은 모델</b>로 정했습니다.</Result>
         <Shot w={1568} h={751} src="/shots/guide-search.jpg" alt="인쇄 검수 화면 위쪽의 가이드 검색 결과"
           caption="인쇄 검수 화면 맨 위에서 바로 찾습니다. 답을 새로 쓰지 않고 가이드 원문 절을 그대로 보여 주며, 검색에 걸린 구간(연한 배경)과 질문 단어(진한 표시)를 원문 위에 표시합니다." />
-        <Shot w={1568} h={751} src="/shots/eval-search.jpg" alt="평가 탭의 청킹 × 임베딩 모델 비교표"
-          caption="고른 근거: 청킹 4종 × 모델 4종의 1위 적중률 비교(평가 탭). 2.3GB짜리 큰 모델과 구간이 겹쳐, 브라우저에 올릴 수 있는 작은 모델을 택했습니다." />
+        <Shot w={1568} h={751} src="/shots/eval-search.jpg" alt="청킹 × 임베딩 모델 비교표"
+          caption="고른 근거: 청킹 4종 × 모델 4종의 1위 적중률 비교(이 페이지 아래 측정표). 2.3GB짜리 큰 모델과 구간이 겹쳐, 브라우저에 올릴 수 있는 작은 모델을 택했습니다." />
         <Care>평가 질문 92개를 가이드를 쓴 사람이 직접 만들었습니다. 질문과 정답 문장이 단어를 공유해 BM25에 유리하고, 대부분 설정이 90% 안팎 천장에 붙습니다.
           모델 사이 몇 %p 차이는 질문 한두 개로 뒤집히므로, 외부 사람이 쓴 질문으로 다시 재야 합니다.</Care>
       </QA>
@@ -124,7 +127,7 @@ export default function WhyPage() {
 
       <h2 className="qa_group">교정 — 왜 기본은 규칙이고 LLM은 선택인가</h2>
 
-      <QA q="오탈자 교정에 어떤 방법을 쓰고, 왜 그렇게 정했나요?" open>
+      <QA q="오탈자 교정에 어떤 방법을 쓰고, 왜 그렇게 정했나요?">
         <Why>맞춤법 교정은 <b>틀린 지적 하나가 신뢰를 깎습니다</b>. 그래서 많이 찾는 쪽(재현율)보다 지적이 맞는 쪽(정밀도)을 먼저 봤고,
           원고를 자동으로 고치지 않고 제안만 합니다.</Why>
         <How>정답을 아는 평가셋을 만들어 비교했습니다 — 가이드 문단을 묶은 문서 {ev?.n_docs ?? "60"}개에 오류 {ev?.n_errors ?? "360"}개를 일부러 넣고
@@ -240,7 +243,7 @@ export default function WhyPage() {
 
       <h2 className="qa_group">내 파일은 어디로 가나</h2>
 
-      <QA q="PDF가 서버로 올라가나요? 외부로 나가는 것이 있나요?" open>
+      <QA q="PDF가 서버로 올라가나요? 외부로 나가는 것이 있나요?">
         <Result><b>바로 검사 모드는 아무것도 나가지 않습니다.</b> PDF 해석·색 변환·검색 모델이 모두 브라우저 안에서 돌고, 종이·인쇄소 데이터도 이 앱이 들고 있는 파일입니다.</Result>
         <Result><b>에이전트 검사 모드도 내 컴퓨터 안입니다.</b> 에이전트는 127.0.0.1에서만 돌고, PDF는 로컬 폴더에 저장되며 에이전트끼리는 파일 내용 대신 해시(pdf_ref)만 주고받습니다.</Result>
         <Result>선택 기능 두 개만 밖으로 나갑니다 — <b>LLM 교정</b>을 켜면 교정할 본문이 Gemini API로 가고(기본 꺼짐),
@@ -251,9 +254,11 @@ export default function WhyPage() {
           인쇄소 지도의 길찾기 링크는 구글 지도로 나가는 일반 링크입니다.</Care>
       </QA>
 
+      {/* 측정표 전체(옛 '평가' 탭)를 같은 화면에 이어 붙인다 */}
+      <EvalReport />
+
       <section className="panel qa_more">
-        <h2>더 자세한 수치</h2>
-        <p>청킹·임베딩 모델 비교, 색 엔진 대조, 종이 등급별 프로파일, 종이 흰색 보정, 교정 탐지기 비교의 전체 표는 <a href="/eval">평가</a> 탭에 있습니다.</p>
+        <h2>이 수치를 다시 만들려면</h2>
         <p className="note">평가 스크립트: <code>eval/run_eval.py</code>(검색), <code>eval/proofread/eval_proofread.py</code>(교정),
           <code>frontend/scripts/test-*.mts</code>(색·종이·보정). 화면의 수치는 그 산출물(<code>public/data/eval_summary.json</code>,
           <code>proofread_eval.json</code>)을 그대로 읽어 그립니다.</p>

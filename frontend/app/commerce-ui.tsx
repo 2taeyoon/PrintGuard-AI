@@ -50,13 +50,13 @@ export function CommercePanel({ ctx }: { ctx: string }) {
           <input type="number" min={1} max={100000} value={copies} onChange={(e) => setCopies(Math.max(1, Number(e.target.value) || 1))} />
         </label>
         <button type="button" disabled={!!busy} onClick={getQuote}>{busy === "quote" ? "견적 요청 중…" : "견적 받기"}</button>
-        <span className="chip grade">B · preflight가 사양 대조</span>
+        <span className="chip grade">B · 사전 검사 에이전트(preflight)가 사양 대조</span>
       </div>
 
       {quote && quote.status !== "completed" && <p className="cm_bad">견적 거절: {quote.output.reason ?? quote.output.message ?? quote.outcome}</p>}
       {q && (
         <div className="cm_quote">
-          <div><b>{q.partner_name}</b> <span className="cm_amount">{won(q.amount)}</span> <span className="note">견적 {q.quote_id}</span></div>
+          <div><b>{q.partner_name}</b> <span className="cm_amount">{won(q.amount)}</span> <span className="note">견적 번호(quote_id) {q.quote_id}</span></div>
           <ul>{q.breakdown.map((b: { item: string; won: number }, i: number) => <li key={i}>{b.item} <b>{won(b.won)}</b></li>)}</ul>
           <p className="note">사양: {q.spec.pages}쪽 · {q.spec.copies}부 · {q.spec.width_mm}×{q.spec.height_mm}mm · 종이 {q.spec.paper_id} — {dec?.reason}</p>
           <div className="cm_row">
@@ -68,7 +68,7 @@ export function CommercePanel({ ctx }: { ctx: string }) {
 
       {order?.status === "input-required" && order.question && (
         <div className="question cm_approval" role="dialog" aria-label="주문 승인">
-          <span className="chip">안전 관문의 승인 요청 · {String(order.question.review_id)}</span>
+          <span className="chip">안전 관문의 승인 요청 · 승인 번호(review_id) {String(order.question.review_id)}</span>
           <h3>{String(order.question.text)}</h3>
           <p className="note">승인은 사람만 할 수 있습니다(에이전트 토큰은 거부). 기한이 지나면 자동으로 거절됩니다.</p>
           <div className="q_opts">
@@ -77,13 +77,13 @@ export function CommercePanel({ ctx }: { ctx: string }) {
           </div>
         </div>
       )}
-      {order?.status === "completed" && <p className="cm_ok">목업 주문 완료: {order.output.order.order_id} · {won(order.output.order.amount)} · {order.output.decision?.reason}</p>}
+      {order?.status === "completed" && <p className="cm_ok">목업 주문 완료 · 주문 번호(order_id) {order.output.order.order_id} · {won(order.output.order.amount)} · {order.output.decision?.reason}</p>}
       {order && !["completed", "input-required"].includes(order.status) && <p className="cm_bad">주문 거절: {order.output.reason ?? order.outcome}</p>}
 
       <div className="cm_row cm_report">
         <strong>검수 보고서</strong>
         <button type="button" className="ghost" disabled={!!busy} onClick={makeReport}>{busy === "report" ? "작성 중…" : "보고서 만들기"}</button>
-        <span className="chip grade">A · ΔE는 color가 다시 계산해 대조</span>
+        <span className="chip grade">A · 색 차이(ΔE)는 색 에이전트(color)가 다시 계산해 대조</span>
       </div>
       {report && report.status !== "completed" && <p className="cm_bad">보고서 거절: {report.output.reason ?? report.outcome}</p>}
       {report?.status === "completed" && (

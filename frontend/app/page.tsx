@@ -8,6 +8,7 @@ import type { Guide, Hit } from "@/lib/guide";
 import { GuideBadge, GuideCard, ModelLoadingScreen } from "./guide-ui";
 import GuideSearch from "./guide-search";
 import { AgentProgress, QuestionCard } from "./agent-ui";
+import AgentsView from "./agents-view";
 import { CommercePanel } from "./commerce-ui";
 import { FINISHES, GROUPS, loadPapers, surface, type FinishId, type Paper, type PaperDb } from "@/lib/papers";
 import { assess, inputFrom, type Risk } from "@/lib/risk";
@@ -73,7 +74,12 @@ function Home() {
   // 검사 방식: direct = 이 브라우저 안에서 바로, agent = 로컬 에이전트들이 A2A로 나눠 검사
   // 주소의 ?mode=agent로 시작 모드를 기억한다(에이전트 모드로 열면 브라우저 임베딩 모델을 아예 불러오지 않는다)
   const [mode, setModeState] = useState<"direct" | "agent">(sp.get("mode") === "agent" ? "agent" : "direct");
-  const setMode = (m: "direct" | "agent") => { setModeState(m); router.replace(m === "agent" ? "/?mode=agent" : "/", { scroll: false }); };
+  const [showAgents, setShowAgents] = useState(true); // '에이전트 검사'를 고르면 에이전트 탭 내용을 이 자리에 펼친다
+  const setMode = (m: "direct" | "agent") => {
+    setModeState(m);
+    if (m === "agent") setShowAgents(true); // 누르면 에이전트 내용이 바로 보이게
+    router.replace(m === "agent" ? "/?mode=agent" : "/", { scroll: false });
+  };
   const [agentUp, setAgentUp] = useState<boolean | null>(null);
   const [agentJob, setAgentJob] = useState<JobView | null>(null);
   const pdfData = useRef<Uint8Array | null>(null);
@@ -242,14 +248,26 @@ function Home() {
         <button type="button" role="tab" aria-selected={mode === "direct"} className={`pill${mode === "direct" ? " on" : ""}`} onClick={() => setMode("direct")}>
           바로 검사 <span className="count">브라우저 안</span></button>
         <button type="button" role="tab" aria-selected={mode === "agent"} className={`pill${mode === "agent" ? " on" : ""}`} onClick={() => setMode("agent")}>
-          에이전트 검사 <span className="count">A2A</span></button>
+          에이전트 검사 <span className="count">에이전트 협업(A2A)</span></button>
         <span className="note">
           {mode === "direct" ? "모든 계산을 이 브라우저 안에서 합니다. 파일은 어디로도 보내지 않습니다."
             : agentUp === null ? "에이전트 연결 확인 중…"
-            : agentUp ? <>로컬 에이전트(사전 검사·색·종이·가이드…)가 나눠서 검사합니다. 파일은 이 PC의 에이전트에만 보냅니다. <a href="/agents">소통 기록 보기</a></>
+            : agentUp ? "로컬 에이전트(사전 검사·색·종이·가이드…)가 나눠서 검사합니다. 파일은 이 PC의 에이전트에만 보냅니다. 아래에서 에이전트 상태와 소통 기록을 바로 볼 수 있습니다."
             : <span className="sev-high">에이전트가 꺼져 있습니다. <code>agents</code> 폴더에서 <code>python run_agents.py</code>로 켜세요.</span>}
         </span>
       </div>
+
+      {/* 에이전트 검사를 고르면 '에이전트' 탭과 같은 내용(목록·의뢰 추적·소통 기록)을 이 자리에서 본다 */}
+      {mode === "agent" && (
+        <section className={`gsearch panel agent_inline${showAgents ? " open" : ""}`}>
+          <button type="button" className="gs_toggle" aria-expanded={showAgents} onClick={() => setShowAgents((v) => !v)}>
+            <b>에이전트 상태 · 의뢰 추적 · 소통 기록</b>
+            <span className="note">누가 어떤 일을 할 수 있고(skill), 이번 의뢰를 누가 언제 얼마나 처리했는지 그대로 보여 줍니다.</span>
+            <span className="gs_mark" aria-hidden="true">{showAgents ? "－" : "＋"}</span>
+          </button>
+          {showAgents && <div className="gs_body"><AgentsView initialCtx={agentJob?.context_id ?? ""} showWarn={false} /></div>}
+        </section>
+      )}
 
       <form className="upload panel" onSubmit={submit}>
         <label>PDF 파일

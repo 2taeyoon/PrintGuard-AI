@@ -16,15 +16,17 @@ h1, h2, h3, h4 { margin: 0; }
 .topbar_inner { display: flex; align-items: center; gap: 32px; height: 72px; padding: 0 64px; }
 .brand { font-size: 2.0rem; font-weight: 700; color: var(--black); white-space: nowrap; }
 .topmenu { display: flex; align-items: center; gap: 4px; }
-.topmenu a { display: inline-flex; align-items: center; min-height: 40px; padding: 8px 16px; border-radius: 4px; font-size: 1.6rem;
-  color: var(--blackmute); white-space: nowrap; transition: 0.3s ease; }
-.topmenu a.on { background: var(--themaLight); color: var(--black); font-weight: 700; }
+/* 호버 칸과 선택된 칸이 정확히 같은 상자가 되도록 높이·줄간격·여백을 고정한다(글꼴 굵기가 바뀌어도 흔들리지 않게) */
+.topmenu a { display: inline-flex; align-items: center; justify-content: center; height: 40px; padding: 0 16px; border-radius: 8px;
+  font-size: 1.6rem; font-weight: 600; line-height: 1; color: var(--blackmute); white-space: nowrap; transition: background 0.2s ease, color 0.2s ease; }
+.topmenu a.on { background: var(--themaLight); color: var(--thema); }
 .topbar_desc { margin-left: auto; font-size: 1.4rem; color: var(--blackmute); white-space: nowrap; }
 .icon_btn { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 0;
   border-radius: 4px; background: transparent; color: var(--blackmute); font-size: 1.8rem; cursor: pointer; transition: 0.3s ease; }
 .menu_btn { display: none; min-width: 40px; min-height: 40px; }
 @media (hover: hover) {
-  .topmenu a:hover { background: var(--themaLight); color: var(--black); }
+  .topmenu a:hover { background: var(--bgMuted); color: var(--black); }   /* 선택된 칸(연한 파랑)과 구분되는 회색, 글자는 더 진하게 */
+  .topmenu a.on:hover { background: var(--themaPoint); color: var(--thema); }
   .icon_btn:hover { background: var(--bgMuted); color: var(--black); }
 }
 
@@ -100,7 +102,7 @@ canvas.heat { position: absolute; pointer-events: none; image-rendering: pixelat
 .card h4 { font-size: 1.6rem; font-weight: 700; margin-bottom: 4px; }
 .card p { margin: 4px 0; font-size: 1.4rem; color: var(--blacklight); }
 .card .src { font-size: 1.2rem; font-weight: 600; padding: 0 8px; border-radius: 999px; background: var(--bgMuted); color: var(--blackmute); margin-left: 4px; }
-@media (hover: hover) { .card:hover { box-shadow: 0 0 30px 0 var(--borderStrong); } }
+@media (hover: hover) { .card:hover { background: var(--bgMuted); border-color: var(--borderStrong); box-shadow: 0 0 30px 0 var(--borderStrong); } }
 .gcard { border: 1px solid var(--borderSubtle); border-left: 3px solid var(--thema); background: var(--bgMuted); padding: 8px 12px; margin-top: 8px; }
 .gcard .gh { font-size: 1.4rem; font-weight: 700; color: var(--thema); }
 .gcard .gb { font-size: 1.4rem; color: var(--blacklight); margin-top: 4px; }
@@ -289,7 +291,7 @@ mark.mk-term { background: var(--themaPoint); color: var(--black); font-weight: 
   font-size: 1.4rem; display: grid; place-items: center; }
 .qa > summary::after { content: "＋"; margin-left: auto; color: var(--blackmute); font-weight: 400; }
 .qa[open] > summary::after { content: "－"; }
-.qa > summary:hover { background: var(--bgSurface); }
+@media (hover: hover) { .qa > summary:hover { background: var(--bgMuted); color: var(--black); } }
 .qa_body { padding: 0 24px 20px 60px; font-size: 1.5rem; }
 .qa_body p { margin: 0 0 10px; max-width: 86ch; }
 .qa_body h3 { font-size: 1.6rem; margin: 16px 0 4px; }
@@ -331,7 +333,7 @@ mark.mk-term { background: var(--themaPoint); color: var(--black); font-weight: 
 .aitem:last-child { border-bottom: 0; }
 .aitem_head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 12px 16px; background: none; border: 0; text-align: left;
   font-size: 1.5rem; color: var(--black); cursor: pointer; }
-.aitem_head:hover { background: var(--bgSurface); }
+@media (hover: hover) { .aitem_head:hover { background: var(--bgMuted); color: var(--black); } }
 .aitem.open > .aitem_head { background: var(--themaLight); }
 .aitem_head .grow { flex: 1; }
 .aitem_head code { font-size: 1.2rem; color: var(--blacklight); }
@@ -363,7 +365,7 @@ mark.mk-term { background: var(--themaPoint); color: var(--black); font-weight: 
 /* 검수 화면 맨 위의 가이드 찾기(기본 접힘) */
 .gsearch { padding: 0; margin-bottom: 16px; }
 .gs_toggle { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 24px; background: none; border: 0; cursor: pointer; text-align: left; }
-.gs_toggle:hover { background: var(--bgSurface); }
+@media (hover: hover) { .gs_toggle:hover { background: var(--bgMuted); color: var(--black); } }
 .gsearch.open .gs_toggle { border-bottom: 1px solid var(--borderSubtle); }
 .gs_toggle b { font-size: 1.6rem; flex: none; }
 .gs_toggle .note { flex: 1; font-size: 1.3rem; }
@@ -415,3 +417,19 @@ mark.mk-term { background: var(--themaPoint); color: var(--black); font-weight: 
 .qa_shot img { display: block; width: 100%; max-width: 900px; border: 1px solid var(--borderLight); border-radius: 4px; background: var(--bgMuted); }
 .qa_shot figcaption { margin-top: 6px; font-size: 1.25rem; color: var(--blacklight); max-width: 86ch; }
 .qa_shot a { display: inline-block; max-width: 100%; }
+/* skill 이름: 우리말 이름(굵게) + 코드용 id(괄호) */
+.sk_ko { font-weight: 600; }
+.skills .s_head code, .waterfall .wf_who code, .timeline .what code, .gatelist code { color: var(--blacklight); }
+/* 인쇄 검수 화면 안에 펼쳐지는 에이전트 영역(에이전트 탭과 같은 내용) */
+.agent_inline .gs_body { padding: 16px 16px 20px; background: var(--bgSurface); }
+.agent_inline .agent_side { position: static; }
+.ev_lead { font-size: 1.5rem; color: var(--blacklight); margin: 0 0 16px; max-width: 90ch; }
+/* 누를 수 있는 것은 호버가 분명히 보이게(연한 회색은 잘 안 보여서 한 단계 진하게), 글자색은 항상 같이 지정한다 */
+@media (hover: hover) {
+  .ev_toc a:hover, .qa_more a:hover, .qa_body a:hover, .modebar a:hover { background: var(--themaLight); color: var(--thema); border-radius: 4px; }
+  .ev_table tbody tr:hover, .qa_table tbody tr:hover { background: var(--bgMuted); }
+  .ev_table tbody tr:hover td, .qa_table tbody tr:hover td { color: var(--black); }
+  .timeline li:hover, .gatelist li:hover { background: var(--bgMuted); }
+  .pages button:not(.on):hover { background: var(--themaLight); border-color: var(--themaPoint); color: var(--black); }
+  .pcard:hover, .rcard:hover, .gresult:hover { border-color: var(--borderStrong); box-shadow: 0 0 20px 0 var(--borderStrong); }
+}

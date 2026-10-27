@@ -1,6 +1,6 @@
 "use client";
 
-// 평가 탭 — 이 앱이 고른 설정이 왜 그 설정인지 수치로 보여 준다.
+// 평가 — 이 앱이 고른 설정이 왜 그 설정인지 수치로 보여 준다. 도움말 탭 아래쪽에 이어 붙는다.
 // 숫자는 전부 eval 산출물에서 만든 public/data/eval_summary.json·proofread_eval.json을 그대로 읽는다(화면에서 계산하지 않는다).
 // 다시 재려면: python eval/run_eval.py → python eval/build_eval_summary.py (교정은 eval/proofread/eval_proofread.py)
 import { useEffect, useState } from "react";
@@ -49,7 +49,9 @@ function Section({ id, title, lead, source, children }: { id: string; title: str
   );
 }
 
-export default function EvalPage() {
+const Head = () => <h2 className="qa_group" id="eval">측정표 — 무엇과 비교해서 골랐나</h2>;
+
+export default function EvalReport() {
   const [d, setD] = useState<Summary | null>(null);
   const [err, setErr] = useState("");
 
@@ -59,10 +61,10 @@ export default function EvalPage() {
   }, []);
 
   if (err) return (
-    <main className="common_wrap"><header className="page_head"><h1>평가</h1></header>
-      <div className="warn">평가 요약을 읽지 못했습니다({err}). <code>python eval/build_eval_summary.py</code>로 만들 수 있습니다.</div></main>
+    <><Head />
+      <div className="warn">평가 요약을 읽지 못했습니다({err}). <code>python eval/build_eval_summary.py</code>로 만들 수 있습니다.</div></>
   );
-  if (!d) return <main className="common_wrap"><header className="page_head"><h1>평가</h1></header><div className="empty">불러오는 중…</div></main>;
+  if (!d) return <><Head /><div className="empty">불러오는 중…</div></>;
 
   const s = d.search, pr = d.proofread;
   const chunks = s ? Object.keys(s.chunking) : [];
@@ -73,12 +75,10 @@ export default function EvalPage() {
   const prBest = Math.max(...prRows.map(([, m]) => m.f1), 0);
 
   return (
-    <main className="common_wrap">
-      <header className="page_head">
-        <h1>평가</h1>
-        <p className="lead">이 앱이 쓰는 설정(검색 모델·청킹·가중치, 색 변환, 종이 흰색 보정, 교정 탐지기)을 무엇과 비교해서 골랐는지 전부 수치로 적었습니다.
-          화면의 숫자는 저장소의 평가 스크립트가 남긴 산출물을 그대로 읽은 것이고, 다시 재면 이 화면도 같이 바뀝니다. 요약 생성일 {d.built}.</p>
-      </header>
+    <>
+      <Head />
+      <p className="ev_lead">이 앱이 쓰는 설정(검색 모델·청킹·가중치, 색 변환, 종이 흰색 보정, 교정 탐지기)을 무엇과 비교해서 골랐는지 전부 수치로 적었습니다.
+        화면의 숫자는 저장소의 평가 스크립트가 남긴 산출물을 그대로 읽은 것이고, 다시 재면 이 화면도 같이 바뀝니다. 요약 생성일 {d.built}.</p>
 
       <nav className="ev_toc panel">
         <a href="#search">가이드 검색</a><a href="#color">색 변환 검증</a><a href="#profiles">종이별 색 차이</a>
@@ -283,6 +283,6 @@ export default function EvalPage() {
       <p className="note ev_foot">이 화면의 수치를 다시 만들려면: <code>python eval/run_eval.py</code>(검색) ·
         <code>python eval/proofread/eval_proofread.py</code>(교정) · <code>npx tsx frontend/scripts/test-profiles.mts</code>(종이) 뒤에
         <code>python eval/build_eval_summary.py</code>를 돌리면 이 페이지가 읽는 요약이 갱신됩니다.</p>
-    </main>
+    </>
   );
 }
