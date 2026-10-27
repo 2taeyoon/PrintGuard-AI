@@ -44,6 +44,17 @@ claude mcp add printguard -- "$(conda run -n dev python -c 'import sys;print(sys
 ```
 테스트: `cd agents && python -m pytest -q`
 
+### 선택: 키를 넣어야 쓰는 기능
+키는 사용자가 직접 환경변수에 넣습니다(코드는 키를 찾거나 읽지 않고, 없으면 그 기능만 건너뜁니다).
+
+| 기능 | 환경변수 | 받는 곳 | 쓰는 법 |
+| --- | --- | --- | --- |
+| LLM 교정 제안(규칙·Kiwi에 더해) | `GEMINI_API_KEY`, 모델은 `PG_LLM_MODEL`(기본 `gemini-2.5-flash`) | [Google AI Studio](https://aistudio.google.com/apikey) | `PG_PROOF_METHODS=rules,kiwi_typo,llm` 로 두고 에이전트 실행 |
+| LLM 교정기 정량평가 | 위와 같음 | 위와 같음 | `python eval/proofread/eval_proofread.py` (키가 있으면 LLM 조합이 표에 더해짐. API 호출 61회) |
+| 추적을 LangSmith로 보내기 | `LANGSMITH_API_KEY`, 프로젝트는 `LANGSMITH_PROJECT`(기본 `printguard`) | [LangSmith](https://smith.langchain.com) → Settings → API Keys | `cd agents && python -m pg_agents.langsmith_export <context_id>` |
+
+LangSmith로 나가는 것은 공통 로그로 만든 추적(에이전트·skill·시간·상태·관문 결정)뿐입니다. PDF 본문·입력값은 공통 로그에 애초에 남기지 않으므로 나가지 않습니다.
+
 ## 저장소에 없는 파일
 라이선스나 용량 때문에 올리지 않았습니다.
 
