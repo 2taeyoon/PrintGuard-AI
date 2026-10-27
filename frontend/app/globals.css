@@ -13,11 +13,11 @@ h1, h2, h3, h4 { margin: 0; }
 /* ---------- 셸: 상단 헤더 + 본문 ---------- */
 .RouteApp { min-height: 100vh; }
 .topbar { position: sticky; top: 0; z-index: 900; background: var(--white); border-bottom: 1px solid var(--borderSubtle); }
-.topbar_inner { display: flex; align-items: center; gap: 32px; height: 72px; padding: 0 64px; }
+.topbar_inner { display: flex; align-items: center; gap: 32px; padding: 0 64px; }
 .brand { font-size: 2.0rem; font-weight: 700; color: var(--black); white-space: nowrap; }
-.topmenu { display: flex; align-items: center; gap: 4px; }
-/* 호버 칸과 선택된 칸이 정확히 같은 상자가 되도록 높이·줄간격·여백을 고정한다(글꼴 굵기가 바뀌어도 흔들리지 않게) */
-.topmenu a { display: inline-flex; align-items: center; justify-content: center; height: 40px; padding: 0 16px; border-radius: 8px;
+.topmenu { display: flex; align-items: center; }
+/* 메뉴 칸이 헤더 높이를 그대로 채운다. 호버 칸과 선택된 칸은 같은 상자(72px, 모서리 각짐) */
+.topmenu a { display: inline-flex; align-items: center; justify-content: center; height: 72px; padding: 0 20px; border-radius: 0;
   font-size: 1.6rem; font-weight: 600; line-height: 1; color: var(--blackmute); white-space: nowrap; transition: background 0.2s ease, color 0.2s ease; }
 .topmenu a.on { background: var(--themaLight); color: var(--thema); }
 .topbar_desc { margin-left: auto; font-size: 1.4rem; color: var(--blackmute); white-space: nowrap; }
@@ -25,8 +25,8 @@ h1, h2, h3, h4 { margin: 0; }
   border-radius: 4px; background: transparent; color: var(--blackmute); font-size: 1.8rem; cursor: pointer; transition: 0.3s ease; }
 .menu_btn { display: none; min-width: 40px; min-height: 40px; }
 @media (hover: hover) {
-  .topmenu a:hover { background: var(--bgMuted); color: var(--black); }   /* 선택된 칸(연한 파랑)과 구분되는 회색, 글자는 더 진하게 */
-  .topmenu a.on:hover { background: var(--themaPoint); color: var(--thema); }
+  .topmenu a:hover { background: var(--thema); color: var(--white); }   /* 호버는 파란 칸 + 흰 글자라 어느 쪽이든 확실히 보인다 */
+  .topmenu a.on:hover { background: var(--thema); color: var(--white); }
   .icon_btn:hover { background: var(--bgMuted); color: var(--black); }
 }
 
@@ -291,7 +291,6 @@ mark.mk-term { background: var(--themaPoint); color: var(--black); font-weight: 
   font-size: 1.4rem; display: grid; place-items: center; }
 .qa > summary::after { content: "＋"; margin-left: auto; color: var(--blackmute); font-weight: 400; }
 .qa[open] > summary::after { content: "－"; }
-@media (hover: hover) { .qa > summary:hover { background: var(--bgMuted); color: var(--black); } }
 .qa_body { padding: 0 24px 20px 60px; font-size: 1.5rem; }
 .qa_body p { margin: 0 0 10px; max-width: 86ch; }
 .qa_body h3 { font-size: 1.6rem; margin: 16px 0 4px; }
@@ -333,7 +332,6 @@ mark.mk-term { background: var(--themaPoint); color: var(--black); font-weight: 
 .aitem:last-child { border-bottom: 0; }
 .aitem_head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 12px 16px; background: none; border: 0; text-align: left;
   font-size: 1.5rem; color: var(--black); cursor: pointer; }
-@media (hover: hover) { .aitem_head:hover { background: var(--bgMuted); color: var(--black); } }
 .aitem.open > .aitem_head { background: var(--themaLight); }
 .aitem_head .grow { flex: 1; }
 .aitem_head code { font-size: 1.2rem; color: var(--blacklight); }
@@ -365,7 +363,6 @@ mark.mk-term { background: var(--themaPoint); color: var(--black); font-weight: 
 /* 검수 화면 맨 위의 가이드 찾기(기본 접힘) */
 .gsearch { padding: 0; margin-bottom: 16px; }
 .gs_toggle { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 24px; background: none; border: 0; cursor: pointer; text-align: left; }
-@media (hover: hover) { .gs_toggle:hover { background: var(--bgMuted); color: var(--black); } }
 .gsearch.open .gs_toggle { border-bottom: 1px solid var(--borderSubtle); }
 .gs_toggle b { font-size: 1.6rem; flex: none; }
 .gs_toggle .note { flex: 1; font-size: 1.3rem; }
@@ -433,3 +430,29 @@ mark.mk-term { background: var(--themaPoint); color: var(--black); font-weight: 
   .pages button:not(.on):hover { background: var(--themaLight); border-color: var(--themaPoint); color: var(--black); }
   .pcard:hover, .rcard:hover, .gresult:hover { border-color: var(--borderStrong); box-shadow: 0 0 20px 0 var(--borderStrong); }
 }
+/* 펼침 버튼(가이드 찾기·에이전트 목록·Q&A 제목): 평소에는 진한 글자, 호버하면 파란 칸 + 흰 글자.
+   안쪽의 설명·코드·칩까지 전부 흰색으로 바꿔 호버 중에 글자가 묻히지 않게 한다. */
+@media (hover: hover) {
+  .gs_toggle:hover, .aitem_head:hover, .qa > summary:hover { background: var(--thema); color: var(--white); }
+  .gs_toggle:hover b, .gs_toggle:hover .note, .gs_toggle:hover .gs_mark,
+  .aitem_head:hover b, .aitem_head:hover code, .aitem_head:hover .note, .aitem_head:hover .mark,
+  .qa > summary:hover span, .qa > summary:hover::after { color: var(--white); }
+  .qa > summary:hover::before { background: var(--white); color: var(--thema); }
+}
+.gs_toggle, .aitem_head, .qa > summary { color: var(--black); }
+.gs_toggle .note, .aitem_head .note { color: var(--blacklight); }
+/* 에이전트가 모두 살아 있는지 알리는 뱃지 */
+.chip.good { background: var(--greenBright); color: var(--white); }
+.chip.good b, .chip.bad b { color: inherit; }
+.chip.bad { background: var(--redBright); color: var(--white); }
+/* 측정표: 결론 줄과 '이 앱이 쓰는 것' 표시 */
+.ev_pick { margin: 0 0 14px; padding: 12px 16px; border-left: 3px solid var(--thema); background: var(--themaLight);
+  font-size: 1.4rem; line-height: 165%; color: var(--black); max-width: 90ch; border-radius: 0 4px 4px 0; }
+.ev_pick > b:first-child { display: inline-block; margin-right: 8px; padding: 1px 8px; border-radius: 999px;
+  background: var(--thema); color: var(--white); font-size: 1.2rem; vertical-align: 1px; }
+.ev_mark { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--thema);
+  color: var(--white); font-size: 1.15rem; font-weight: 700; white-space: nowrap; }
+.ev_table tr.is-pick > td { background: var(--themaLight); font-weight: 600; }
+.ev_table tr.is-pick > td:first-child { box-shadow: inset 3px 0 0 0 var(--thema); }
+.ev_table tr.is-pick > td.best { background: var(--themaPoint); }
+@media (hover: hover) { .ev_table tbody tr.is-pick:hover > td { background: var(--themaPoint); } }

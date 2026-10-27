@@ -51,6 +51,11 @@ function Section({ id, title, lead, source, children }: { id: string; title: str
 
 const Head = () => <h2 className="qa_group" id="eval">측정표 — 무엇과 비교해서 골랐나</h2>;
 
+/** 표를 읽기 전에 결론부터: 이 수치라서 이것을 골랐다 */
+const Pick = ({ children }: { children: React.ReactNode }) => (
+  <p className="ev_pick"><b>그래서 고른 것</b> {children}</p>
+);
+
 export default function EvalReport() {
   const [d, setD] = useState<Summary | null>(null);
   const [err, setErr] = useState("");
@@ -73,6 +78,15 @@ export default function EvalReport() {
   const bestW = hybrid.reduce<[string, number]>((b, [w, v]) => (v.mrr > b[1] ? [w, v.mrr] : b), ["", 0]);
   const prRows = pr ? Object.entries(pr.methods) : [];
   const prBest = Math.max(...prRows.map(([, m]) => m.f1), 0);
+  // '그래서 무엇을 골랐나'를 표 위에 한 줄로 쓰기 위한 값들. 전부 산출물에서 계산한다(고정값을 적지 않는다).
+  const pickDense = s?.dense[PICKED_MODEL]?.[PICKED_CHUNK];
+  const topDense = s ? models.map((m) => ({ m, v: s.dense[m]?.[PICKED_CHUNK] }))
+    .reduce((b, x) => ((x.v?.hit1 ?? 0) > (b.v?.hit1 ?? 0) ? x : b), { m: "", v: undefined as Dense | undefined }) : null;
+  const subBest = d.substrate ? d.substrate.rows.filter((r) => r.linear_mean <= Math.min(r.none_mean, r.ratio_mean)).length : 0;
+  const subNotWorse = d.substrate ? d.substrate.rows.filter((r) => r.linear_mean <= r.none_mean).length : 0;
+  const prPick = pr?.methods["규칙+Kiwi 오타"];
+  const prTop = prRows.find(([, m]) => m.f1 === prBest);
+  const profDE = d.profiles ? d.profiles.rows.map((p) => p.withPaper.meanDE) : [];
 
   return (
     <>
@@ -89,6 +103,16 @@ export default function EvalReport() {
         <Section id="search" title="1. 가이드 검색 — 어떤 청킹·어떤 모델·어떤 가중치인가"
           lead={`질문 ${s.n_questions}개로 비교했습니다(지식베이스 ${s.kb_chars.toLocaleString()}자). Hit@1은 1위 결과가 정답을 담은 비율, MRR은 정답 순위의 역수 평균입니다. 괄호는 95% 구간입니다.`}
           source={d.sources.search}>
+          <Pick>
+            <b>{PICKED_CHUNK}</b>로 자르고 <b>{PICKED_MODEL}</b>을 <b>하이브리드 {PICKED_W}</b>(2-gram 단어 검색 반 + 임베딩 반)로 씁니다.
+            {topDense && topDense.m !== PICKED_MODEL && topDense.v && pickDense && (
+              <> 같은 청킹에서 숫자가 가장 높은 것은 {topDense.m}({pct(topDense.v.hit1)})이지만 고른 모델({pct(pickDense.hit1)})과 95% 구간이
+                {" "}({pct(topDense.v.hit1_ci[0], 0)}~{pct(topDense.v.hit1_ci[1], 0)} 대 {pct(pickDense.hit1_ci[0], 0)}~{pct(pickDense.hit1_ci[1], 0)}) 겹쳐 차이라고 읽을 수 없고,
+                파일이 {s.models[topDense.m]?.MB.toLocaleString()}MB라 브라우저에 올릴 수 없습니다.</>
+            )}
+            {" "}고른 모델은 {s.models[PICKED_MODEL]?.MB.toLocaleString()}MB이고 int8로 줄이면 약 118MB라 브라우저에서 그대로 돕니다
+            {d.browser && <> — 실제 Chrome에서 Hit@1 {pct(d.browser.hit1)}, 질문당 {num(d.browser.query_ms, 1)}ms</>}.
+          </Pick>
           <h3>청킹 × 임베딩 모델 (임베딩만 썼을 때 Hit@1)</h3>
           <div className="scroll">
             <table className="ev_table">
@@ -96,7 +120,7 @@ export default function EvalReport() {
               <tbody>
                 {models.map((m) => (
                   <tr key={m} className={m === PICKED_MODEL ? "is-pick" : ""}>
-                    <td>{m}{m === PICKED_MODEL && <span className="chip">고른 모델</span>}</td>
+                    <td>{m}{m === PICKED_MODEL && <span className="ev_mark">✓ 이 앱이 쓰는 모델</span>}</td>
                     {chunks.map((c) => {
                       const v = s.dense[m]?.[c];
                       const pick = m === PICKED_MODEL && c === PICKED_CHUNK;
@@ -114,7 +138,8 @@ export default function EvalReport() {
               <tbody>
                 {models.map((m) => (
                   <tr key={m} className={m === PICKED_MODEL ? "is-pick" : ""}>
-                    <td>{m}</td><td className="n">{s.models[m].params_M}</td><td className="n">{s.models[m].MB.toLocaleString()}</td>
+                    <td>{m}{m === PICKED_MODEL && <span className="ev_mark">✓ 이 앱이 쓰는 모델</span>}</td>
+                    <td className="n">{s.models[m].params_M}</td><td className="n">{s.models[m].MB.toLocaleString()}</td>
                     <td className="n">{s.models[m].dim}</td><td className="n">{s.models[m].load_s}</td>
                   </tr>
                 ))}
@@ -146,7 +171,7 @@ export default function EvalReport() {
               <tbody>
                 {Object.entries(s.tokenizer).map(([t, by]) => (
                   <tr key={t} className={t === "2-gram" ? "is-pick" : ""}>
-                    <td>{t}{t === "2-gram" && <span className="chip">채택</span>}</td>
+                    <td>{t}{t === "2-gram" && <span className="ev_mark">✓ 채택</span>}</td>
                     <td className="n">{num(by["0.0"], 3)}</td><td className={`n${t === "2-gram" ? " best" : ""}`}>{num(by["0.5"], 3)}</td><td className="n">{num(by["1.0"], 3)}</td>
                   </tr>
                 ))}
@@ -161,6 +186,10 @@ export default function EvalReport() {
       {(d.color_crosscheck || d.quant) && (
         <Section id="color" title="2. 색 변환이 맞게 계산되는가" source={d.sources.color}
           lead="앱이 브라우저에서 하는 색 변환(lcms-wasm)을 같은 ICC 프로파일로 Python(Pillow의 LittleCMS)에서 다시 돌려 대조했습니다. 두 결과가 다르면 앱 계산을 믿을 수 없습니다.">
+          {d.color_crosscheck && (
+            <Pick>브라우저 색 변환을 그대로 씁니다. 두 구현의 평균 ΔE 차이가 {num(d.color_crosscheck.mean_abs_diff, 3)}로
+              눈에 보이는 기준(ΔE 2)의 1/10도 안 되기 때문입니다. 그래서 색 계산을 서버로 보내지 않고 기기 안에서 합니다.</Pick>
+          )}
           {d.color_crosscheck && (
             <div className="ev_kpis">
               <div><b>{num(d.color_crosscheck.mean_abs_diff, 3)}</b><span>평균 ΔE 차이(앱 ↔ Python)</span></div>
@@ -178,6 +207,8 @@ export default function EvalReport() {
       {d.profiles && (
         <Section id="profiles" title="3. 종이(프로파일)에 따라 색이 얼마나 달라지는가" source={d.sources.profiles}
           lead="같은 사진 8장을 종이 등급별 공개 프로파일 13개로 각각 변환해 비교했습니다. ‘종이 색 제외’는 종이 흰색을 화면 흰색에 맞춘 값, ‘종이 색 포함’은 종이 자체의 밝기·색조까지 넣은 값입니다.">
+          <Pick>종이를 고르면 그 등급의 프로파일로 계산합니다. 같은 사진이라도 프로파일에 따라 평균 ΔE가
+            {" "}{num(Math.min(...profDE))}~{num(Math.max(...profDE))}까지 벌어져서, 어느 한 프로파일로 뭉뚱그리면 예측이 의미가 없기 때문입니다.</Pick>
           <div className="scroll">
             <table className="ev_table">
               <thead><tr><th>프로파일</th><th className="n">잉크 한도</th><th className="n">종이 흰색 L*</th><th className="n">ΔE (종이 색 제외)</th><th className="n">ΔE (종이 색 포함)</th><th className="n">ΔE&gt;5 면적</th><th className="n">연결된 종이</th></tr></thead>
@@ -204,6 +235,8 @@ export default function EvalReport() {
       {d.substrate && (
         <Section id="substrate" title="4. 종이 흰색 보정 — 어떤 식을 쓸 것인가" source={d.sources.substrate}
           lead="같은 등급인데 종이 흰색이 다른 측정 프로파일 쌍에서, A의 인쇄 결과를 B의 종이 흰색으로 옮겼을 때 B의 실제 값에 얼마나 가까워지는지 쟀습니다. 숫자는 평균 ΔE(작을수록 좋음)입니다.">
+          <Pick><b>선형</b> 방식을 씁니다. 비교한 {d.substrate.rows.length}쌍 중 {subBest}쌍에서 선형이 가장 가까웠기 때문입니다
+            {subNotWorse === d.substrate.rows.length && <>. 보정 없음보다 나빠진 쌍은 하나도 없었습니다</>}.</Pick>
           <div className="scroll">
             <table className="ev_table">
               <thead><tr><th>프로파일 쌍</th><th className="n">종이 흰색 차이</th><th className="n">보정 없음</th><th className="n">비례</th><th className="n">선형(채택)</th></tr></thead>
@@ -232,13 +265,19 @@ export default function EvalReport() {
       {pr && (
         <Section id="proof" title="5. 교정 탐지기 — 규칙·형태소 모델·LLM" source={d.sources.proofread}
           lead={`문서 ${pr.n_docs}개에 오류 ${pr.n_errors}개를 일부러 넣고 비교했습니다. 재현율은 넣은 오류 중 찾아낸 비율, 정밀도는 내놓은 제안 중 맞은 비율입니다. ${pr.llm}.`}>
+          <Pick>
+            기본값은 <b>규칙 + Kiwi 오타 모델</b>입니다(F1 {num(prPick?.f1, 3)}, 정밀도 {pct(prPick?.precision)}).
+            {prTop && prTop[1].uses_llm && <> F1이 가장 높은 것은 {prTop[0]}({num(prTop[1].f1, 3)})이지만 교정할 <b>본문이 외부 API로 나가서</b>,
+              본문이 기기 밖으로 나가지 않는 조합 중 가장 좋은 것을 기본으로 두고 LLM은 사용자가 직접 켜게 했습니다.</>}
+            {" "}띄어쓰기 모델은 재현율은 올리지만 정상 글에서도 1,000자당 {pr.clean_fp["Kiwi 띄어쓰기"]}건을 잘못 지적해 뺐습니다.
+          </Pick>
           <div className="scroll">
             <table className="ev_table">
               <thead><tr><th>방법</th><th className="n">재현율 (95% 구간)</th><th className="n">정밀도</th><th className="n">F1</th><th className="n">제안 수</th><th className="n">정상 글 오탐/1,000자</th><th>본문 외부 전송</th></tr></thead>
               <tbody>
                 {prRows.map(([name, m]) => (
                   <tr key={name} className={name === "규칙+Kiwi 오타" ? "is-pick" : ""}>
-                    <td>{name}{name === "규칙+Kiwi 오타" && <span className="chip">앱 기본값</span>}</td>
+                    <td>{name}{name === "규칙+Kiwi 오타" && <span className="ev_mark">✓ 앱 기본값</span>}</td>
                     <td className="n">{pct(m.recall)}<span className="note"> ({pct(m.recall_ci[0], 0)}~{pct(m.recall_ci[1], 0)})</span></td>
                     <td className="n">{pct(m.precision)}</td>
                     <td className={`n${m.f1 === prBest ? " best" : ""}`}>{num(m.f1, 3)}</td>

@@ -32,7 +32,7 @@ export function AgentProgress({ job }: { job: JobView }) {
         <span className="chip">{job.context_id}</span>
         <span className={`chip st-${job.status}`}>{STATUS[job.status] ?? job.status}</span>
         {job.status === "working" && <span className="spinner" aria-hidden="true" />}
-        <a className="note" href={`/agents?ctx=${job.context_id}`}>소통 기록 ↗</a>
+        <span className="note">자세한 기록은 위의 ‘에이전트 상태 · 의뢰 추적 · 소통 기록’에서 봅니다</span>
       </div>
       <ol className="ap_steps">
         {job.steps.map((s, i) => (

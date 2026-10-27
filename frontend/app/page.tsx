@@ -8,7 +8,7 @@ import type { Guide, Hit } from "@/lib/guide";
 import { GuideBadge, GuideCard, ModelLoadingScreen } from "./guide-ui";
 import GuideSearch from "./guide-search";
 import { AgentProgress, QuestionCard } from "./agent-ui";
-import AgentsView from "./agents-view";
+import AgentsView, { AgentHealth } from "./agents-view";
 import { CommercePanel } from "./commerce-ui";
 import { FINISHES, GROUPS, loadPapers, surface, type FinishId, type Paper, type PaperDb } from "@/lib/papers";
 import { assess, inputFrom, type Risk } from "@/lib/risk";
@@ -213,7 +213,7 @@ function Home() {
 
   async function settle(v: JobView) {
     if (v.status === "input-required") { setBusy(false); return; } // 질문 카드를 보여 주고 답을 기다린다
-    if (v.status === "failed") { setErr("에이전트 검사가 실패했습니다. '에이전트' 탭의 소통 기록을 확인하세요."); setBusy(false); return; }
+    if (v.status === "failed") { setErr("에이전트 검사가 실패했습니다. 위의 ‘소통 기록’을 확인하세요."); setBusy(false); return; }
     const { analysis, risks: rs, hits: hs } = toScreen(v);
     const pdfjs = await import("pdfjs-dist");
     pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
@@ -262,6 +262,7 @@ function Home() {
         <section className={`gsearch panel agent_inline${showAgents ? " open" : ""}`}>
           <button type="button" className="gs_toggle" aria-expanded={showAgents} onClick={() => setShowAgents((v) => !v)}>
             <b>에이전트 상태 · 의뢰 추적 · 소통 기록</b>
+            <AgentHealth />
             <span className="note">누가 어떤 일을 할 수 있고(skill), 이번 의뢰를 누가 언제 얼마나 처리했는지 그대로 보여 줍니다.</span>
             <span className="gs_mark" aria-hidden="true">{showAgents ? "－" : "＋"}</span>
           </button>
