@@ -1,7 +1,8 @@
 "use client";
 
-// '왜 이렇게' 탭 — 각 기능을 왜 그렇게 만들었는지, 무엇을 쟀는지, 그래서 무엇을 주의해야 하는지.
+// 도움말 탭 — 각 기능을 왜 그렇게 만들었는지, 무엇을 쟀는지, 그래서 무엇을 주의해야 하는지.
 // 교정 비교 수치는 하드코딩하지 않고 평가 결과 파일(public/data/proofread_eval.json)을 읽는다. 다시 재면 이 화면도 바뀐다.
+import Image from "next/image";
 import { useEffect, useState } from "react";
 
 type Method = {
@@ -31,6 +32,18 @@ const How = ({ children }: { children: React.ReactNode }) => <p><b className="qa
 const Result = ({ children }: { children: React.ReactNode }) => <p><b className="qa_tag ok">결과</b>{children}</p>;
 const Care = ({ children }: { children: React.ReactNode }) => <div className="warn"><b>주의</b> {children}</div>;
 
+/** 실제 화면 캡처. 글로만 설명하면 와닿지 않는 부분에만 붙인다 */
+function Shot({ src, alt, caption, w, h }: { src: string; alt: string; caption: string; w: number; h: number }) {
+  return (
+    <figure className="qa_shot">
+      <a href={src} target="_blank" rel="noreferrer">
+        <Image src={src} alt={alt} width={w} height={h} sizes="(max-width: 900px) 100vw, 900px" style={{ width: "100%", height: "auto" }} />
+      </a>
+      <figcaption>{caption}</figcaption>
+    </figure>
+  );
+}
+
 export default function WhyPage() {
   const [ev, setEv] = useState<Eval | null>(null);
   const [evErr, setEvErr] = useState("");
@@ -48,9 +61,9 @@ export default function WhyPage() {
   return (
     <main className="common_wrap">
       <header className="page_head">
-        <h1>왜 이렇게 만들었나</h1>
+        <h1>도움말</h1>
         <p className="lead">기능마다 왜 그 방법을 골랐는지, 무엇을 재서 그렇게 정했는지, 그래서 어떤 한계를 안고 읽어야 하는지 적었습니다.
-          숫자는 모두 이 저장소의 평가 스크립트로 직접 잰 값이고, 재지 않은 것은 ‘재지 않았다’고 적었습니다.</p>
+          숫자는 모두 이 저장소의 평가 스크립트로 직접 잰 값이고, 재지 않은 것은 ‘재지 않았다’고 적었습니다. 측정표 전체는 <a href="/eval">평가</a> 탭에 있습니다.</p>
       </header>
 
       <section className="panel qa_intro">
@@ -71,6 +84,10 @@ export default function WhyPage() {
           브라우저에서 돌리기 위해 multilingual-e5-small의 int8 ONNX(약 118MB)를 씁니다.</How>
         <Result>하이브리드가 MRR@10 0.98 수준으로 가장 좋았고, 2.3GB짜리 큰 모델(bge-m3·KURE-v1)과의 차이는 95% 구간이 겹쳐 구분되지 않았습니다.
           그래서 <b>브라우저에 올릴 수 있는 작은 모델</b>로 정했습니다.</Result>
+        <Shot w={1568} h={751} src="/shots/guide-search.jpg" alt="인쇄 검수 화면 위쪽의 가이드 검색 결과"
+          caption="인쇄 검수 화면 맨 위에서 바로 찾습니다. 답을 새로 쓰지 않고 가이드 원문 절을 그대로 보여 주며, 검색에 걸린 구간(연한 배경)과 질문 단어(진한 표시)를 원문 위에 표시합니다." />
+        <Shot w={1568} h={751} src="/shots/eval-search.jpg" alt="평가 탭의 청킹 × 임베딩 모델 비교표"
+          caption="고른 근거: 청킹 4종 × 모델 4종의 1위 적중률 비교(평가 탭). 2.3GB짜리 큰 모델과 구간이 겹쳐, 브라우저에 올릴 수 있는 작은 모델을 택했습니다." />
         <Care>평가 질문 92개를 가이드를 쓴 사람이 직접 만들었습니다. 질문과 정답 문장이 단어를 공유해 BM25에 유리하고, 대부분 설정이 90% 안팎 천장에 붙습니다.
           모델 사이 몇 %p 차이는 질문 한두 개로 뒤집히므로, 외부 사람이 쓴 질문으로 다시 재야 합니다.</Care>
       </QA>
@@ -193,6 +210,8 @@ export default function WhyPage() {
         <How>총괄(오케스트레이터) 아래 사전 검사·색·종이·가이드·교정·인쇄소·보고서·안전 관문 9개가 각자 포트에서 돌고, 정해진 계약(A2A)으로만 주고받습니다.
           에이전트는 서로를 부를 때 자기 이름이 든 경로를 붙여 <b>순환 호출과 홉 수</b>를 막고, 모든 요청·결과는 공통 로그에 남습니다(입력 본문은 남기지 않습니다).</How>
         <Result>같은 검사를 ‘바로 검사’와 ‘에이전트 검사’ 두 방식으로 할 수 있고 화면은 같습니다. 에이전트 탭에서 의뢰별 워터폴(누가 언제 몇 ms)을 볼 수 있습니다.</Result>
+        <Shot w={1568} h={751} src="/shots/agents-tab.jpg" alt="에이전트 탭: 왼쪽 에이전트 목록과 오른쪽 의뢰 추적 워터폴"
+          caption="에이전트 탭. 왼쪽에서 에이전트를 누르면 그 에이전트가 할 수 있는 일(skill)과 등급·부를 수 있는 쪽이 펼쳐지고, 오른쪽 워터폴은 어떤 에이전트가 언제 몇 초 걸렸는지 공통 로그로 그립니다." />
         <Care>에이전트 모드는 로컬에서 직접 켜야 합니다(<code>python run_agents.py</code>). 의뢰 목록은 메모리에만 있어 재시작하면 사라집니다
           (안전 관문 기록과 공통 로그는 파일에 남습니다).</Care>
       </QA>
@@ -204,6 +223,8 @@ export default function WhyPage() {
           무엇이든 확인되지 않으면 거절합니다(fail-closed).</How>
         <Result>실제로 돌려 보면 ① 쪽수를 부풀린 견적은 사전 검사가 PDF와 대조해 거절 ② 주문은 승인 대기로 멈추고 <b>에이전트 토큰으로 승인하면 401</b>
           ③ 사람이 승인한 뒤에만 주문 생성 ④ 보고서의 ΔE는 색 에이전트가 다시 계산해 일치할 때만 그대로 적힙니다.</Result>
+        <Shot w={1568} h={751} src="/shots/safety-gates.jpg" alt="안전 관문 결정 기록: 교차 검증 통과·거절, 사람 승인 대기와 승인"
+          caption="실제 관문 기록. 같은 견적도 쪽수를 99쪽으로 부풀린 요청은 ‘교차 검증 실패(preflight): 쪽수 주문 99쪽, PDF 3쪽’으로 거절됐고, 주문(C 등급)은 사람 승인 대기 → 사람 승인 뒤에야 실행됐습니다." />
         <Care>협력 인쇄소와 단가는 <b>시연용으로 지어낸 목업</b>입니다. 실제 인쇄소에는 아무것도 보내지 않습니다.
           사람 승인 토큰도 목 모드(<code>human:&lt;이름&gt;</code>)이며 실제 로그인이 아닙니다.</Care>
       </QA>
@@ -224,16 +245,18 @@ export default function WhyPage() {
         <Result><b>에이전트 검사 모드도 내 컴퓨터 안입니다.</b> 에이전트는 127.0.0.1에서만 돌고, PDF는 로컬 폴더에 저장되며 에이전트끼리는 파일 내용 대신 해시(pdf_ref)만 주고받습니다.</Result>
         <Result>선택 기능 두 개만 밖으로 나갑니다 — <b>LLM 교정</b>을 켜면 교정할 본문이 Gemini API로 가고(기본 꺼짐),
           <b>LangSmith 추적</b>을 켜면 에이전트·소요 시간·관문 결정만 갑니다(본문·입력값은 공통 로그에 애초에 남기지 않아 나갈 것이 없습니다).</Result>
+        <Shot w={1273} h={869} src="/shots/langsmith-trace.png" alt="LangSmith에 올라간 의뢰 추적 화면"
+          caption="LangSmith로 내보냈을 때 올라가는 것 전부 — 에이전트·skill 이름과 걸린 시간, 관문 결정 수, 로그 줄 수뿐입니다. 입력에는 의뢰 번호(context_id)만 있고 PDF 본문이나 검사 입력값은 없습니다." />
         <Care>두 기능은 사용자가 직접 API 키를 환경변수에 넣을 때만 동작합니다. 켜기 전에 원고가 외부로 나가도 되는 문서인지 확인하세요.
           인쇄소 지도의 길찾기 링크는 구글 지도로 나가는 일반 링크입니다.</Care>
       </QA>
 
       <section className="panel qa_more">
         <h2>더 자세한 수치</h2>
-        <p>청킹·임베딩 모델 비교표, 사진별 색 차이, 종이 등급별 프로파일 비교, 불량 규칙의 근거 원문 대조, 교정 탐지기 비교 전체 표는 평가 문서에 있습니다.</p>
-        <p><a href="https://claude.ai/artifact/P8Y7u41CLDXUPppz8CAR4Q" target="_blank" rel="noreferrer">평가 문서 보기 ↗</a></p>
-        <p className="note">이 앱의 평가 스크립트: <code>eval/run_eval.py</code>(검색), <code>eval/proofread/eval_proofread.py</code>(교정),
-          <code>frontend/scripts/test-*.mts</code>(색·종이·보정). 위 표의 교정 수치는 <code>public/data/proofread_eval.json</code>을 그대로 읽어 그립니다.</p>
+        <p>청킹·임베딩 모델 비교, 색 엔진 대조, 종이 등급별 프로파일, 종이 흰색 보정, 교정 탐지기 비교의 전체 표는 <a href="/eval">평가</a> 탭에 있습니다.</p>
+        <p className="note">평가 스크립트: <code>eval/run_eval.py</code>(검색), <code>eval/proofread/eval_proofread.py</code>(교정),
+          <code>frontend/scripts/test-*.mts</code>(색·종이·보정). 화면의 수치는 그 산출물(<code>public/data/eval_summary.json</code>,
+          <code>proofread_eval.json</code>)을 그대로 읽어 그립니다.</p>
       </section>
     </main>
   );

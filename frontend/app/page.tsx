@@ -6,6 +6,7 @@ import type { Analysis, Issue, Sev } from "@/lib/analyze";
 import type { IntentName } from "@/lib/color";
 import type { Guide, Hit } from "@/lib/guide";
 import { GuideBadge, GuideCard, ModelLoadingScreen } from "./guide-ui";
+import GuideSearch from "./guide-search";
 import { AgentProgress, QuestionCard } from "./agent-ui";
 import { CommercePanel } from "./commerce-ui";
 import { FINISHES, GROUPS, loadPapers, surface, type FinishId, type Paper, type PaperDb } from "@/lib/papers";
@@ -229,10 +230,13 @@ function Home() {
     <div className="common_wrap">
       {mode === "direct" && !guide && !guideStatus.startsWith("가이드 검색 사용 불가") && <ModelLoadingScreen status={guideStatus} onSkip={() => setMode("agent")} />}
       <header className="page_head">
-        <h1>PDF 검수</h1>
+        <h1>인쇄 검수</h1>
         {mode === "direct" ? <GuideBadge ready={!!guide} status={guideStatus} /> : <span className="badge">가이드 검색은 guide 에이전트가 합니다</span>}
         <p className="lead">폰트·도련·해상도·색·문구를 검사하고, 고른 종이로 인쇄 색 차이와 불량 위험을 예측합니다. 오탈자 등은 자동으로 고치지 않고 수정 제안만 보여 주니 원본 파일에서 직접 고치세요. {mode === "direct" ? "파일은 어디로도 보내지 않습니다." : "파일은 이 PC에서 도는 에이전트에만 보냅니다."}</p>
       </header>
+
+      {/* 가이드 검색: 검수 전에 규격을 확인할 수 있게 맨 위에 둔다(기본은 접힘) */}
+      <GuideSearch guide={guide} mode={mode} ready={!!agentUp} />
 
       <div className="modebar" role="tablist" aria-label="검사 방식">
         <button type="button" role="tab" aria-selected={mode === "direct"} className={`pill${mode === "direct" ? " on" : ""}`} onClick={() => setMode("direct")}>

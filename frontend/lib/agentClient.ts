@@ -87,6 +87,13 @@ export type Trace = { context_id: string; t0: string | null; total_ms: number; s
   agents: { agent: string; calls: number; ms: number; open: number }[]; lines: number };
 export const getTrace = async (ctx: string) => j<Trace>(await fetch(`${ORCH}/trace?context_id=${encodeURIComponent(ctx)}`));
 
+/** 에이전트 모드의 가이드 검색: guide 에이전트가 찾은 절을 앱 형식(Hit)으로 바꾼다 */
+export async function searchGuideViaAgent(q: string, k = 5): Promise<Hit[]> {
+  const rows = await j<{ doc: string; title: string; text: string; child: string; score: number }[]>(
+    await fetch(`${ORCH}/guide?q=${encodeURIComponent(q)}&k=${k}`));
+  return rows.map((h) => ({ section: { doc: h.doc, title: h.title, text: h.text }, score: h.score, child: h.child }));
+}
+
 // ---- 5단계: 목업 인쇄소 견적(B)·주문(C, 사람 승인)·보고서(A). 상태를 바꾸는 일은 모두 safety 관문을 거친다 ----
 export type AgentReply = { status: string; outcome: string | null; output: Record<string, any>; question: Record<string, any> | null }; // eslint-disable-line @typescript-eslint/no-explicit-any
 export type Review = { review_id: string; status: string; expires_at: string; decided_by: string | null; action: string; amount: number; summary: string };
