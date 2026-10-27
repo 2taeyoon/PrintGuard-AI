@@ -1,4 +1,5 @@
 """공통 뼈대(create_agent_app) 수신 검사: 카드, 토큰, 루프, 홉, 권한, 마감, 결과 검증."""
+import os
 from datetime import timedelta
 
 from fastapi.testclient import TestClient
@@ -72,3 +73,26 @@ def test_card_rules():
     with pytest.raises(ValueError):
         AgentCard.model_validate({"name": "a", "description": "", "url": "x", "skills": [
             {"id": "s", "description": "", "grade": "B", "allowed_requesters": [], "verifier": "a"}]})  # 자기 검증
+
+
+# ---------- .env 읽기 ----------
+def test_load_env_files(tmp_path, monkeypatch):
+    """.env의 값을 올리되 이미 설정된 환경변수는 건드리지 않는다. 주석·따옴표·export를 처리한다."""
+    from pg_agents.config import load_env_files
+    f = tmp_path / ".env"
+    f.write_text("# 주석\n\nPG_T_A=1\nPG_T_B=\"큰 따옴표\"\nexport PG_T_C='작은'\nPG_T_D=\nPG_T_EXISTING=env파일값\n망한줄\n", encoding="utf-8")
+    monkeypatch.setenv("PG_T_EXISTING", "터미널값")
+    for k in ("PG_T_A", "PG_T_B", "PG_T_C", "PG_T_D"):
+        monkeypatch.delenv(k, raising=False)
+
+    assert load_env_files((f,)) == [str(f)]
+    assert os.environ["PG_T_A"] == "1"
+    assert os.environ["PG_T_B"] == "큰 따옴표"
+    assert os.environ["PG_T_C"] == "작은"
+    assert os.environ["PG_T_D"] == ""
+    assert os.environ["PG_T_EXISTING"] == "터미널값"  # 터미널이 이긴다
+
+
+def test_load_env_files_without_file(tmp_path):
+    from pg_agents.config import load_env_files
+    assert load_env_files((tmp_path / "없는.env",)) == []

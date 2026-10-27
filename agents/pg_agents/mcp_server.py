@@ -26,7 +26,7 @@ except ModuleNotFoundError:  # mcp 1.x
     from mcp.server.fastmcp.exceptions import ToolError
 
 from .client import call_agent, new_meta
-from .config import agent_url, ensure_dirs, set_agent_name
+from .config import agent_url, ensure_dirs, load_env_files, set_agent_name
 from .contracts import AgentRequest
 from .orchestrator.plan import quote_spec, report_input
 from .tracing import build_trace
@@ -257,6 +257,7 @@ async def compile_report(context_id: str) -> dict[str, Any]:
 
 
 def main() -> None:
+    load_env_files()  # MCP 클라이언트가 띄우면 터미널 환경변수가 없다
     set_agent_name(NAME)
     ensure_dirs()
     mcp.run()

@@ -15,6 +15,7 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Any
 
+from .config import load_env_files
 from .tracing import build_trace
 
 NAMESPACE = uuid.UUID("7f6c1f2e-0000-4000-8000-000000000001")  # 같은 의뢰를 다시 보내도 같은 run id가 되게(중복 방지)
@@ -60,6 +61,7 @@ def export_trace(context_id: str, *, project: str | None = None, client: Any = N
 
 def main(argv: list[str]) -> int:
     sys.stdout.reconfigure(encoding="utf-8")
+    load_env_files()
     if not argv or argv[0].startswith("-"):
         print(__doc__)
         return 2

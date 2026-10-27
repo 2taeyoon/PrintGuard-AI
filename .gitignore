@@ -17,6 +17,7 @@ frontend/public/ort/
 
 # 로컬 환경
 .env*
+!agents/.env.example
 .DS_Store
 
 # 에이전트 실행 데이터(의뢰 PDF, 공통 로그)
