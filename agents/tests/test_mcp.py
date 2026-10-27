@@ -118,7 +118,7 @@ async def test_get_job_has_no_heat(orch):
 
 async def test_get_job_section_and_unknown_section(orch):
     assert (await m.get_job("ctx_job_mcp1", section="color"))["color"]["max_tac"] == 280
-    with pytest.raises(RuntimeError, match="없는 부분"):
+    with pytest.raises(m.ToolError, match="없는 부분"):
         await m.get_job("ctx_job_mcp1", section="guide")
 
 
@@ -157,7 +157,7 @@ async def test_place_order_waits_for_human(orch, agent_calls):
 
 async def test_place_order_needs_quote(orch, agent_calls):
     orch[1]["/jobs/ctx_job_mcp1"] = job_public(results={"preflight": {"pages": 1}})
-    with pytest.raises(RuntimeError, match="견적이 없습니다"):
+    with pytest.raises(m.ToolError, match="견적이 없습니다"):
         await m.place_order("ctx_job_mcp1")
 
 
@@ -175,7 +175,7 @@ async def test_compile_report_input_comes_from_job(orch, agent_calls):
 
 async def test_job_without_pdf_ref_is_an_error(orch):
     orch[1]["/jobs/ctx_job_mcp1"] = {k: v for k, v in job_public().items() if k != "pdf_ref"}
-    with pytest.raises(RuntimeError, match="pdf_ref"):
+    with pytest.raises(m.ToolError, match="pdf_ref"):
         await m.request_quote("ctx_job_mcp1", "mock_ganada")
 
 
@@ -183,14 +183,14 @@ async def test_job_without_pdf_ref_is_an_error(orch):
 async def test_check_pdf_rejects_non_pdf(tmp_path):
     p = tmp_path / "a.pdf"
     p.write_bytes(b"not a pdf")
-    with pytest.raises(RuntimeError, match="PDF 파일이 아닙니다"):
+    with pytest.raises(m.ToolError, match="PDF 파일이 아닙니다"):
         await m.check_pdf(str(p))
-    with pytest.raises(RuntimeError, match="파일이 없습니다"):
+    with pytest.raises(m.ToolError, match="파일이 없습니다"):
         await m.check_pdf(str(tmp_path / "없는.pdf"))
 
 
 async def test_answer_question_only_when_asked(orch):
-    with pytest.raises(RuntimeError, match="답을 기다리는 의뢰가 아닙니다"):
+    with pytest.raises(m.ToolError, match="답을 기다리는 의뢰가 아닙니다"):
         await m.answer_question("ctx_job_mcp1", "art")
 
 
@@ -220,5 +220,5 @@ async def test_orchestrator_off_tells_how_to_start(monkeypatch):
             raise httpx.ConnectError("refused")
 
     monkeypatch.setattr(m.httpx, "AsyncClient", lambda **kw: Boom())
-    with pytest.raises(RuntimeError, match="run_agents.py"):
+    with pytest.raises(m.ToolError, match="run_agents.py"):
         await m.get_job("ctx_job_mcp1")

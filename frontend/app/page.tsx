@@ -20,6 +20,13 @@ const SIZES: Record<string, [number, number]> = {
 };
 const SRC: Record<string, string> = { rule: "규칙", heuristic: "휴리스틱", proofread: "교정 에이전트" };
 
+/** 측정한 종이 흰색 "94.9, 2.0, -6.0" → [L,a,b]. 숫자 3개가 아니거나 범위를 벗어나면 null(그때는 보정하지 않는다) */
+function parseWhite(s: string): [number, number, number] | null {
+  const a = s.split(/[\s,]+/).filter(Boolean).map(Number);
+  if (a.length !== 3 || a.some((x) => !Number.isFinite(x)) || a[0] < 0 || a[0] > 100 || Math.abs(a[1]) > 128 || Math.abs(a[2]) > 128) return null;
+  return [a[0], a[1], a[2]];
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type PdfDoc = any;
 
@@ -45,6 +52,7 @@ function Home() {
   const [finish, setFinish] = useState<FinishId>("unknown");
   const [gsm, setGsm] = useState(150);
   const [paperColor, setPaperColor] = useState(true);
+  const [whiteIn, setWhiteIn] = useState(""); // 측정한 종이 흰색 "L, a, b" (선택). 비워 두면 보정하지 않는다
   const [risks, setRisks] = useState<(Risk & { hits: Hit[] })[]>([]);
   const [usedPaper, setUsedPaper] = useState<Paper | null>(null);
   const paper = db?.papers.find((p) => p.id === paperId) ?? null;
@@ -149,7 +157,8 @@ function Home() {
       const { ColorEngine } = await import("@/lib/color");
       const icc = iccFile ? new Uint8Array(await iccFile.arrayBuffer())
         : new Uint8Array(await (await fetch(`/icc/${profile.file}`)).arrayBuffer());
-      const color = await ColorEngine.create(icc, { intent, tacLimit: tac, paperColor, wasmUrl: "/lcms/lcms.wasm", moduleUrl: "/lcms/lcms.js" });
+      const color = await ColorEngine.create(icc, { intent, tacLimit: tac, paperColor, substrateWhite: parseWhite(whiteIn) ?? undefined,
+        wasmUrl: "/lcms/lcms.wasm", moduleUrl: "/lcms/lcms.js" });
       const result = await analyze(data, pdfjs, { widthMm: w, heightMm: h, bleedMm: bleed, color });
       docRef.current = await pdfjs.getDocument({ data: data.slice() }).promise;
       setRes({ ...result, filename: file.name });
@@ -172,7 +181,8 @@ function Home() {
     try {
       pdfData.current = new Uint8Array(await f.arrayBuffer());
       const opts = { width_mm: w, height_mm: h, bleed_mm: bleed, paper_id: paperId, profile: profileKey, intent, tac_limit: tac,
-        paper_color: paperColor, finish, gsm };
+        paper_color: paperColor, finish, gsm,
+        ...(parseWhite(whiteIn) ? { substrate_white: parseWhite(whiteIn) } : {}) };
       const { context_id } = await createJob(f, opts);
       await settle(await waitJob(context_id, setAgentJob));
     } catch (x) {
@@ -302,6 +312,8 @@ function Home() {
           </select>
         </label>
         <label>총 잉크량 한도(%)<input type="number" value={tac} onChange={(e) => setTac(+e.target.value)} /></label>
+        <label title="분광측색기로 잰 종이 흰색을 넣으면, 프로파일이 가정한 종이 대신 이 종이 기준으로 인쇄 색을 옮겨 ΔE를 다시 잽니다. 비워 두면 보정하지 않습니다.">종이 흰색 측정값(Lab, 선택)
+          <input type="text" inputMode="decimal" placeholder="예: 94.9, 2.0, -6.0" value={whiteIn} onChange={(e) => setWhiteIn(e.target.value)} disabled={!paperColor} /></label>
         <button disabled={!file || busy || (!profile && !(mode === "agent" && paperId === "unknown")) || (mode === "agent" && !agentUp)}>{busy ? "검사 중…" : mode === "agent" ? "에이전트에 맡기기" : "검사 시작"}</button>
         {res && <button type="button" className="ghost" onClick={() => window.print()}>보고서 인쇄/PDF 저장</button>}
         {paper && profile && (
@@ -309,7 +321,11 @@ function Home() {
             <span className="chip">{paper.group}</span><span className="chip">{surface(paper)}</span>
             <b>{paper.name}</b>{paper.maker && <span className="note">{paper.maker}</span>}
             <span className="note">→ {profile.name}{profileKey === "auto" && paper.approx ? " (근사)" : ""} · 잉크량 한도 {profile.tac}% ({profile.tacSource})</span>
-            {profileKey === "auto" && paper.warn && <div className="warn">{paper.warn}</div>}
+            {/* 근사 경고: 측정한 종이 흰색을 넣으면 그 종이 기준으로 옮겨 잰다(흰색만 보정이고 잉크 거동은 여전히 등급 프로파일 값이다) */}
+            {profileKey === "auto" && paper.warn && !parseWhite(whiteIn) && <div className="warn">{paper.warn}
+              {paper.approx && paperColor && <> 종이 흰색을 측정했다면 위 ‘종이 흰색 측정값’에 넣으면 그 종이 기준으로 보정합니다(참고: 프로파일 종이 흰색 Lab {profile.white.join(", ")}).</>}</div>}
+            {parseWhite(whiteIn) && <div className="note">종이 흰색 보정 켜짐: 프로파일 종이 Lab {profile.white.join(", ")} → 측정값 Lab {parseWhite(whiteIn)!.join(", ")} (흰색만 옮깁니다. 잉크 거동·잉크량 한도는 프로파일 값 그대로입니다)</div>}
+            {whiteIn.trim() && !parseWhite(whiteIn) && <div className="warn">종이 흰색 측정값을 읽지 못했습니다. ‘L, a, b’ 숫자 3개로 넣으세요(L 0~100, a·b ±128). 지금은 보정하지 않습니다.</div>}
           </div>
         )}
       </form>

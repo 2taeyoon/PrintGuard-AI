@@ -3,7 +3,7 @@
 인쇄 전 PDF 품질 검수 웹앱. 기본(바로 검사)은 서버 없이 브라우저 안에서만 동작하고, 에이전트 검사 모드에서는 로컬 에이전트들이 같은 계산을 나눠 맡습니다(밖으로 나가는 통신 없음).
 
 - **PDF 검수**: 판형·도련·폰트 포함·이미지 해상도·색 공간·안전 여백·문구(반복 단어, 율/률, 같은 항목 다른 숫자)를 검사하고 페이지 위에 문제 위치를 표시합니다.
-- **인쇄 색 차이 예측**: PDF 안 RGB 이미지를 종이별 CMYK ICC 프로파일로 변환해 ΔE2000과 총 잉크량을 계산하고 색 차이 지도를 그립니다(lcms-wasm).
+- **인쇄 색 차이 예측**: PDF 안 RGB 이미지를 종이별 CMYK ICC 프로파일로 변환해 ΔE2000과 총 잉크량을 계산하고 색 차이 지도를 그립니다(lcms-wasm). 종이 흰색을 측정한 Lab 값을 넣으면 프로파일이 가정한 종이 대신 그 종이 기준으로 옮겨 다시 잽니다(브랜드 종이 근사 보정).
 - **종이 491종**: 한국제지연합회 분류 기반 기본 종류 35종 + 두성종이·삼원페이퍼·국내 제지사 브랜드 456종, 종이 등급별 공개 프로파일 13개.
 - **인쇄 불량 위험도**: 뒷묻음·눌림·색판 어긋남·농도 얼룩·줄무늬를 원문으로 확인한 근거의 점수표 규칙으로 표시합니다(학습 모델 아님).
 - **인쇄 가이드 검색(RAG)**: multilingual-e5-small(int8 ONNX) + 2-gram BM25 하이브리드.
@@ -53,13 +53,19 @@ claude mcp add printguard -- "$(conda run -n dev python -c 'import sys;print(sys
    `npm install` 후 `node_modules/onnxruntime-web/dist/`의 `ort-wasm-simd-threaded*.{mjs,wasm}`를 복사합니다.
 3. **ICC 프로파일** → `frontend/public/icc/` (재배포 금지라 직접 받아야 합니다)
    - ECI(eci.org 다운로드): `PSOcoated_v3.icc`, `PSOuncoated_v3_FOGRA52.icc`(ICC 레지스트리에도 있음), `eci_offset_2009.zip` 안의 `ISOcoated_v2_eci.icc`, `ISOuncoatedyellowish.icc`, `PSO_LWC_Improved_eci.icc`, `PSO_LWC_Standard_eci.icc`, `PSO_MFC_Paper_eci.icc`, `PSO_SNP_Paper_eci.icc`, `eci_offset_profiles_inp.zip` 안의 `PSO_INP_Paper_eci.icc`
-   - ICC 프로파일 레지스트리(registry.color.org/profile-registry): `PSOsc-b_paper_v3_FOGRA54.icc`, `APTEC_PC10_CardBoard_2023_v1.icc`, `JapanColor2011Coated.icc`
+     (받는 곳: `https://eci.org/lib/exe/<이름>.zip` — `pso-coated_v3`, `pso-uncoated_v3_fogra52`, `eci_offset_2009`, `eci_offset_profiles_inp`, `pso_sc-b_paper_v3`. zip 안의 `.icc`만 꺼내 넣습니다)
+   - ICC 프로파일 레지스트리: `PSOsc-b_paper_v3_FOGRA54.icc`(ECI의 `pso_sc-b_paper_v3.zip`에도 있음), `APTEC_PC10_CardBoard_2023_v1.icc`, `JapanColor2011Coated.icc`
+     (받는 곳: `https://registry.color.org/profile-registry/profiles/<이름>.icc`)
    - Windows 내장: `C:\Windows\System32\spool\drivers\color\RSWOP.icm`
 
 ## 한계
 - 색 차이는 프로파일 기준 계산값이며 실물 인쇄 측색값이 아닙니다. 브랜드 종이는 등급 프로파일로 근사합니다.
+- 종이 흰색 보정은 흰색만 옮깁니다. 잉크 거동·잉크량 한도는 등급 프로파일 값 그대로이고, 측정값을 넣지 않으면 보정하지 않습니다(방법 검증: `frontend/scripts/test-substrate.mts`, 적용 확인: `test-substrate-engine.mts`).
 - 불량 위험도는 학습 모델이 아니라 점수표이며, 실제 불량 데이터로 보정하지 않았습니다.
 - 인허가 '영업/정상'은 신고 기준이라 실제 영업 여부와 다를 수 있습니다.
+- 에이전트 모드의 견적·주문은 목업 협력사 대상이고 단가도 시연용입니다. 실제 인쇄소에는 아무것도 보내지 않습니다. 사람 승인 토큰도 목 모드(`human:<이름>`)뿐입니다.
+- 교정은 제안만 하며 자동으로 고치지 않습니다. 평가셋이 규칙과 겹쳐 재현율이 부풀어 있습니다(실제 원고로 다시 재야 함). LLM 교정기와 LangSmith 추적은 사용자가 `GEMINI_API_KEY`·`LANGSMITH_API_KEY`를 직접 넣을 때만 씁니다 — 키를 찾거나 읽지 않습니다.
+- 오케스트레이터의 의뢰 목록은 메모리에만 있어 재시작하면 사라집니다(safety·shop 기록과 공통 로그는 SQLite에 남아 추적은 유지됩니다).
 
 ## 데이터 출처
 한국제지연합회 「종이의 분류」, 프린트올데이 「알아두면 쓸데있는 기본 종이 상식」, 두성종이·삼원페이퍼 제품 페이지, 행정안전부 LOCALDATA 기타_인쇄사(공공누리 출처표시), 파주출판도시 입주기업협의회, Kodak 공개 테스트 사진.

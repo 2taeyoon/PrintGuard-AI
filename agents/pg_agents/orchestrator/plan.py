@@ -31,7 +31,9 @@ def _color(j: Job) -> dict[str, Any]:
     return {**_size(j), "paper_id": paper_id(j), "profile": o.get("profile", "auto"), "intent": o.get("intent", "relative"),
             # 질문에 답해 종이를 고른 경우엔 그 종이 프로파일의 한도를 쓰고, 처음부터 정한 경우엔 화면의 한도를 쓴다
             "tac_limit": None if ("paper_id" in j.answers and o.get("profile", "auto") == "auto") else o.get("tac_limit"),
-            "paper_color": o.get("paper_color", True)}
+            "paper_color": o.get("paper_color", True),
+            # 측정한 종이 흰색(선택). 넣으면 color가 프로파일 종이 대신 이 종이 기준으로 옮긴다(report의 ΔE 재계산도 같은 값을 쓴다)
+            **({"substrate_white": o["substrate_white"]} if o.get("substrate_white") else {})}
 
 
 def _recommend(j: Job) -> dict[str, Any]:

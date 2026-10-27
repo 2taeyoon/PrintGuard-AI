@@ -1,7 +1,12 @@
 // 인쇄 색 차이 추정: sRGB 이미지를 CMYK ICC 프로파일로 변환(LittleCMS, wasm)한 뒤 다시 Lab으로 읽어 원본과의 ΔE2000을 잰다.
 // "실제 인쇄 색 보장"이 아니라 지정한 프로파일 기준의 소프트 프루프 예측이다.
 
+import { correctSubstrate, labToXyz, xyzToLab, type Xyz } from "./substrate";
+
 export type IntentName = "relative" | "perceptual" | "saturation";
+export type Lab = [number, number, number];
+/** 종이 흰색 보정 상태. profileWhite: 프로파일이 가정한 종이, targetWhite: 측정해서 넣은 실제 종이 */
+export type SubstrateFix = { profileWhite: Lab; targetWhite: Lab; method: "linear" };
 export type ColorStats = {
   pixels: number; meanDE: number; medianDE: number; p95DE: number; maxDE: number;
   shareOver2: number; shareOver5: number; shareOver10: number;
@@ -55,11 +60,16 @@ export class ColorEngine {
   private constructor(
     private lcms: Lcms, private toCmyk: number, private cmykToLab: number, private rgbToLab: number,
     public description: string, public tacLimit: number,
+    /** 측정한 종이 흰색을 받았을 때만 채운다(null이면 보정하지 않는다) */
+    public substrate: SubstrateFix | null = null,
+    private sub: { wA: Xyz; wB: Xyz; k: Xyz } | null = null,
   ) {}
 
   static async create(
     iccBytes: Uint8Array,
-    opts: { intent?: IntentName; tacLimit?: number; wasmUrl?: string; moduleUrl?: string; paperColor?: boolean } = {},
+    opts: { intent?: IntentName; tacLimit?: number; wasmUrl?: string; moduleUrl?: string; paperColor?: boolean;
+      /** 실제 종이의 흰색을 측정한 절대 Lab. 프로파일이 가정한 종이와 다를 때 인쇄 색을 이 종이 기준으로 옮긴다(절대 비색일 때만). */
+      substrateWhite?: Lab } = {},
   ): Promise<ColorEngine> {
     const info = iccInfo(iccBytes);
     if (info.space !== "CMYK") throw new Error(`CMYK ICC 프로파일이 아닙니다 (색 공간: ${info.space || "알 수 없음"})`);
@@ -83,7 +93,16 @@ export class ColorEngine {
       opts.paperColor ? mod.INTENT_ABSOLUTE_COLORIMETRIC : intent, opts.paperColor ? 0 : flags);
     const rgbToLab = lcms.cmsCreateTransform(srgb, mod.TYPE_RGB_8, lab, mod.TYPE_Lab_16, mod.INTENT_RELATIVE_COLORIMETRIC, flags);
     if (!toCmyk || !cmykToLab || !rgbToLab) throw new Error("색 변환을 만들지 못했습니다");
-    return new ColorEngine(lcms, toCmyk, cmykToLab, rgbToLab, description, opts.tacLimit ?? 300);
+    // 종이 흰색 보정: 프로파일이 가정한 종이 흰색(CMYK 0%)과 가장 진한 색(CMYK 400%)을 읽어 둔다.
+    // 절대 비색으로 읽을 때만 뜻이 있다(상대 비색은 종이 흰색을 이미 흰색으로 맞춰 버린다).
+    let fix: SubstrateFix | null = null, sub: { wA: Xyz; wB: Xyz; k: Xyz } | null = null;
+    if (opts.substrateWhite && opts.paperColor !== false) {
+      const c = lcms.cmsDoTransform(cmykToLab, new Uint8Array([0, 0, 0, 0, 255, 255, 255, 255]), 2) as Uint16Array;
+      const at = (i: number): Lab => [(c[3 * i] / 65535) * 100, c[3 * i + 1] / 257 - 128, c[3 * i + 2] / 257 - 128];
+      fix = { profileWhite: at(0), targetWhite: opts.substrateWhite, method: "linear" };
+      sub = { wA: labToXyz(at(0)), wB: labToXyz(opts.substrateWhite), k: labToXyz(at(1)) };
+    }
+    return new ColorEngine(lcms, toCmyk, cmykToLab, rgbToLab, description, opts.tacLimit ?? 300, fix, sub);
   }
 
   /** rgb: 픽셀당 3바이트(RGB) 배열. 반환 de는 픽셀별 ΔE2000. */
@@ -97,8 +116,10 @@ export class ColorEngine {
     const de = new Float32Array(n);
     let tacSum = 0, tacMax = 0, overTac = 0;
     for (let i = 0; i < n; i++) {
-      de[i] = deltaE2000(L(labSrc[3 * i]), AB(labSrc[3 * i + 1]), AB(labSrc[3 * i + 2]),
-        L(labPrint[3 * i]), AB(labPrint[3 * i + 1]), AB(labPrint[3 * i + 2]));
+      let pr: Lab = [L(labPrint[3 * i]), AB(labPrint[3 * i + 1]), AB(labPrint[3 * i + 2])];
+      // 측정한 종이 흰색을 받았으면 인쇄 결과를 그 종이 기준으로 옮긴다(선형: 종이 흰색은 옮기고 가장 진한 색은 고정)
+      if (this.sub) pr = xyzToLab(correctSubstrate(labToXyz(pr), this.sub.wA, this.sub.wB, this.sub.k, this.substrate!.method)) as Lab;
+      de[i] = deltaE2000(L(labSrc[3 * i]), AB(labSrc[3 * i + 1]), AB(labSrc[3 * i + 2]), pr[0], pr[1], pr[2]);
       const tac = ((cmyk[4 * i] + cmyk[4 * i + 1] + cmyk[4 * i + 2] + cmyk[4 * i + 3]) / 255) * 100;
       tacSum += tac; if (tac > tacMax) tacMax = tac; if (tac > this.tacLimit) overTac++;
     }

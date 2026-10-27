@@ -20,8 +20,10 @@ import httpx
 
 try:  # mcp 2.x: FastMCP가 MCPServer로 이름이 바뀌었다(쓰는 방식은 같다)
     from mcp.server.mcpserver import MCPServer as McpServer
+    from mcp.server.mcpserver.exceptions import ToolError
 except ModuleNotFoundError:  # mcp 1.x
     from mcp.server.fastmcp import FastMCP as McpServer
+    from mcp.server.fastmcp.exceptions import ToolError
 
 from .client import call_agent, new_meta
 from .config import agent_url, ensure_dirs, set_agent_name
@@ -72,7 +74,7 @@ class JobLike:
         self.results: dict[str, Any] = pub.get("results") or {}
         self.pdf_ref: str = pub.get("pdf_ref") or ""
         if not self.pdf_ref:
-            raise RuntimeError("의뢰에 pdf_ref가 없습니다. 오래된 오케스트레이터입니다 — run_agents.py를 다시 켜세요")
+            raise ToolError("의뢰에 pdf_ref가 없습니다. 오래된 오케스트레이터입니다 — run_agents.py를 다시 켜세요")
 
 
 async def _orch(method: str, path: str, *, timeout: float = 30, **kw: Any) -> Any:
@@ -82,9 +84,9 @@ async def _orch(method: str, path: str, *, timeout: float = 30, **kw: Any) -> An
         async with httpx.AsyncClient(timeout=timeout) as c:
             r = await c.request(method, url, **kw)
     except httpx.HTTPError as e:
-        raise RuntimeError(f"오케스트레이터({url})에 닿지 못했습니다: {type(e).__name__}. agents 폴더에서 `python run_agents.py`로 켜세요") from e
+        raise ToolError(f"오케스트레이터({url})에 닿지 못했습니다: {type(e).__name__}. agents 폴더에서 `python run_agents.py`로 켜세요") from e
     if r.status_code != 200:
-        raise RuntimeError(f"오케스트레이터 {r.status_code}: {r.text[:200]}")
+        raise ToolError(f"오케스트레이터 {r.status_code}: {r.text[:200]}")
     return r.json().get("data")
 
 
@@ -136,13 +138,13 @@ async def check_pdf(path: str, options: dict[str, Any] | None = None, wait_secon
     """
     p = Path(path).expanduser()
     if not p.is_file():
-        raise RuntimeError(f"파일이 없습니다: {p}")
+        raise ToolError(f"파일이 없습니다: {p}")
     size = p.stat().st_size
     if size > MAX_PDF:
-        raise RuntimeError(f"PDF가 너무 큽니다({size:,}바이트, 한도 {MAX_PDF:,})")
+        raise ToolError(f"PDF가 너무 큽니다({size:,}바이트, 한도 {MAX_PDF:,})")
     data = p.read_bytes()
     if not data.startswith(b"%PDF"):
-        raise RuntimeError("PDF 파일이 아닙니다")
+        raise ToolError("PDF 파일이 아닙니다")
     r = await _orch("POST", "/jobs", timeout=60, files={"file": (p.name, data, "application/pdf")},
                     data={"options": json.dumps(options or {}, ensure_ascii=False)})
     ctx = r["context_id"]
@@ -159,7 +161,7 @@ async def get_job(context_id: str, section: str | None = None, include_texts: bo
     if section:
         res = job.get("results") or {}
         if section not in res:
-            raise RuntimeError(f"그 의뢰에 없는 부분입니다: {section} (있는 것: {', '.join(res) or '없음'})")
+            raise ToolError(f"그 의뢰에 없는 부분입니다: {section} (있는 것: {', '.join(res) or '없음'})")
         return {"context_id": context_id, "status": job["status"], section: prune(res[section], texts=include_texts)}
     return {**_summary(job), "context_id": context_id, "options": job.get("options"), "answers": job.get("answers"),
             "results": prune(job.get("results") or {}, texts=include_texts)}
@@ -170,7 +172,7 @@ async def answer_question(context_id: str, value: str, wait_seconds: float = 180
     """에이전트 질문(input-required)에 답한다. value는 question.options의 value 중 하나다. 답한 skill만 다시 실행되고 나머지 단계가 이어진다."""
     job = await _job(context_id)
     if job["status"] != "input-required":
-        raise RuntimeError(f"답을 기다리는 의뢰가 아닙니다(상태 {job['status']})")
+        raise ToolError(f"답을 기다리는 의뢰가 아닙니다(상태 {job['status']})")
     await _orch("POST", f"/jobs/{context_id}/answer", json={"value": value})
     return {"context_id": context_id, **_summary(await _wait(context_id, wait_seconds))}
 
@@ -219,24 +221,27 @@ async def request_quote(context_id: str, partner: str, copies: int = 100, spec_o
 
     partner는 find_shops의 partners[].id(mock_ganada·mock_haneul·mock_paju). 사양은 의뢰 옵션과 검수 결과(쪽수)에서 만든다.
     spec_override로 사양을 바꾸면 PDF와 어긋나 교차 검증에서 거절될 수 있다(그 거절을 그대로 돌려준다).
+    돌려준 quote_id를 place_order에 그대로 넣어야 한다(이 견적은 웹 화면의 의뢰 상태에는 저장되지 않는다).
     """
     j = JobLike(await _job(context_id))
     spec = quote_spec(j, copies, spec_override)
     r = await _call("shop", "request_quote", {"pdf_ref": j.pdf_ref, "partner": partner, "spec": spec}, context_id=context_id)
-    return {"context_id": context_id, "spec": spec, **r, "note": MOCK_NOTE}
+    qid = ((r.get("output") or {}).get("quote") or {}).get("quote_id")
+    return {"context_id": context_id, "quote_id": qid, "spec": spec, **r, "note": MOCK_NOTE}
 
 
 @mcp.tool()
 async def place_order(context_id: str, quote_id: str | None = None) -> dict[str, Any]:
     """견적으로 목업 주문을 넣는다(C 등급: 사람 승인 필요).
 
+    quote_id는 request_quote가 돌려준 값을 넣는다. 비우면 웹 화면에서 만든 의뢰의 견적을 쓴다(MCP로 만든 견적은 의뢰에 저장되지 않는다).
     처음 부르면 safety가 승인 대기열에 올리고 status=input-required와 review_id를 돌려준다. 사람이 웹 화면에서 승인한 뒤 다시 부르면 주문이 생긴다.
-    MCP는 승인할 수 없다(사람 토큰이 필요하다).
+    MCP는 승인할 수 없다(사람 토큰이 필요하다). 이미 승인·주문된 견적을 다시 부르면 같은 주문을 그대로 돌려준다(멱등성).
     """
     j = JobLike(await _job(context_id))
     qid = quote_id or (j.results.get("quote") or {}).get("quote_id")
     if not qid:
-        raise RuntimeError("견적이 없습니다. request_quote를 먼저 부르세요")
+        raise ToolError("견적이 없습니다. request_quote를 먼저 부르세요")
     r = await _call("shop", "place_order", {"quote_id": qid}, context_id=context_id)
     if r.get("status") == "input-required":
         r["how_to_approve"] = "사람이 웹 화면(에이전트 검사 결과의 인쇄소 영역)에서 승인해야 합니다. 승인 뒤 place_order를 다시 부르세요."
