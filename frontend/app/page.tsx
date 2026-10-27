@@ -6,7 +6,9 @@ import type { Analysis, Issue, Sev } from "@/lib/analyze";
 import type { IntentName } from "@/lib/color";
 import type { Guide, Hit } from "@/lib/guide";
 import { GuideBadge, GuideCard, ModelLoadingScreen } from "./guide-ui";
+import GuideSearch from "./guide-search";
 import { AgentProgress, QuestionCard } from "./agent-ui";
+import AgentsView from "./agents-view";
 import { CommercePanel } from "./commerce-ui";
 import { FINISHES, GROUPS, loadPapers, surface, type FinishId, type Paper, type PaperDb } from "@/lib/papers";
 import { assess, inputFrom, type Risk } from "@/lib/risk";
@@ -19,6 +21,13 @@ const SIZES: Record<string, [number, number]> = {
   "A5 (148×210)": [148, 210], "A4 (210×297)": [210, 297], "B5 (176×250)": [176, 250], "직접 입력": [0, 0],
 };
 const SRC: Record<string, string> = { rule: "규칙", heuristic: "휴리스틱", proofread: "교정 에이전트" };
+
+/** 측정한 종이 흰색 "94.9, 2.0, -6.0" → [L,a,b]. 숫자 3개가 아니거나 범위를 벗어나면 null(그때는 보정하지 않는다) */
+function parseWhite(s: string): [number, number, number] | null {
+  const a = s.split(/[\s,]+/).filter(Boolean).map(Number);
+  if (a.length !== 3 || a.some((x) => !Number.isFinite(x)) || a[0] < 0 || a[0] > 100 || Math.abs(a[1]) > 128 || Math.abs(a[2]) > 128) return null;
+  return [a[0], a[1], a[2]];
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type PdfDoc = any;
@@ -45,6 +54,7 @@ function Home() {
   const [finish, setFinish] = useState<FinishId>("unknown");
   const [gsm, setGsm] = useState(150);
   const [paperColor, setPaperColor] = useState(true);
+  const [whiteIn, setWhiteIn] = useState(""); // 측정한 종이 흰색 "L, a, b" (선택). 비워 두면 보정하지 않는다
   const [risks, setRisks] = useState<(Risk & { hits: Hit[] })[]>([]);
   const [usedPaper, setUsedPaper] = useState<Paper | null>(null);
   const paper = db?.papers.find((p) => p.id === paperId) ?? null;
@@ -64,7 +74,12 @@ function Home() {
   // 검사 방식: direct = 이 브라우저 안에서 바로, agent = 로컬 에이전트들이 A2A로 나눠 검사
   // 주소의 ?mode=agent로 시작 모드를 기억한다(에이전트 모드로 열면 브라우저 임베딩 모델을 아예 불러오지 않는다)
   const [mode, setModeState] = useState<"direct" | "agent">(sp.get("mode") === "agent" ? "agent" : "direct");
-  const setMode = (m: "direct" | "agent") => { setModeState(m); router.replace(m === "agent" ? "/?mode=agent" : "/", { scroll: false }); };
+  const [showAgents, setShowAgents] = useState(true); // '에이전트 검사'를 고르면 에이전트 탭 내용을 이 자리에 펼친다
+  const setMode = (m: "direct" | "agent") => {
+    setModeState(m);
+    if (m === "agent") setShowAgents(true); // 누르면 에이전트 내용이 바로 보이게
+    router.replace(m === "agent" ? "/?mode=agent" : "/", { scroll: false });
+  };
   const [agentUp, setAgentUp] = useState<boolean | null>(null);
   const [agentJob, setAgentJob] = useState<JobView | null>(null);
   const pdfData = useRef<Uint8Array | null>(null);
@@ -149,7 +164,8 @@ function Home() {
       const { ColorEngine } = await import("@/lib/color");
       const icc = iccFile ? new Uint8Array(await iccFile.arrayBuffer())
         : new Uint8Array(await (await fetch(`/icc/${profile.file}`)).arrayBuffer());
-      const color = await ColorEngine.create(icc, { intent, tacLimit: tac, paperColor, wasmUrl: "/lcms/lcms.wasm", moduleUrl: "/lcms/lcms.js" });
+      const color = await ColorEngine.create(icc, { intent, tacLimit: tac, paperColor, substrateWhite: parseWhite(whiteIn) ?? undefined,
+        wasmUrl: "/lcms/lcms.wasm", moduleUrl: "/lcms/lcms.js" });
       const result = await analyze(data, pdfjs, { widthMm: w, heightMm: h, bleedMm: bleed, color });
       docRef.current = await pdfjs.getDocument({ data: data.slice() }).promise;
       setRes({ ...result, filename: file.name });
@@ -172,7 +188,8 @@ function Home() {
     try {
       pdfData.current = new Uint8Array(await f.arrayBuffer());
       const opts = { width_mm: w, height_mm: h, bleed_mm: bleed, paper_id: paperId, profile: profileKey, intent, tac_limit: tac,
-        paper_color: paperColor, finish, gsm };
+        paper_color: paperColor, finish, gsm,
+        ...(parseWhite(whiteIn) ? { substrate_white: parseWhite(whiteIn) } : {}) };
       const { context_id } = await createJob(f, opts);
       await settle(await waitJob(context_id, setAgentJob));
     } catch (x) {
@@ -219,23 +236,38 @@ function Home() {
     <div className="common_wrap">
       {mode === "direct" && !guide && !guideStatus.startsWith("가이드 검색 사용 불가") && <ModelLoadingScreen status={guideStatus} onSkip={() => setMode("agent")} />}
       <header className="page_head">
-        <h1>PDF 검수</h1>
+        <h1>인쇄 검수</h1>
         {mode === "direct" ? <GuideBadge ready={!!guide} status={guideStatus} /> : <span className="badge">가이드 검색은 guide 에이전트가 합니다</span>}
         <p className="lead">폰트·도련·해상도·색·문구를 검사하고, 고른 종이로 인쇄 색 차이와 불량 위험을 예측합니다. 오탈자 등은 자동으로 고치지 않고 수정 제안만 보여 주니 원본 파일에서 직접 고치세요. {mode === "direct" ? "파일은 어디로도 보내지 않습니다." : "파일은 이 PC에서 도는 에이전트에만 보냅니다."}</p>
       </header>
+
+      {/* 가이드 검색: 검수 전에 규격을 확인할 수 있게 맨 위에 둔다(기본은 접힘) */}
+      <GuideSearch guide={guide} mode={mode} ready={!!agentUp} />
 
       <div className="modebar" role="tablist" aria-label="검사 방식">
         <button type="button" role="tab" aria-selected={mode === "direct"} className={`pill${mode === "direct" ? " on" : ""}`} onClick={() => setMode("direct")}>
           바로 검사 <span className="count">브라우저 안</span></button>
         <button type="button" role="tab" aria-selected={mode === "agent"} className={`pill${mode === "agent" ? " on" : ""}`} onClick={() => setMode("agent")}>
-          에이전트 검사 <span className="count">A2A</span></button>
+          에이전트 검사 <span className="count">에이전트 협업(A2A)</span></button>
         <span className="note">
           {mode === "direct" ? "모든 계산을 이 브라우저 안에서 합니다. 파일은 어디로도 보내지 않습니다."
             : agentUp === null ? "에이전트 연결 확인 중…"
-            : agentUp ? <>로컬 에이전트(사전 검사·색·종이·가이드…)가 나눠서 검사합니다. 파일은 이 PC의 에이전트에만 보냅니다. <a href="/agents">소통 기록 보기</a></>
+            : agentUp ? "로컬 에이전트(사전 검사·색·종이·가이드…)가 나눠서 검사합니다. 파일은 이 PC의 에이전트에만 보냅니다. 아래에서 에이전트 상태와 소통 기록을 바로 볼 수 있습니다."
             : <span className="sev-high">에이전트가 꺼져 있습니다. <code>agents</code> 폴더에서 <code>python run_agents.py</code>로 켜세요.</span>}
         </span>
       </div>
+
+      {/* 에이전트 검사를 고르면 '에이전트' 탭과 같은 내용(목록·의뢰 추적·소통 기록)을 이 자리에서 본다 */}
+      {mode === "agent" && (
+        <section className={`gsearch panel agent_inline${showAgents ? " open" : ""}`}>
+          <button type="button" className="gs_toggle" aria-expanded={showAgents} onClick={() => setShowAgents((v) => !v)}>
+            <b>에이전트 상태 · 의뢰 추적 · 소통 기록</b>
+            <span className="note">누가 어떤 일을 할 수 있고(skill), 이번 의뢰를 누가 언제 얼마나 처리했는지 그대로 보여 줍니다.</span>
+            <span className="gs_mark" aria-hidden="true">{showAgents ? "－" : "＋"}</span>
+          </button>
+          {showAgents && <div className="gs_body"><AgentsView initialCtx={agentJob?.context_id ?? ""} showWarn={false} /></div>}
+        </section>
+      )}
 
       <form className="upload panel" onSubmit={submit}>
         <label>PDF 파일
@@ -302,6 +334,8 @@ function Home() {
           </select>
         </label>
         <label>총 잉크량 한도(%)<input type="number" value={tac} onChange={(e) => setTac(+e.target.value)} /></label>
+        <label title="분광측색기로 잰 종이 흰색을 넣으면, 프로파일이 가정한 종이 대신 이 종이 기준으로 인쇄 색을 옮겨 ΔE를 다시 잽니다. 비워 두면 보정하지 않습니다.">종이 흰색 측정값(Lab, 선택)
+          <input type="text" inputMode="decimal" placeholder="예: 94.9, 2.0, -6.0" value={whiteIn} onChange={(e) => setWhiteIn(e.target.value)} disabled={!paperColor} /></label>
         <button disabled={!file || busy || (!profile && !(mode === "agent" && paperId === "unknown")) || (mode === "agent" && !agentUp)}>{busy ? "검사 중…" : mode === "agent" ? "에이전트에 맡기기" : "검사 시작"}</button>
         {res && <button type="button" className="ghost" onClick={() => window.print()}>보고서 인쇄/PDF 저장</button>}
         {paper && profile && (
@@ -309,7 +343,11 @@ function Home() {
             <span className="chip">{paper.group}</span><span className="chip">{surface(paper)}</span>
             <b>{paper.name}</b>{paper.maker && <span className="note">{paper.maker}</span>}
             <span className="note">→ {profile.name}{profileKey === "auto" && paper.approx ? " (근사)" : ""} · 잉크량 한도 {profile.tac}% ({profile.tacSource})</span>
-            {profileKey === "auto" && paper.warn && <div className="warn">{paper.warn}</div>}
+            {/* 근사 경고: 측정한 종이 흰색을 넣으면 그 종이 기준으로 옮겨 잰다(흰색만 보정이고 잉크 거동은 여전히 등급 프로파일 값이다) */}
+            {profileKey === "auto" && paper.warn && !parseWhite(whiteIn) && <div className="warn">{paper.warn}
+              {paper.approx && paperColor && <> 종이 흰색을 측정했다면 위 ‘종이 흰색 측정값’에 넣으면 그 종이 기준으로 보정합니다(참고: 프로파일 종이 흰색 Lab {profile.white.join(", ")}).</>}</div>}
+            {parseWhite(whiteIn) && <div className="note">종이 흰색 보정 켜짐: 프로파일 종이 Lab {profile.white.join(", ")} → 측정값 Lab {parseWhite(whiteIn)!.join(", ")} (흰색만 옮깁니다. 잉크 거동·잉크량 한도는 프로파일 값 그대로입니다)</div>}
+            {whiteIn.trim() && !parseWhite(whiteIn) && <div className="warn">종이 흰색 측정값을 읽지 못했습니다. ‘L, a, b’ 숫자 3개로 넣으세요(L 0~100, a·b ±128). 지금은 보정하지 않습니다.</div>}
           </div>
         )}
       </form>

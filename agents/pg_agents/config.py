@@ -46,3 +46,33 @@ def agent_url(target: str) -> str:
 def ensure_dirs() -> None:
     STORE.mkdir(parents=True, exist_ok=True)
     LOG_DB.parent.mkdir(parents=True, exist_ok=True)
+
+
+ENV_FILES = (ROOT / "agents" / ".env", ROOT / ".env")  # 둘 다 .gitignore에 있다. 보기는 agents/.env.example
+
+
+def load_env_files(paths: tuple[Path, ...] = ENV_FILES) -> list[str]:
+    """`.env`의 KEY=VALUE를 환경변수로 올린다(이미 설정된 값은 건드리지 않는다 — 터미널에서 준 값이 이긴다).
+
+    `#` 주석과 빈 줄은 넘기고, 따옴표로 감싼 값은 벗긴다. 값을 화면에 찍지 않는다(키가 로그에 남지 않게).
+    `KEY=`처럼 값이 빈 줄은 설정하지 않는다(앞 파일의 빈 줄이 뒤 파일의 실제 값을 가리지 않게).
+    읽은 파일 목록을 돌려준다. 파일이 없으면 아무 일도 하지 않는다(선택 기능이라 없는 것이 정상).
+    """
+    read: list[str] = []
+    for p in paths:
+        try:
+            text = p.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, _, v = line.partition("=")
+            k, v = k.strip().removeprefix("export ").strip(), v.strip()
+            if len(v) > 1 and v[0] == v[-1] and v[0] in "\"'":
+                v = v[1:-1]
+            if k and v and k not in os.environ:
+                os.environ[k] = v
+        read.append(str(p))
+    return read

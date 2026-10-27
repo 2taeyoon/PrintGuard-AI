@@ -25,6 +25,10 @@ NODE = {"preflight": "agents/preflight.ts", "color": "agents/color.ts", "paper":
 
 def main(names: list[str]) -> None:
     sys.stdout.reconfigure(encoding="utf-8")  # cp949 콘솔에서 출력하다 런처가 죽고 자식까지 끄는 일을 막는다
+    sys.path.insert(0, str(HERE))
+    from pg_agents.config import load_env_files
+    for f in load_env_files():  # agents/.env의 설정을 자식 프로세스까지 물려 준다(값은 찍지 않는다)
+        print(f"[.env] {f}")
     LOGS.mkdir(parents=True, exist_ok=True)
     want = names or [*PY, *NODE]
     procs = []

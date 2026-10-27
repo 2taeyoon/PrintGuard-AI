@@ -81,6 +81,10 @@ export function serveAgent(card: AgentCard, handlers: Record<string, Handler>) {
     res.end(JSON.stringify(obj));
   };
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+    // 포트를 열어 본 사람에게 여기가 화면이 아니라는 것만 알려 준다(주소·내부 구조는 적지 않는다)
+    if (req.method === "GET" && req.url === "/") {
+      return send(res, 200, { data: { agent: card.name, note: "에이전트 API입니다. 사람이 쓰는 화면은 앱에서 보세요." }, meta: {} });
+    }
     if (req.method === "GET" && req.url === "/.well-known/agent-card.json") return send(res, 200, card);
     if (req.method === "GET" && req.url === "/health") return send(res, 200, { data: { status: "ok", agent: card.name }, meta: {} });
     if (req.method === "POST" && req.url === "/a2a") {

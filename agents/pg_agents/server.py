@@ -46,6 +46,11 @@ def create_agent_app(card: AgentCard, handlers: Mapping[str, Handler]) -> FastAP
     app = FastAPI(title=f"PrintGuard {card.name} agent", lifespan=lifespan)
     app.add_middleware(CORSMiddleware, allow_origin_regex=r"http://(127\.0\.0\.1|localhost):\d+", allow_methods=["*"], allow_headers=["*"])
 
+    @app.get("/")
+    async def root() -> dict[str, Any]:
+        """포트를 열어 본 사람에게 여기가 화면이 아니라는 것만 알려 준다(주소·내부 구조는 적지 않는다)."""
+        return {"data": {"agent": card.name, "note": "에이전트 API입니다. 사람이 쓰는 화면은 앱에서 보세요."}, "meta": {}}
+
     @app.get("/.well-known/agent-card.json")
     async def agent_card() -> dict[str, Any]:
         return card.model_dump(mode="json")

@@ -70,3 +70,13 @@ def test_unknown_paper_asks_then_runs_color_with_choice():
         skills = [s["skill"] for s in j["steps"]]
         assert skills.index("recommend_paper") < skills.index("predict_color") < skills.index("assess_risk")
         assert j["results"]["paper_choice"]["paper_id"] == "art"
+
+
+def test_color_input_passes_measured_paper_white_only_when_given():
+    """측정한 종이 흰색은 의뢰 옵션에 있을 때만 color 입력에 넣는다(없으면 키 자체를 보내지 않는다)."""
+    from pg_agents.orchestrator.engine import Job
+    from pg_agents.orchestrator.plan import _color
+    base = {"context_id": "ctx_job_w", "idempotency_key": "k", "pdf_ref": "a" * 64, "filename": "a.pdf"}
+    assert "substrate_white" not in _color(Job(options={"paper_id": "art"}, **base))
+    white = [95.0, 1.0, -5.0]
+    assert _color(Job(options={"paper_id": "art", "substrate_white": white}, **base))["substrate_white"] == white

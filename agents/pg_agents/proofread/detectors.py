@@ -140,13 +140,24 @@ def llm(text: str, *, client=None) -> list[dict[str, Any]]:
     return out
 
 
-def _gemini(prompt: str, key: str) -> str:
+def _gemini(prompt: str, key: str, *, tries: int = 4) -> str:
+    """기본 모델은 무료 등급이 있는 flash-lite. 분당 한도(429)에 걸리면 Retry-After만큼 기다렸다 다시 부른다."""
+    import time
+
     import httpx
-    model = os.environ.get("PG_LLM_MODEL", "gemini-2.5-flash")
-    r = httpx.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent", params={"key": key},
-                   json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0}}, timeout=60)
-    r.raise_for_status()
-    return r.json()["candidates"][0]["content"]["parts"][0]["text"]
+    model = os.environ.get("PG_LLM_MODEL", "gemini-3.5-flash-lite")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    body = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0}}
+    for i in range(tries):
+        r = httpx.post(url, params={"key": key}, json=body, timeout=60)
+        if r.status_code == 429 and i < tries - 1:
+            wait = float(r.headers.get("Retry-After") or 5 * 2 ** i)
+            print(f"[llm] 분당 한도(429) — {wait:.0f}초 기다립니다", flush=True)
+            time.sleep(wait)
+            continue
+        r.raise_for_status()
+        return r.json()["candidates"][0]["content"]["parts"][0]["text"]
+    raise RuntimeError("Gemini 분당 한도를 넘겨 포기했습니다")  # 여기까지 오지 않는다(마지막 시도는 raise_for_status)
 
 
 DETECTORS = {"rules": rules, "kiwi_typo": kiwi_typo, "kiwi_space": kiwi_space, "llm": llm}

@@ -31,7 +31,9 @@ def _color(j: Job) -> dict[str, Any]:
     return {**_size(j), "paper_id": paper_id(j), "profile": o.get("profile", "auto"), "intent": o.get("intent", "relative"),
             # 질문에 답해 종이를 고른 경우엔 그 종이 프로파일의 한도를 쓰고, 처음부터 정한 경우엔 화면의 한도를 쓴다
             "tac_limit": None if ("paper_id" in j.answers and o.get("profile", "auto") == "auto") else o.get("tac_limit"),
-            "paper_color": o.get("paper_color", True)}
+            "paper_color": o.get("paper_color", True),
+            # 측정한 종이 흰색(선택). 넣으면 color가 프로파일 종이 대신 이 종이 기준으로 옮긴다(report의 ΔE 재계산도 같은 값을 쓴다)
+            **({"substrate_white": o["substrate_white"]} if o.get("substrate_white") else {})}
 
 
 def _recommend(j: Job) -> dict[str, Any]:
@@ -59,6 +61,31 @@ def _guide(j: Job) -> dict[str, Any]:
     for s in j.results.get("proofread", {}).get("suggestions", [])[:10]:
         qs[f"proof:{s.get('key')}"] = f"{s.get('kind_label', '')} {s.get('reason', '')}"
     return {"queries": qs, "k": 2}
+
+
+# ---------- 5·6단계: 오케스트레이터 API와 MCP 서버가 같이 쓰는 입력 만들기 ----------
+def quote_spec(j: Job, copies: int, override: dict[str, Any] | None = None) -> dict[str, Any]:
+    """견적 사양은 검수 결과(쪽수)와 의뢰 옵션(크기·도련·종이)에서 만든다. 부수와 협력사만 사용자가 고른다."""
+    pf = j.results.get("preflight") or {}
+    return {**{k: v for k, v in _size(j).items() if k != "pdf_ref"}, "pages": pf.get("pages", 1), "copies": int(copies or 100),
+            "paper_id": paper_id(j), **(override or {})}
+
+
+def report_input(j: Job) -> dict[str, Any]:
+    """보고서 입력. 수치를 새로 만들지 않고 부서 결과에서 고르기만 한다(ΔE는 report가 color로 다시 계산해 대조한다)."""
+    res = j.results
+    co = res.get("color") or {}
+    issues = [{"severity": x.get("severity"), "title": x.get("title"), "page": x.get("page")}
+              for x in [*(res.get("preflight") or {}).get("issues", []), *co.get("issues", [])]]
+    inp = {"pdf_ref": j.pdf_ref, "filename": j.filename, "pages": (res.get("preflight") or {}).get("pages"), "paper_id": paper_id(j),
+           "paper_name": ((res.get("risk") or {}).get("paper") or {}).get("name"), "issues": issues,
+           "proofread": [{k: s.get(k) for k in ("page", "kind_label", "original", "suggestion")} for s in (res.get("proofread") or {}).get("suggestions", [])],
+           "risks": [{"title": r.get("name"), "level": r.get("level")} for r in (res.get("risk") or {}).get("risks", [])],
+           "quote": res.get("quote"), "order": res.get("order")}
+    if co.get("color_report"):
+        inp["color"] = {"input": {k: v for k, v in _color(j).items() if k != "pdf_ref"}, "mean_de": co["color_report"].get("weightedMeanDE"),
+                        "profile": co.get("profile")}
+    return inp
 
 
 def build_plan(available: set[str]) -> list[list[Call]]:
