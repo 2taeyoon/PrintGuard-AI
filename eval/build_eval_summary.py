@@ -23,7 +23,7 @@ def load(name: str):
 
 search = load("results.json")
 browser = load("browser_int8_result.json")
-profiles = load("profiles_result.json")
+profiles = [p for p in load("profiles_result.json") or [] if p.get("key") != "swop"]  # Windows 내장 SWOP 프로파일은 쓰지 않는다
 color = load("color_check_result.json")
 quant = load("quant_check.json")
 substrate = load("substrate_check.json")
@@ -76,7 +76,7 @@ if profiles:
                        "rows": [{"key": p["key"], "name": p["name"], "condition": p.get("condition", ""), "tac": p.get("tac"),
                                  "white": p.get("white"), "blackL": p.get("blackL"), "papers": p.get("papers"),
                                  "noPaper": pick(p, "noPaper"), "withPaper": pick(p, "withPaper")} for p in profiles]}
-    out["sources"]["profiles"] = "frontend/scripts/test-profiles.mts (사진 8장 × 프로파일 13개)"
+    out["sources"]["profiles"] = "frontend/scripts/test-profiles.mts (사진 8장 × 프로파일 12개)"
 if substrate:
     out["substrate"] = {
                         "rows": [{k: r[k] for k in ("from", "to", "paperWhiteDE", "none_mean", "ratio_mean", "linear_mean",

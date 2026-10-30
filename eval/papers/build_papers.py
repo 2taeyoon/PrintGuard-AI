@@ -32,7 +32,6 @@ PROFILES = {
     "board": ("APTEC_PC10_CardBoard_2023_v1.icc", "APTEC Coated CardBoard (PC10)", "프리미엄 코팅 판지", 340, "ICC 프로파일 레지스트리"),
     "isocoatedv2": ("ISOcoated_v2_eci.icc", "ISO Coated v2 (FOGRA39)", "ISO 12647-2:2004 paper type 1·2 유광·무광 코팅지", 330, ECI09),
     "jc2011": ("JapanColor2011Coated.icc", "Japan Color 2011 Coated", "Japan Color 2011, paper type 1 프리미엄 코팅지", 350, "ICC 프로파일 레지스트리"),
-    "swop": ("RSWOP.icm", "Agfa SWOP Standard (Windows 내장)", "미국 SWOP 코팅지(이 PC의 Windows 파일)", None, "문서 없음"),
 }
 
 W = {  # 종류별 경고 문구
@@ -171,7 +170,7 @@ for name, maker, typ, colors, gsm, note in DOMESTIC:
 
 profiles = {}
 for k, (f, n, cond, tac, tsrc) in PROFILES.items():
-    fk = {"coated": "coated", "uncoated": "uncoated", "swop": "swop", "sc": "sc", "board": "board", "jc2011": "jc2011", "isocoatedv2": "isocoatedv2",
+    fk = {"coated": "coated", "uncoated": "uncoated", "sc": "sc", "board": "board", "jc2011": "jc2011", "isocoatedv2": "isocoatedv2",
           "yellowish": "yellowish", "lwc_imp": "lwc_imp", "lwc_std": "lwc_std", "mfc": "mfc", "snp": "snp", "inp": "inp"}[k]
     fa = FACTS[fk]
     profiles[k] = {"file": f, "name": n, "condition": cond, "tac": tac if tac is not None else 300, "tacSource": tsrc if tac is not None else "문서 없음 — 기본값 300% (추정)",
