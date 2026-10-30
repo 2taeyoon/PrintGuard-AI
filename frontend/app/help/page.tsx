@@ -255,12 +255,6 @@ export default function WhyPage() {
       {/* 측정표 전체(옛 '평가' 탭)를 같은 화면에 이어 붙인다 */}
       <EvalReport />
 
-      <section className="panel qa_more">
-        <h2>이 수치를 다시 만들려면</h2>
-        <p className="note">평가 스크립트: <code>eval/run_eval.py</code>(검색), <code>eval/proofread/eval_proofread.py</code>(교정),
-          <code>frontend/scripts/test-*.mts</code>(색·종이·보정). 화면의 수치는 그 산출물(<code>public/data/eval_summary.json</code>,
-          <code>proofread_eval.json</code>)을 그대로 읽어 그립니다.</p>
-      </section>
     </main>
   );
 }

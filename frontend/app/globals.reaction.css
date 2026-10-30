@@ -1,37 +1,63 @@
-/* 브레이크포인트 (순서 유지: 1680, 1536, 1280, 1024, 768, 640). 글자 크기는 루트만 줄인다. */
+/* 브레이크포인트 (순서 유지: 1680, 1536, 1280, 1024, 768, 640).
+   루트 글자 크기는 줄이지 않는다 — 가장 작은 글자가 어느 화면에서도 14px 아래로 내려가지 않게 하려는 것이다.
+   좁은 화면에서는 제목만 단계적으로 줄이고 칸 수를 줄인다. */
 @media (max-width: 1680px) {
   .riskgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 1280px) {
-  html { font-size: 58.5%; }
   .papers { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .riskgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ws { grid-template-columns: 96px minmax(0, 1fr) 320px; }
-  .agent_grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .topmenu a { padding: 0 14px; }
+  .page_head h1 { font-size: 3.4rem; }
+  .timeline li { grid-template-columns: 180px 150px 1fr auto; }
+  .agent_main .timeline li { grid-template-columns: 180px 140px 1fr auto; }
+}
+@media (max-width: 1100px) {
+  .agent_layout { grid-template-columns: 1fr; }
+  .agent_side { position: static; }
 }
 @media (max-width: 1024px) {
   .common_wrap { padding: 32px 32px 64px; }
   .topbar_inner { padding: 0 32px; gap: 16px; }
   .topbar_desc { display: none; }
+  .topmenu a { padding: 0 12px; font-size: 1.5rem; }
   .ws { grid-template-columns: 1fr; height: auto; }
-  .pages { flex-direction: row; }
+  .pages { flex-direction: row; flex-wrap: wrap; }
   .mapwrap { grid-template-columns: 1fr; }
   .map { height: 480px; }
   .shoplist { height: auto; max-height: 640px; }
+  .timeline li, .agent_main .timeline li { grid-template-columns: 170px 1fr; gap: 4px 12px; }
+  .timeline .note { grid-column: 1 / -1; }
 }
 @media (max-width: 768px) {
-  html { font-size: 54.5%; }
   .topbar_inner { height: 56px; padding: 0 16px; gap: 12px; }
-  .topbar_desc { display: none; }
+  .brand { font-size: 1.8rem; }
   .menu_btn { display: inline-flex; margin-left: auto; }
-  .topmenu { display: none; position: absolute; top: 56px; left: 0; right: 0; flex-direction: column; align-items: stretch; gap: 4px;
-    padding: 8px 16px 16px; background: var(--white); border-bottom: 1px solid var(--borderSubtle); box-shadow: 0 0 20px 0 var(--borderStrong); }
+  /* 메뉴는 헤더 아래로 펼쳐지는 목록이 된다(칸 높이는 손가락에 맞춰 48px) */
+  .topmenu { display: none; position: absolute; top: 56px; left: 0; right: 0; flex-direction: column; align-items: stretch;
+    padding: 8px 8px 16px; background: var(--white); border-bottom: 1px solid var(--borderSubtle); box-shadow: 0 0 20px 0 var(--borderStrong); }
+  .topmenu a { height: 48px; justify-content: flex-start; padding: 0 16px; font-size: 1.6rem; }
   .RouteApp.open .topmenu { display: flex; }
   .papers, .riskgrid, .agent_grid { grid-template-columns: 1fr; }
-  .timeline li { grid-template-columns: 80px 1fr; }
+  .page_head h1 { font-size: 3.0rem; }
+  .waterfall li { grid-template-columns: 1fr 72px; }
+  .waterfall .wf_track { grid-column: 1 / -1; }
+  .gatelist li { grid-template-columns: 1fr; gap: 2px; }
+  .ev_bars li, .qa_bars .b_row { grid-template-columns: 1fr 64px; }
+  .ev_bars .b_track, .qa_bars .b_track { grid-column: 1 / -1; }
+  .ev_sec, .qa_body { padding-left: 16px; padding-right: 16px; }
+  .gs_head, .gs_body { padding-left: 16px; padding-right: 16px; }
+  .cm_md { font-size: 1.4rem; }
 }
 @media (max-width: 640px) {
-  html { font-size: 50.5%; }
   .common_wrap { padding: 16px 16px 32px; }
-  .page_head h1 { font-size: 2.8rem; }
+  .page_head h1 { font-size: 2.6rem; }
+  .qa_group { font-size: 2.0rem; }
+  .panel { padding: 16px; }
+  form.upload { gap: 12px; }
+  form.upload label { flex: 1 1 100%; }
+  input[type="number"] { width: 100%; }
+  .timeline li, .agent_main .timeline li { grid-template-columns: 1fr; gap: 2px; }
+  .sources_list li { grid-template-columns: 1fr; gap: 2px; }
 }
