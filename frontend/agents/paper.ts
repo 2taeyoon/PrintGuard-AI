@@ -1,4 +1,4 @@
-// paper 에이전트(:8705) — 종이 데이터(public/data/papers.json)와 불량 위험도 점수표(lib/risk.ts).
+// paper 에이전트(:8705) — 종이 데이터(public/data/papers.json)와 불량 점검 규칙(lib/risk.ts).
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { FinishId, PaperDb } from "../lib/papers";
@@ -11,7 +11,7 @@ const paperOf = (id: unknown) => DB.papers.find((p) => p.id === id);
 export const card: AgentCard = {
   name: "paper", description: "종이 491종 데이터와 인쇄 불량 위험도(뒷묻음·눌림·어긋남·얼룩·줄무늬) 점수표. 상태를 바꾸지 않는다.", url: "http://127.0.0.1:8705",
   skills: [
-    { id: "assess_risk", description: "종이·후가공·평량과 색 결과(최대 잉크량·이미지 면적)로 불량 위험도를 매긴다", grade: "read", allowed_requesters: ["orchestrator", "report"],
+    { id: "assess_risk", description: "종이·후가공·평량과 색 결과(최대 잉크량·이미지 면적)로 불량 원인이 해당하는지 본다", grade: "read", allowed_requesters: ["orchestrator", "report"],
       input_schema: { paper_id: "string", finish: "unknown|none|fold|bind|foil", gsm: "number", max_tac: "number", tac_limit: "number", image_share: "number", has_images: "boolean" },
       output_schema: { paper: "Paper", risks: "Risk[]" } },
     { id: "recommend_paper", description: "종이를 모를 때 PDF 특징(쪽수·판형·이미지·글 양)으로 종이 후보 3개를 근거와 함께 묻는다(input-required)", grade: "read",
