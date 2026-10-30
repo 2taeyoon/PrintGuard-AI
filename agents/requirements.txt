@@ -9,7 +9,9 @@ pydantic==2.14.1              # A2A 계약(contracts.py)
 numpy==2.5.4                  # guide의 BM25·점수 정규화
 pymupdf==2.0                  # proofread의 쪽별 글·위치(import fitz — 2.0에서는 쓸 때 경고가 난다)
 kiwipiepy==0.24.1             # proofread 오타·띄어쓰기 탐지
-sentence-transformers==6.2.0  # guide의 e5-small 임베딩(torch 포함, 첫 요청 때 불러온다)
+onnxruntime==1.31.1           # guide의 e5-small 임베딩(브라우저와 같은 int8 ONNX를 그대로 돌린다 — torch 안 씀)
+tokenizers==0.23.3            # 같은 모델의 tokenizer.json
+huggingface-hub==2.3.0       # 모델 파일이 로컬에 없을 때(서버 배포) 내려받기
 mcp==2.3.0                    # MCP 서버(pg_agents/mcp_server.py). 1.x(FastMCP)에서도 돈다
 pytest==9.1.1
 pytest-asyncio==1.4.1
