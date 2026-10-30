@@ -1,6 +1,8 @@
 // 출처 탭 — 이 앱이 쓴 자료를 전부 적는다. 데이터·프로파일·모델·라이브러리·근거 문헌, 그리고 직접 만든 것까지.
 // 링크가 없는 항목은 유료 규격이거나 원문이 사라진 것이며, 그 사실을 그대로 적는다.
 
+import Toc from "../toc";
+
 type Item = { name: string; use: string; url?: string; note?: string };
 type Group = { id: string; title: string; lead: string; items: Item[] };
 
@@ -102,15 +104,15 @@ const GROUPS: Group[] = [
   },
   {
     id: "mine",
-    title: "7. 이 저장소에서 직접 만든 것",
-    lead: "밖에서 가져오지 않고 직접 쓰거나 만든 것들입니다. 이 부분은 출처가 저 자신이므로 치우쳤을 수 있다는 점을 평가 측정표의 ‘주의’에 함께 적어 두었습니다.",
+    title: "7. 개발자가 만든 것",
+    lead: "밖에서 가져오지 않고 개발자가 쓰거나 만든 것들입니다. 출처가 개발자 자신이라 치우쳤을 수 있다는 점은 평가 측정표의 ‘주의’에 함께 적어 두었습니다.",
     items: [
-      { name: "인쇄 가이드 문서 (public/kb/print_guide.md)", use: "검색이 보여 주는 원문. 위 1·2번 자료와 일반적인 인쇄 상식을 정리해 직접 썼습니다", note: "이 저장소 안의 파일입니다" },
-      { name: "검색 평가 질문 92개 (eval/questions.json)", use: "청킹·모델·가중치 비교. 가이드를 쓴 사람이 직접 만든 질문이라 단어가 겹쳐 쉬운 편입니다", note: "이 저장소 안의 파일입니다" },
-      { name: "교정 평가셋 (문서 60개·오류 360개)", use: "규칙·Kiwi·LLM 비교. 오류를 규칙으로 넣고 규칙으로 찾는 부분은 순환이라 실력이 아닙니다", note: "이 저장소 안의 파일입니다" },
-      { name: "종이 흰색 보정식 (lib/substrate.ts)", use: "밖에서 가져온 식이 아닙니다. 종이 흰색이 다른 측정 프로파일 12쌍에서 보정 없음·비례·선형을 직접 비교해 가장 가까운 선형을 골랐고, 그 비교표는 평가 측정표에 있습니다", note: "이 저장소 안의 파일입니다" },
-      { name: "인쇄 불량 위험도 점수표 (lib/risk.ts)", use: "학습 모델이 아닙니다. 어떤 요인이 불량을 키우는지(방향)는 1번 자료에서 확인했지만 점수 크기와 높음/중간/낮음 구분선은 측정해서 정한 값이 아니라 임의로 정한 값입니다. 그래서 등급은 확률이 아니라 ‘먼저 확인할 순서’로만 읽어야 합니다", note: "이 저장소 안의 파일입니다" },
-      { name: "측정 산출물 (public/data/eval_summary.json, proofread_eval.json)", use: "평가 측정표 화면이 그대로 읽는 수치", note: "이 저장소 안의 파일입니다" },
+      { name: "인쇄 가이드 문서 (public/kb/print_guide.md)", use: "검색이 보여 주는 원문. 위 1·2번 자료와 일반적인 인쇄 상식을 정리해 개발자가 썼습니다" },
+      { name: "검색 평가 질문 92개 (eval/questions.json)", use: "청킹·모델·가중치 비교. 가이드를 쓴 개발자가 만든 질문이라 단어가 겹쳐 쉬운 편입니다" },
+      { name: "교정 평가셋 (문서 60개·오류 360개)", use: "규칙·Kiwi·LLM 비교. 오류를 규칙으로 넣고 규칙으로 찾는 부분은 순환이라 실력이 아닙니다" },
+      { name: "종이 흰색 보정식 (lib/substrate.ts)", use: "규격을 보고 옮긴 식이 아니라, 실제로 측정해 만든 공개 프로파일 12쌍(종이 흰색이 서로 다른 같은 등급 쌍)으로 보정 없음·비례·선형을 비교해 고른 식입니다. 12쌍 중 9쌍에서 선형이 가장 가까웠고 보정 없음보다 나빠진 쌍은 없었습니다. 비교표는 평가 측정표에 있고, 실물 인쇄를 측색해 검증한 것은 아닙니다" },
+      { name: "인쇄 불량 점검 규칙 (lib/risk.ts)", use: "위험 점수를 매기지 않습니다. 1번 자료에서 확인한 불량 원인이 이 파일·이 종이에 해당하는지만 보고, 해당하면 근거와 함께 ‘확인 필요’로 적습니다. 실제 불량 사례로 맞춰 본 적이 없어 확률이나 등급은 내지 않습니다" },
+      { name: "측정 산출물 (public/data/eval_summary.json, proofread_eval.json)", use: "평가 측정표 화면이 그대로 읽는 수치" },
     ],
   },
 ];
@@ -120,12 +122,10 @@ export default function SourcesPage() {
     <main className="common_wrap">
       <header className="page_head">
         <h1>출처</h1>
-        <p className="lead">이 앱이 쓴 자료를 전부 적었습니다 — 가이드의 근거 문헌, 색 프로파일과 계산 규격, 종이·인쇄소 데이터, 모델, 라이브러리, 제가 직접 만든 것까지. 원문을 확인하지 못했거나 규격이 유료라 식을 보지 못한 것은 그렇게 적었습니다.<b> 이 앱은 모델을 직접 학습시키지 않았습니다.</b>공개 모델을 그대로 쓰고 무엇을 쓸지는 직접 재서 골랐습니다(<a href="/help#eval">평가 측정표</a>).</p>
+        <p className="lead">이 앱이 쓴 자료를 전부 적었습니다 — 가이드의 근거 문헌, 색 프로파일과 계산 규격, 종이·인쇄소 데이터, 모델, 라이브러리, 개발자가 만든 것까지. 원문을 확인하지 못한 것은 그렇게 적었습니다.<b> 이 앱은 모델을 직접 학습시키지 않았습니다.</b>공개 모델을 그대로 쓰고 무엇을 쓸지는 재서 골랐습니다(<a href="/help#eval">평가 측정표</a>).</p>
       </header>
 
-      <nav className="ev_toc panel">
-        {GROUPS.map((g) => <a key={g.id} href={`#${g.id}`}>{g.title.replace(/^\d+\.\s*/, "")}</a>)}
-      </nav>
+      <Toc items={GROUPS.map((g) => ({ id: g.id, label: g.title.replace(/^\d+\.\s*/, "") }))} />
 
       {GROUPS.map((g) => (
         <section key={g.id} id={g.id} className="ev_sec panel">
@@ -136,7 +136,7 @@ export default function SourcesPage() {
               <li key={it.name}>
                 <span className="src_name">
                   {it.url ? <a href={it.url} target="_blank" rel="noreferrer">{it.name} ↗</a>
-                    : <>{it.name} <span className="src_nolink">링크 없음</span></>}
+                    : <>{it.name}{g.id !== "mine" && <span className="src_nolink">링크 없음</span>}</>}
                 </span>
                 <span className="src_use">{it.use}{it.note && <em className="note"> — {it.note}</em>}</span>
               </li>

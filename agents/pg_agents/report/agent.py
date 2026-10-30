@@ -16,7 +16,7 @@ from ..contracts import AgentCard, AgentRequest, TaskStatus, now_utc
 from ..server import create_agent_app
 
 REPORTS = DATA / "reports"
-SEV = {"high": "높음", "medium": "중간", "low": "낮음", "na": "해당 없음"}
+SEV = {"high": "높음", "medium": "중간", "low": "낮음", "check": "확인 필요", "none": "해당 없음", "na": "판단 불가"}
 
 CARD = AgentCard.model_validate({
     "name": "report", "description": "검수 보고서 작성(ΔE는 color가 다시 계산해 대조). 파일 쓰기는 safety를 거친다.", "url": "http://127.0.0.1:8708",
@@ -55,7 +55,7 @@ def render(i: dict[str, Any], de: dict[str, Any] | None) -> str:
         L += [f"- p.{s.get('page')} {s.get('kind_label', '')}: '{s.get('original')}' → '{s.get('suggestion')}'" for s in pr[:60]] + [""]
     risks = i.get("risks") or []
     if risks:
-        L += ["## 종이·후가공 위험"] + [f"- [{SEV.get(r.get('level'), r.get('level', ''))}] {r.get('title', '')}" for r in risks[:20]] + [""]
+        L += ["## 종이·후가공 점검"] + [f"- [{SEV.get(r.get('level'), r.get('level', ''))}] {r.get('title', '')}" for r in risks[:20]] + [""]
         L.append("")
     return "\n".join(L)
 

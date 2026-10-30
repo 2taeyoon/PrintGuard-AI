@@ -4,6 +4,7 @@
 // 숫자는 전부 eval 산출물에서 만든 public/data/eval_summary.json·proofread_eval.json을 그대로 읽는다(화면에서 계산하지 않는다).
 // 다시 재려면: python eval/run_eval.py → python eval/build_eval_summary.py (교정은 eval/proofread/eval_proofread.py)
 import { useEffect, useState } from "react";
+import Toc from "./toc";
 
 type Ci = [number, number];
 type Dense = { hit1: number; hit1_ci: Ci; mrr: number };
@@ -93,10 +94,8 @@ export default function EvalReport() {
       <Head />
       <p className="ev_lead">이 앱이 쓰는 설정(검색 모델·청킹·가중치, 색 변환, 종이 흰색 보정, 교정 탐지기)을 무엇과 비교해서 골랐는지 전부 수치로 적었습니다. 화면의 숫자는 저장소의 평가 스크립트가 남긴 산출물을 그대로 읽은 것이고 다시 재면 이 화면도 같이 바뀝니다.</p>
 
-      <nav className="ev_toc panel">
-        <a href="#search">가이드 검색</a><a href="#color">색 변환 검증</a><a href="#profiles">종이별 색 차이</a>
-        <a href="#substrate">종이 흰색 보정</a><a href="#proof">교정 탐지기</a><a href="#notread">재지 않은 것</a>
-      </nav>
+      <Toc items={[{ id: "search", label: "가이드 검색" }, { id: "color", label: "색 변환 검증" }, { id: "profiles", label: "종이별 색 차이" },
+        { id: "substrate", label: "종이 흰색 보정" }, { id: "proof", label: "교정 탐지기" }, { id: "notread", label: "재지 않은 것" }]} />
 
       {s && (
         <Section id="search" title="1. 가이드 검색 — 어떤 청킹·어떤 모델·어떤 가중치인가"
@@ -307,7 +306,7 @@ export default function EvalReport() {
       <Section id="notread" title="6. 재지 않은 것" lead="평가에 넣지 못한 것들입니다. 없는 것을 있는 것처럼 적지 않으려고 따로 모았습니다.">
         <ul className="ev_list">
           <li><b>실물 인쇄 측색</b> — 모든 색 수치는 프로파일 기준 계산값입니다. 실제로 찍어 재지 않았습니다.</li>
-          <li><b>인쇄 불량 정답 데이터</b> — 공개 데이터셋을 찾지 못해 위험도는 학습 모델이 아니라 근거를 밝힌 점수표입니다. 점수 크기와 등급 구분선은 재서 정한 값이 아니라 임의로 정한 값입니다.</li>
+          <li><b>인쇄 불량 정답 데이터</b> — 공개 데이터셋을 찾지 못했습니다. 그래서 불량은 학습 모델로 예측하지 않고, 자료에서 확인한 원인이 해당하는지만 보여 줍니다. 어느 원인이 얼마나 더 위험한지는 재지 않았습니다.</li>
           <li><b>실제 사용자 질문·실제 원고</b> — 검색 질문과 교정 평가셋 모두 제가 만든 것이라 난이도가 실제와 다를 수 있습니다.</li>
           <li><b>브랜드 종이 측정 프로파일</b>— 456종은 등급 프로파일로 근사했고 종이 흰색을 측정해 넣을 때만 보정합니다.</li>
           <li><b>인쇄 비용</b> — 단가를 정할 근거가 없어 견적·주문 기능은 두지 않았습니다. 인쇄소 지도는 찾아 주기만 하고 연락은 사용자가 직접 합니다.</li>

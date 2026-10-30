@@ -38,7 +38,7 @@ for (const paper of DB.papers.filter((p) => p.kind === "type")) {
   for (const finish of ["unknown", "none", "fold", "bind", "foil"] as const) {
     for (const [label, maxTAC, share] of [["이미지 적음·잉크 낮음", 180, 0.05], ["사진 많음·잉크 높음", 290, 0.6]] as const) {
       const r = assess({ paper, finish, gsm: finish === "fold" ? 250 : 120, maxTAC, tacLimit: DB.profiles[paper.profile].tac, imageShare: share, hasImages: true });
-      scen.push({ paper: paper.id, name: paper.name, finish, label, gsm: finish === "fold" ? 250 : 120, risks: Object.fromEntries(r.map((x) => [x.id, { level: x.level, score: x.score }])) });
+      scen.push({ paper: paper.id, name: paper.name, finish, label, gsm: finish === "fold" ? 250 : 120, risks: Object.fromEntries(r.map((x) => [x.id, { level: x.level, reasons: x.reasons.length }])) });
     }
   }
 }

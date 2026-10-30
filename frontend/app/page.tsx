@@ -13,7 +13,7 @@ import { FINISHES, GROUPS, loadPapers, surface, type FinishId, type Paper, type 
 import { assess, inputFrom, type Risk } from "@/lib/risk";
 import { answerJob, createJob, orchestratorUp, toScreen, waitJob, type JobView } from "@/lib/agentClient";
 
-const LEVEL_LABEL = { high: "높음", medium: "중간", low: "낮음", na: "판단 불가" } as const;
+const LEVEL_LABEL = { check: "확인 필요", none: "해당 없음", na: "판단 불가" } as const;
 
 const SEV_LABEL: Record<Sev, string> = { high: "인쇄 위험", medium: "수정 권장", low: "확인 필요" };
 const SIZES: Record<string, [number, number]> = {
@@ -386,7 +386,7 @@ function Home() {
           )}
           {risks.length > 0 && (
             <div className="risk panel">
-              <strong>인쇄 불량 위험도 · {usedPaper?.name}</strong>
+              <strong>인쇄 불량 점검 · {usedPaper?.name}</strong>
               {usedPaper?.warn && <div className="warn">{usedPaper.warn}</div>}
               <div className="riskgrid">
                 {risks.map((r) => (
@@ -395,12 +395,12 @@ function Home() {
                       {r.id === "indent" && <span className="noauto">후가공은 PDF로 자동 분석 불가</span>}
                       {r.id === "banding" && <span className="noauto">PDF로 예측 불가</span>}
                       {r.weak && <span className="noauto">근거 약함</span>}</h4>
-                    <ul>{r.reasons.length ? r.reasons.map((t) => <li key={t}>{t}</li>) : <li>해당하는 위험 요인이 없습니다.</li>}</ul>
+                    <ul>{r.reasons.length ? r.reasons.map((t) => <li key={t}>{t}</li>) : <li>자료에서 확인한 원인 중 해당하는 것이 없습니다.</li>}</ul>
                     {r.hits[0] && <div className="gcard"><div className="gh">{r.hits[0].section.doc} › {r.hits[0].section.text.split("\n")[0]}</div></div>}
                   </div>
                 ))}
               </div>
-              <span className="note">학습한 모델이 아니라 공개 자료의 원인에서 정한 점수표 규칙입니다. 점수와 등급 구분선은 재서 정한 값이 아니라 임의로 정한 값이라, 높음/중간/낮음은 확률이 아니라 먼저 확인할 순서로 읽으세요. 후가공(접지·제본·박·형압)은 PDF에 정보가 없어 자동으로 검사하지 못하며 직접 고른 값만 씁니다.</span>
+              <span className="note">위험도를 점수로 매기지 않습니다. 공개 자료에서 확인한 불량 원인이 이 파일·이 종이에 해당하는지만 보고, 해당하면 근거와 함께 ‘확인 필요’로 적습니다. 확률이 아니라 사람이 확인할 거리입니다. 후가공(접지·제본·박·형압)은 PDF에 정보가 없어 자동으로 검사하지 못하며 고른 값만 씁니다.</span>
             </div>
           )}
           <div className="ws">

@@ -1,16 +1,17 @@
-// 인쇄 불량 위험도 (뒷묻음, 눌림, 색판 어긋남, 농도 얼룩, 줄무늬). 학습 모델이 아니라 점수표 규칙이다.
+// 인쇄 불량 점검 (뒷묻음, 눌림, 색판 어긋남, 농도 얼룩, 줄무늬). 학습 모델도 아니고 위험 점수도 매기지 않는다.
 // 각 요인은 원문을 직접 확인한 자료(eval/kb/print_guide_defects.md 6장)에 근거하고, 근거가 없는 요인은 "(추정)"을 붙인다.
-// 요인의 방향(무엇이 불량을 키우는가)만 자료에서 확인했다. 점수 크기와 높음/중간/낮음 구분선은 측정해서 정한 값이 아니라
-// 임의로 정한 값이며 실제 불량 데이터로 맞춰 본 적이 없다. 그래서 등급은 확률이 아니라 "먼저 확인할 순서"로만 읽어야 한다.
+// 자료에서 확인한 원인(무엇이 불량을 키우는가)이 이 파일·이 종이에 해당하는지만 본다. 해당하면 '확인 필요'로 적고 근거를 함께 보여 준다.
+// 예전에는 점수를 더해 높음/중간/낮음을 매겼지만, 그 점수와 구분선은 실제 불량 데이터로 맞춰 본 적이 없는 임의값이라 없앴다.
 import type { Analysis } from "./analyze";
 import type { FinishId, Paper } from "./papers";
 
-export type Level = "low" | "medium" | "high" | "na"; // na: 입력이 없거나 PDF로 판단할 수 없음
+export type Level = "check" | "none" | "na"; // check: 자료가 지목한 원인이 이 파일에 있다 / none: 없다 / na: 입력이 없거나 PDF로 판단할 수 없음
 export type RiskId = "setoff" | "indent" | "misreg" | "mottle" | "banding";
-export type Risk = { id: RiskId; name: string; level: Level; score: number; reasons: string[]; query: string; weak?: boolean };
+export type Risk = { id: RiskId; name: string; level: Level; reasons: string[]; query: string; weak?: boolean };
 export type RiskInput = { paper: Paper; finish: FinishId; gsm: number; maxTAC: number; tacLimit: number; imageShare: number; hasImages: boolean };
 
-const lv = (score: number, mid: number, high: number): Level => (score >= high ? "high" : score >= mid ? "medium" : "low");
+// 등급을 매기지 않는다. 자료에서 확인한 원인이 이 파일·이 종이에 해당하는지만 본다(해당하면 사람이 확인할 거리).
+const hit = (n: number): Level => (n > 0 ? "check" : "none");
 
 export function inputFrom(a: Analysis, paper: Paper, finish: FinishId, gsm: number, tacLimit: number): RiskInput {
   const maxTAC = Math.max(0, ...a.issues.map((i) => i.metrics?.maxTAC ?? 0));
@@ -59,10 +60,10 @@ export function assess(x: RiskInput): Risk[] {
   const bd = ["줄무늬(기어 줄)는 기어 유격·롤러·블랭킷 같은 인쇄기 기계 요인이 주원인이라 PDF로 예측하지 않는다 (Valente 외 WACV 2020, US4962705)"];
 
   return [
-    { id: "setoff", name: "뒷묻음 (Set-off)", level: lv(s1, 2, 4), score: s1, reasons: so, query: "뒷묻음 잉크막이 두꺼울 때 건조 분말 쌓은 높이" },
-    { id: "indent", name: "눌림·압흔 (Indentation)", level: x.finish === "unknown" ? "na" : lv(s2, 2, 4), score: s2, reasons: ind, query: "눌림 압흔 오시 괘선 압력 코팅 판지 갈라짐" },
-    { id: "misreg", name: "핀트 불량·색판 어긋남 (Misregistration)", level: p.coated === null ? "na" : lv(s3, 1, 9), score: s3, reasons: p.coated === null ? [...mr, special] : mr, query: "색판 어긋남 축임물 종이가 늘어남 트래핑", weak: true },
-    { id: "mottle", name: "농도 얼룩 (Mottling)", level: p.coated === null ? "na" : lv(s4, 2, 9), score: s4, reasons: mt, query: "농도 얼룩 mottle 코팅지 잉크 흡수성 단색 면" },
-    { id: "banding", name: "줄무늬 (Banding)", level: "na", score: 0, reasons: bd, query: "줄무늬 banding 기어 줄 인쇄기 기계 요인" },
+    { id: "setoff", name: "뒷묻음 (Set-off)", level: hit(s1), reasons: so, query: "뒷묻음 잉크막이 두꺼울 때 건조 분말 쌓은 높이" },
+    { id: "indent", name: "눌림·압흔 (Indentation)", level: x.finish === "unknown" ? "na" : hit(s2), reasons: ind, query: "눌림 압흔 오시 괘선 압력 코팅 판지 갈라짐" },
+    { id: "misreg", name: "핀트 불량·색판 어긋남 (Misregistration)", level: p.coated === null ? "na" : hit(s3), reasons: p.coated === null ? [...mr, special] : mr, query: "색판 어긋남 축임물 종이가 늘어남 트래핑", weak: true },
+    { id: "mottle", name: "농도 얼룩 (Mottling)", level: p.coated === null ? "na" : hit(s4), reasons: mt, query: "농도 얼룩 mottle 코팅지 잉크 흡수성 단색 면" },
+    { id: "banding", name: "줄무늬 (Banding)", level: "na", reasons: bd, query: "줄무늬 banding 기어 줄 인쇄기 기계 요인" },
   ];
 }
