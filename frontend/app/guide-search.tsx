@@ -10,7 +10,6 @@ import { GuideResult } from "./guide-ui";
 const EXAMPLES = ["도련은 몇 mm로 잡아야 해?", "흰 글자가 출력에서 사라지는 이유는?", "뒷묻음은 왜 생겨?", "리치 블랙은 언제 써?"];
 
 export default function GuideSearch({ guide, mode, ready }: { guide: Guide | null; mode: "direct" | "agent"; ready: boolean }) {
-  const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [asked, setAsked] = useState("");
   const [hits, setHits] = useState<Hit[] | null>(null);
@@ -32,16 +31,12 @@ export default function GuideSearch({ guide, mode, ready }: { guide: Guide | nul
   }
 
   return (
-    <section className={`gsearch panel${open ? " open" : ""}`}>
+    <section className="gsearch panel open">
       <div className="gs_head">
-        <button type="button" className="gs_toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-          <b>인쇄 가이드 찾아보기</b>
-          <span className="note">판형·색·파일·종이·불량에 관한 가이드에서 질문과 가까운 항목을 찾습니다. 답을 지어내지 않고 원문을 보여 줍니다.</span>
-          <span className="gs_mark" aria-hidden="true">{open ? "－" : "＋"}</span>
-        </button>
+        <b>인쇄 가이드 찾아보기</b>
+        <span className="note">판형·색·파일·종이·불량에 관한 가이드에서 질문과 가까운 항목을 찾습니다. 답을 지어내지 않고 원문을 보여 줍니다.</span>
       </div>
-      {open && (
-        <div className="gs_body">
+      <div className="gs_body">
           <form
             className="gs_form"
             onSubmit={(e: FormEvent) => { e.preventDefault(); ask(q); }}
@@ -65,7 +60,6 @@ export default function GuideSearch({ guide, mode, ready }: { guide: Guide | nul
             </>
           )}
         </div>
-      )}
     </section>
   );
 }

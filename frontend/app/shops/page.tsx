@@ -42,8 +42,11 @@ export default function Shops() {
     (async () => {
       const L = (await import("leaflet")).default;
       if (dead || !el.current || mapRef.current) return;
-      const map = L.map(el.current, { preferCanvas: true }).setView([37.56, 126.98], 11);
-      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "&copy; OpenStreetMap contributors" }).addTo(map);
+      // 지도는 대한민국 밖으로 나가지 않게 가둔다(타일은 세계 지도지만 보이는 범위를 남한 경계로 제한).
+      const KOREA = L.latLngBounds([32.9, 124.4], [38.9, 131.1]);
+      const map = L.map(el.current, { preferCanvas: true, maxBounds: KOREA, maxBoundsViscosity: 1, minZoom: 6 }).fitBounds(KOREA);
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, bounds: KOREA, noWrap: true,
+        attribution: "&copy; OpenStreetMap contributors" }).addTo(map);
       mapRef.current = map;
       layerRef.current = L.layerGroup().addTo(map);
       setReady(true);

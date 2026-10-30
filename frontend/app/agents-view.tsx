@@ -15,6 +15,14 @@ const GRADE: Record<string, string> = { read: "조회", A: "A 즉시 실행", B:
 const DECISION: Record<string, string> = { executed: "실행", pending_review: "사람 승인 대기", rejected: "거절", approved: "승인", expired: "기한 지나 거절" };
 const STATUS: Record<string, string> = { on: "켜짐", fake: "가짜", off: "꺼짐" };
 const secs = (ms: number) => `${(ms / 1000).toFixed(ms < 10000 ? 2 : 1)}초`;
+// 에이전트는 서버가 주는 차례가 호출 순서에 따라 달라지므로, 일하는 차례대로 고정해서 보여 준다
+const ORDER = ["orchestrator", "preflight", "color", "paper", "guide", "proofread", "shop", "report", "safety"];
+const rank = (n: string) => { const i = ORDER.indexOf(n.replace("(fake)", "")); return i < 0 ? ORDER.length : i; };
+// 공통 로그의 시각은 UTC로 남는다. 화면에는 한국 시간으로 '2026년 10월 30일 오전 06:31'처럼 적는다
+const KST = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: "Asia/Seoul", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: true,
+});
+const when = (iso: string) => { const t = new Date(iso); return Number.isNaN(t.getTime()) ? iso : KST.format(t); };
 
 /** 에이전트가 전부 살아 있는지 한눈에 보는 뱃지. 접어 둔 상태에서도 보이게 제목 옆에 붙인다 */
 export function AgentHealth() {
@@ -49,7 +57,8 @@ export default function AgentsView({ initialCtx = "", showWarn = true }: { initi
   const [ctx, setCtx] = useState<string>(initialCtx);
   const [logs, setLogs] = useState<LogRow[]>([]);
   const [trace, setTrace] = useState<Trace | null>(null);
-  const [opened, setOpened] = useState<string | null>(null); // 처음에는 모두 접혀 있다
+  const [opened, setOpened] = useState<string[]>([]); // 처음에는 모두 접혀 있고, 각각 따로 열고 닫는다
+  const toggle = (name: string) => setOpened((o) => (o.includes(name) ? o.filter((x) => x !== name) : [...o, name]));
 
   // 렌더 중에 바로 맞춘다(권장 방식). 사용자가 직접 고른 뒤에는 initialCtx가 그대로라 건드리지 않는다.
   const [seenCtx, setSeenCtx] = useState(initialCtx);
@@ -76,7 +85,7 @@ export default function AgentsView({ initialCtx = "", showWarn = true }: { initi
     return () => { alive = false; clearInterval(t); };
   }, [ctx]);
 
-  const list = Object.entries(agents);
+  const list = Object.entries(agents).sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b));
   const onCount = list.filter(([, a]) => a.status !== "off").length;
 
   return (
@@ -92,10 +101,10 @@ export default function AgentsView({ initialCtx = "", showWarn = true }: { initi
           </div>
           <ul className="agent_list">
             {list.map(([name, a]) => {
-              const isOpen = opened === name;
+              const isOpen = opened.includes(name);
               return (
                 <li key={name} className={`aitem ${a.status}${isOpen ? " open" : ""}`}>
-                  <button type="button" className="aitem_head" aria-expanded={isOpen} onClick={() => setOpened(isOpen ? null : name)}>
+                  <button type="button" className="aitem_head" aria-expanded={isOpen} onClick={() => toggle(name)}>
                     <span className={`dot ${a.status}`} aria-hidden="true" />
                     <b>{agentLabel(name)}</b>
                     <code>({name})</code>
@@ -197,7 +206,7 @@ export default function AgentsView({ initialCtx = "", showWarn = true }: { initi
             <ol className="timeline">
               {logs.map((l) => (
                 <li key={l.id} className={`k-${l.kind} st-${l.status ?? ""}`}>
-                  <span className="t">{l.at.slice(11, 23)}</span>
+                  <span className="t">{when(l.at)}</span>
                   <span className="who"><b>{agentLabel(l.source)}</b>{l.requester && l.kind === "request_received" ? <> ← {agentLabel(l.requester)}</> : null}</span>
                   <span className="what">{KIND[l.kind] ?? l.kind}{l.skill && <> · {skillLabel(l.skill)} <code>({l.skill})</code></>}{l.status && <> · {l.status}</>}{l.outcome && <> · <b>{l.outcome}</b></>}{l.grade && l.grade !== "read" && <> · 등급 {l.grade}</>}</span>
                   {!ctx && <span className="note">{l.context_id}</span>}

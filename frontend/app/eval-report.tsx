@@ -319,9 +319,6 @@ export default function EvalReport() {
         </ul>
       </Section>
 
-      <p className="note ev_foot">이 화면의 수치를 다시 만들려면: <code>python eval/run_eval.py</code>(검색) ·
-        <code>python eval/proofread/eval_proofread.py</code>(교정) · <code>npx tsx frontend/scripts/test-profiles.mts</code>(종이) 뒤에
-        <code>python eval/build_eval_summary.py</code>를 돌리면 이 페이지가 읽는 요약이 갱신됩니다.</p>
     </>
   );
 }
