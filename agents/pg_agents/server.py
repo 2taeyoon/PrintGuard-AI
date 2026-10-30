@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
 
 from .common_log import log_event
-from .config import MAX_PATH_LENGTH, is_mock, set_agent_name
+from .config import CORS_ORIGIN_REGEX, MAX_PATH_LENGTH, is_mock, set_agent_name
 from .contracts import AgentCard, AgentRequest, AgentResult, ErrorCode, RequestMeta, TaskStatus, now_utc
 
 Handler = Callable[[AgentRequest], Awaitable[AgentResult | dict[str, Any]]]
@@ -44,7 +44,7 @@ def create_agent_app(card: AgentCard, handlers: Mapping[str, Handler]) -> FastAP
         yield
 
     app = FastAPI(title=f"PrintGuard {card.name} agent", lifespan=lifespan)
-    app.add_middleware(CORSMiddleware, allow_origin_regex=r"http://(127\.0\.0\.1|localhost):\d+", allow_methods=["*"], allow_headers=["*"])
+    app.add_middleware(CORSMiddleware, allow_origin_regex=CORS_ORIGIN_REGEX, allow_methods=["*"], allow_headers=["*"])
 
     @app.get("/")
     async def root() -> dict[str, Any]:
