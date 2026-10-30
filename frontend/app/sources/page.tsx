@@ -47,13 +47,17 @@ const GROUPS: Group[] = [
   },
   {
     id: "paper",
-    title: "3. 종이 데이터 (491종)",
-    lead: "종이 종류와 브랜드 목록, 평량·용도 설명의 출처입니다. 브랜드 종이의 색을 직접 측정한 자료는 공개된 것이 없어 같은 등급의 공개 프로파일로 근사하고 화면에 ‘근사’라고 표시합니다.",
+    title: "3. 종이 데이터 (489종)",
+    lead: "종이 종류와 브랜드 목록, 평량·용도 설명의 출처입니다. 두성종이·삼원페이퍼는 유통사 카탈로그라 제조사가 적혀 있지 않고, 국내 제지사 종이는 제조사 공식 제품 페이지에서 확인했습니다. 공식 페이지에서 찾지 못한 2종(아이리스·몽블랑)은 뺐습니다. 브랜드 종이의 색을 직접 측정한 자료는 공개된 것이 없어 같은 등급의 공개 프로파일로 근사하고 화면에 ‘근사’라고 표시합니다.",
     items: [
       { name: "한국제지연합회 「종이의 분류」", use: "종이 대분류와 등급 체계", url: "http://paper.or.kr/sub_3/3_3.php" },
       { name: "독립출판 종이 가이드 (brunch.co.kr/@chochoya/118)", use: "아트지·스노우지·모조지·랑데뷰지의 쓰임과 평량 기준", url: "https://brunch.co.kr/@chochoya/118" },
       { name: "두성종이 제품 목록", use: "브랜드 종이 282종의 이름·제조사·표면", url: "https://www.doosungpaper.co.kr/goods/goods_list.php?cateCd=001", note: "2026-10-14 수집" },
       { name: "삼원페이퍼 제품 목록", use: "브랜드 종이 160종", url: "https://www.samwonpaper.com/product/packageBook/list", note: "2026-10-14 수집" },
+      { name: "삼화페이퍼(삼화제지) 제품 페이지", use: "랑데뷰·밍크·색지·레자크·스타라이트 5종의 제조사와 설명", url: "https://samwhapaper.com/product/samwhapaper/premium/31", note: "2026-10-30 확인" },
+      { name: "한솔제지 제품 페이지 (인쇄용지·INSPER)", use: "앙상블(앙상블E클래스)·매직쉐도우·매직매칭·오로 4종", url: "https://www.hansolpaper.co.kr/product/paper1", note: "2026-10-30 확인. INSPER 쪽은 제품명과 분류 설명만 있고 개별 상세 페이지가 없습니다" },
+      { name: "전주페이퍼 출판용지 제품 페이지", use: "이라이트(E-Light)·그린라이트·만화용지·중질만화 4종과 하이벌크 설명", url: "https://www.jeonjupaper.com/publicationpaper", note: "2026-10-30 확인" },
+      { name: "한국제지 주요제품 페이지", use: "아르떼(ARTE) 1종", url: "https://www.hankukpaper.com/ko/product/mainProduct02.do", note: "2026-10-30 확인" },
     ],
   },
   {
