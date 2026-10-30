@@ -52,7 +52,7 @@ TYPES = [
     ("mfc", "미도공 인쇄용지 (MFC)", "코팅지", True, "mfc", False, "백상지 또는 중질지를 만드는 중 사이즈프레스에서 1㎡당 양면 10g 전후를 도공한 종이.", "학습지, 교과서, 전단지", KPA, None),
     ("woodfree", "백상지 · 모조지 (백색)", "비코팅지", False, "uncoated", False, "표백화학펄프 100%로 만들고 도공하지 않은 종이. 모조지는 광택이 없어 눈이 편하다. 내지는 보통 80g·100g을 쓴다.", "도서·간행물, 노트, 단행본 내지", KPA + ", " + GUIDE, None),
     ("woodfree_yellow", "미색 백상지 · 미색 모조", "비코팅지", False, "yellowish", False, "백상지 중 미색·연미색 종이(백상지 분류에 포함).", "단행본 내지, 노트", KPA + ", " + GUIDE, None),
-    ("bulk", "벌크지 (하이벌크)", "비코팅지", False, "uncoated", True, "같은 평량의 다른 용지보다 두꺼운 두께감이 있어 책으로 만들면 가벼운 느낌을 주는 종이. 쪽수가 적은 책의 두께를 늘리는 데 많이 쓴다.", "단행본 내지", "프린트올데이 '알아두면 쓸데있는 기본 종이 상식' (printallday.com/properties-of-paper, 2020)", W["approx"]),
+    ("bulk", "벌크지 (하이벌크)", "비코팅지", False, "uncoated", True, "같은 평량의 다른 용지보다 두꺼운 두께감이 있어 책으로 만들면 가벼운 느낌을 주는 종이. 쪽수가 적은 책의 두께를 늘리는 데 많이 쓴다.", "단행본 내지", "전주페이퍼 출판용지 제품 페이지", W["approx"]),
     ("mech1", "중질지 1급", "비코팅지", False, "uncoated", True, "표백화학펄프 50% 이상에 기계펄프를 섞고 도공하지 않은 종이.", "서적, 노트, 교과서", KPA, W["approx"] + " 기계펄프가 섞여 백상지보다 흰색이 낮을 수 있습니다."),
     ("mech2", "중질지 2급 (만화용지)", "비코팅지", False, "inp", True, "표백화학펄프 50% 미만에 기계펄프 또는 재생펄프를 섞고 도공하지 않은 종이.", "만화용지, 전화번호부용지", KPA, W["approx"] + " 개선 신문용지(INP) 조건으로 계산합니다."),
     ("sc", "슈퍼캘린더지 (SC)", "비코팅지", False, "sc", False, "슈퍼캘린더로 표면을 매끄럽게 한 비도공지(ISO PS6, SC-B).", "잡지, 카탈로그(윤전)", "ICC 프로파일 레지스트리 FOGRA54", None),
@@ -139,34 +139,46 @@ for b in sw["brands"]:
                    "src": f"삼원페이퍼 제품 목록 (품목 {b['total']}개 중 {len(b['skus'])}개 확인)", "warn": t[9] or W["approx"],
                    "maker": "삼원페이퍼", "gsm": gsm_range([s["name"] for s in b["skus"]]), "url": b["url"]})
 
-# 국내 제지사 브랜드: 프린트올데이 '알아두면 쓸데있는 기본 종이 상식'(2020-05-25) 표에서 확인한 제조사·색상·평량·설명
-PAD = "프린트올데이 '알아두면 쓸데있는 기본 종이 상식' (printallday.com/properties-of-paper, 2020)"
+# 국내 제지사 브랜드: 제조사 공식 제품 페이지에서 확인한 제조사·설명(2026-10-30 확인).
+# 예전에는 블로그 글 한 편(printallday)에서 가져왔는데, 그 주소가 닫혀 확인할 수 없게 되어 공식 페이지로 바꿨다.
+# 공식 사이트에서 찾지 못한 아이리스(삼화)·몽블랑(한솔)은 단종으로 보여 뺐다.
+SAMWHA, HANSOL, JEONJU, HANKUK = "삼화제지", "한솔제지", "전주페이퍼", "한국제지"
+S_SRC, S_URL = "삼화페이퍼(삼화제지) 제품 페이지", "https://samwhapaper.com/product/samwhapaper/"
+H_INSPER = ("한솔제지 INSPER 제품 목록", "https://www.hansolpaper.co.kr/product/insper")
+JJ = ("전주페이퍼 출판용지 제품 페이지", "https://www.jeonjupaper.com/publicationpaper")
 DOMESTIC = [
-    ("랑데뷰", "삼화제지", "coated_brand", "울트라화이트·내츄럴", "90~240g", "국내에서 가장 많이 쓰는 러프그로스(자연스러운 질감의 매트한 인쇄 광택). 수입지 반누보와 비슷하다."),
-    ("아이리스", "삼화제지", "coated_brand", "백색", "105~230g", "러프그로스 계열 고급지."),
-    ("몽블랑", "한솔제지", "coated_brand", "화이트·엑스트라화이트", "90~240g", "러프그로스 계열 고급지."),
-    ("앙상블", "한솔제지", "coated_brand", "", "90~260g", "러프그로스 계열 고급지."),
-    ("아르떼", "한국제지", "coated_brand", "울트라화이트·내츄럴화이트", "90~310g", "러프그로스 계열 고급지."),
-    ("이라이트", "전주페이퍼", "bulk", "", "70~80g", "하이벌크 계열. 같은 평량의 다른 용지보다 두꺼워 책이 가벼운 느낌을 준다."),
-    ("그린라이트", "전주페이퍼", "bulk", "", "70~100g", "하이벌크 계열."),
-    ("만화용지", "전주페이퍼", "mech2", "백색", "70g", "벌크 계열 만화용지."),
-    ("중질만화", "전주페이퍼", "mech2", "미색", "70~80g", "벌크 계열 중질 만화용지."),
-    ("밍크", "삼화제지", "colored", "", "120~400g", "제책용 면지와 각종 싸바리 용도로 많이 쓰는 색지."),
-    ("색지", "삼화제지", "colored", "황색·분홍·연두·옥색", "70~90g", "흑백 인쇄 때 색간지로 쓰는 경제적인 색지."),
-    ("레자크", "삼화제지", "colored", "", "90~300g", "가죽 같은 질감의 무늬지. 주로 표지용."),
-    ("매직쉐도우", "한솔제지", "colored", "", "90~200g", "고급 레터지에 많이 쓰는 무늬지."),
-    ("매직매칭", "한솔제지", "colored", "", "120~250g", "고급스러운 자연 무늬지."),
-    ("스타라이트", "삼화제지", "pearl", "", "120~250g", "펄지."),
-    ("오로", "한솔제지", "pearl", "", "120~250g", "펄지."),
+    ("랑데뷰", SAMWHA, "coated_brand", "울트라화이트·내츄럴", "90~240g",
+     "국내에서 가장 많이 쓰는 러프그로스(자연스러운 질감의 매트한 인쇄 광택). 제조사는 고급 특수 코팅 인쇄용지로 설명한다.",
+     S_SRC, S_URL + "premium/31"),
+    ("앙상블", HANSOL, "coated_brand", "", "90~260g",
+     "러프그로스지. 제조사는 백색도·인쇄성·러프감과 빠른 잉크 건조를 내세운다. 공식 제품명은 앙상블E클래스.",
+     "한솔제지 인쇄용지 제품 페이지", "https://www.hansolpaper.co.kr/product/paper1"),
+    ("아르떼", HANKUK, "coated_brand", "울트라화이트·내츄럴화이트", "90~310g",
+     "최고급 러프글로스지(ARTE). 제조사는 무광택 미도공지로 설명하며 캔버스 같은 표면 질감과 두께감을 내세운다.",
+     "한국제지 주요제품 페이지", "https://www.hankukpaper.com/ko/product/mainProduct02.do"),
+    ("이라이트", JEONJU, "bulk", "", "70~80g", "하이벌크 종이(공식 표기 E-Light). 가볍고 두툼해 단행본 내지에 쓴다.", *JJ),
+    ("그린라이트", JEONJU, "bulk", "", "70~100g", "미량 도공한 재활용 인쇄용지(공식 표기 그린 Light). 벌키하면서 인쇄 적성이 좋다고 설명한다.", *JJ),
+    ("만화용지", JEONJU, "mech2", "백색", "70g", "가볍고 두께감이 좋은 만화용지(공식 표기 Comic). 만화 단행본·월간 만화에 쓴다.", *JJ),
+    ("중질만화", JEONJU, "mech2", "미색", "70~80g", "가볍고 두께감이 좋은 중질 만화용지(공식 표기 Wood-Comic).", *JJ),
+    ("밍크", SAMWHA, "colored", "", "120~400g", "부드러운 표면감의 프리미엄 색상지. 싸바리·패키지·면지에 많이 쓴다.", S_SRC, S_URL + "colored/23"),
+    ("색지", SAMWHA, "colored", "황색·분홍·연두·옥색", "70~90g", "파스텔 계열 색상에 매끄러운 면을 가진 색상지. 흑백 인쇄의 색간지·내지로 쓴다.",
+     S_SRC, S_URL + "colored/29"),
+    ("레자크", SAMWHA, "colored", "", "90~300g",
+     "기계에서 엠보싱한 무늬지(레자크 64~220 시리즈). 북커버·싸바리·패키지에 쓴다. 같은 이름의 일본 수입지(Leathac)와 구분해야 한다.",
+     S_SRC, S_URL + "embossed/2"),
+    ("매직쉐도우", HANSOL, "colored", "", "90~200g", "워터마크지. 표면에 무늬가 드러나지 않고 종이 안쪽에 무늬를 넣은 종이다(제조사 분류 설명).", *H_INSPER),
+    ("매직매칭", HANSOL, "colored", "", "120~250g", "무늬지. 마크롤과 펠트로 패턴을 새겨 넣은 종이다(제조사 분류 설명).", *H_INSPER),
+    ("스타라이트", SAMWHA, "pearl", "", "120~250g", "수성 펄코팅을 올린 펄지. 패키지·팬시·출판물에 쓴다.", S_SRC, S_URL + "premium/36"),
+    ("오로", HANSOL, "pearl", "", "120~250g", "펄지. 진주알 같은 은은한 느낌을 내려고 펄 코팅을 한 종이다(제조사 분류 설명).", *H_INSPER),
 ]
 have = {p["name"] for p in papers}
-for name, maker, typ, colors, gsm, note in DOMESTIC:
+for name, maker, typ, colors, gsm, note, src, url in DOMESTIC:
     if name in have:
         continue
     t = TYPE[typ]
     papers.append({"id": "kr-" + str(len(papers)), "name": name, "kind": "brand", "group": t[2], "type": typ, "coated": t[3], "profile": t[4],
-                   "approx": True, "note": note + (f" 색상: {colors}." if colors else ""), "use": "", "src": PAD, "warn": t[9] or W["approx"],
-                   "maker": maker, "gsm": gsm, "url": "https://printallday.com/properties-of-paper/"})
+                   "approx": True, "note": note + (f" 색상: {colors}." if colors else ""), "use": "", "src": src, "warn": t[9] or W["approx"],
+                   "maker": maker, "gsm": gsm, "url": url})
 
 profiles = {}
 for k, (f, n, cond, tac, tsrc) in PROFILES.items():
