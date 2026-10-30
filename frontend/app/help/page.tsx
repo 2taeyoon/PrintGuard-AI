@@ -143,7 +143,7 @@ export default function WhyPage() {
                 <tbody>
                   {rows.map(([name, m]) => (
                     <tr key={name} className={name === LOCAL ? "is-default" : ""}>
-                      <td>{name}{name === LOCAL && <span className="chip">앱 기본값</span>}{m.f1 === bestF1 && <span className="chip best">최고 F1</span>}</td>
+                      <td>{name}{name === LOCAL && <span className="ev_mark">✓ 기본값</span>}{m.f1 === bestF1 && <span className="chip best">최고 F1</span>}</td>
                       <td className="n">{pct(m.recall)} <span className="note">({pct(m.recall_ci[0])}~{pct(m.recall_ci[1])})</span></td>
                       <td className="n">{pct(m.precision)}</td>
                       <td className="n">{m.f1.toFixed(3)}</td>

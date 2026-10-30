@@ -53,7 +53,7 @@ const Head = () => <h2 className="qa_group" id="eval">평가 측정표 — 무�
 
 /** 표를 읽기 전에 결론부터: 이 수치라서 이것을 골랐다 */
 const Pick = ({ children }: { children: React.ReactNode }) => (
-  <p className="ev_pick"><b>그래서 고른 것</b> {children}</p>
+  <p className="ev_pick"><b>고른 것</b> {children}</p>
 );
 
 export default function EvalReport() {
@@ -92,7 +92,7 @@ export default function EvalReport() {
     <>
       <Head />
       <p className="ev_lead">이 앱이 쓰는 설정(검색 모델·청킹·가중치, 색 변환, 종이 흰색 보정, 교정 탐지기)을 무엇과 비교해서 골랐는지 전부 수치로 적었습니다.
-        화면의 숫자는 저장소의 평가 스크립트가 남긴 산출물을 그대로 읽은 것이고, 다시 재면 이 화면도 같이 바뀝니다. 요약 생성일 {d.built}.</p>
+        화면의 숫자는 저장소의 평가 스크립트가 남긴 산출물을 그대로 읽은 것이고, 다시 재면 이 화면도 같이 바뀝니다.</p>
 
       <nav className="ev_toc panel">
         <a href="#search">가이드 검색</a><a href="#color">색 변환 검증</a><a href="#profiles">종이별 색 차이</a>
@@ -120,7 +120,7 @@ export default function EvalReport() {
               <tbody>
                 {models.map((m) => (
                   <tr key={m} className={m === PICKED_MODEL ? "is-pick" : ""}>
-                    <td>{m}{m === PICKED_MODEL && <span className="ev_mark">✓ 이 앱이 쓰는 모델</span>}</td>
+                    <td>{m}{m === PICKED_MODEL && <span className="ev_mark">✓ 사용 모델</span>}</td>
                     {chunks.map((c) => {
                       const v = s.dense[m]?.[c];
                       const pick = m === PICKED_MODEL && c === PICKED_CHUNK;
@@ -138,7 +138,7 @@ export default function EvalReport() {
               <tbody>
                 {models.map((m) => (
                   <tr key={m} className={m === PICKED_MODEL ? "is-pick" : ""}>
-                    <td>{m}{m === PICKED_MODEL && <span className="ev_mark">✓ 이 앱이 쓰는 모델</span>}</td>
+                    <td>{m}{m === PICKED_MODEL && <span className="ev_mark">✓ 사용 모델</span>}</td>
                     <td className="n">{s.models[m].params_M}</td><td className="n">{s.models[m].MB.toLocaleString()}</td>
                     <td className="n">{s.models[m].dim}</td><td className="n">{s.models[m].load_s}</td>
                   </tr>
@@ -277,7 +277,7 @@ export default function EvalReport() {
               <tbody>
                 {prRows.map(([name, m]) => (
                   <tr key={name} className={name === "규칙+Kiwi 오타" ? "is-pick" : ""}>
-                    <td>{name}{name === "규칙+Kiwi 오타" && <span className="ev_mark">✓ 앱 기본값</span>}</td>
+                    <td>{name}{name === "규칙+Kiwi 오타" && <span className="ev_mark">✓ 기본값</span>}</td>
                     <td className="n">{pct(m.recall)}<span className="note"> ({pct(m.recall_ci[0], 0)}~{pct(m.recall_ci[1], 0)})</span></td>
                     <td className="n">{pct(m.precision)}</td>
                     <td className={`n${m.f1 === prBest ? " best" : ""}`}>{num(m.f1, 3)}</td>
