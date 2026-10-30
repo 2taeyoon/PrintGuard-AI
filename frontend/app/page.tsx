@@ -359,8 +359,7 @@ function Home() {
       )}
       {err && <div className="err">{err}</div>}
       {!res && !busy && !err && !agentJob && (
-        <div className="empty">PDF를 선택하고 ‘검사 시작’을 누르세요. 파일은 서버로 보내지 않습니다.<br />
-          테스트용 샘플: <code>PrintGuard/samples/defective_a5.pdf</code></div>
+        <div className="empty">PDF를 선택하고 ‘검사 시작’을 누르세요. 파일은 서버로 보내지 않습니다.</div>
       )}
 
       {res && (

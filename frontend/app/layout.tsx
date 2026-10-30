@@ -5,7 +5,7 @@ import "./globals.reaction.css";
 import Shell from "./nav";
 
 export const metadata: Metadata = {
-  title: "PrintGuard AI",
+  title: "PrintGuard-AI",
   description: "인쇄 전 품질 검수 에이전트",
 };
 

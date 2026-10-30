@@ -21,7 +21,7 @@ export default function Shell({ children }: { children: ReactNode }) {
     <div className={`RouteApp${open ? " open" : ""}`}>
       <header className="topbar">
         <div className="topbar_inner">
-          <Link href="/" className="brand" onClick={() => setOpen(false)}>PrintGuard AI</Link>
+          <Link href="/" className="brand" onClick={() => setOpen(false)}>PrintGuard-AI</Link>
           <nav className="topmenu" aria-label="메뉴">
             {TABS.map((t) => (
               <Link key={t.href} href={t.href} className={path === t.href ? "on" : ""} onClick={() => setOpen(false)}>{t.label}</Link>

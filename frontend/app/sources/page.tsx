@@ -35,7 +35,6 @@ const GROUPS: Group[] = [
       { name: "Microsoft Windows 내장 RSWOP.icm", use: "미국 SWOP 코팅지 조건 비교용", note: "내려받는 곳이 없습니다 — 설치된 Windows의 color 폴더(C:\Windows\System32\spool\drivers\color)에서 가져옵니다" },
       { name: "Sharma, Wu, Dalal, 「The CIEDE2000 Color-Difference Formula: Implementation Notes, Supplementary Test Data, and Mathematical Observations」, Color Research & Application 30(1), 2005", use: "CIEDE2000 색 차이 공식의 구현(lib/color.ts의 ΔE00 계산)", url: "https://hajim.rochester.edu/ece/sites/gsharma/ciede2000/" },
       { name: "ICC.1 규격 (International Color Consortium)", use: "프로파일 구조와 렌더링 의도(지각적·상대 비색·채도)의 정의", url: "https://www.color.org" },
-      { name: "김민찬·조가람·오성상·김주정, 「옥외광고용 실사출력물의 색상 일관성을 위한 연구」, 한국인쇄학회지 39(1), 2025, 49–100", use: "국내 인쇄 연구에서도 색 차이를 CIEDE2000(ΔE00)으로 재고, ΔE00 5를 넘으면 눈에 띄는 차이로 다룬다는 근거", url: "https://www.earticle.net/Article/A481876" },
       { name: "김주정·오성상·조가람·이재수, 「옥내외 광고용 디지털 인쇄의 색 관리 방안에 관한 연구」, 한국인쇄학회지 31(1), 2013, 15–37", use: "장치 선형화 → G7 보정 → ICC 프로파일 적용 순서의 색 관리 절차", url: "https://scienceon.kisti.re.kr/srch/selectPORSrchArticle.do?cn=JAKO201334460141769&dbt=NART" },
       { name: "차재영·조가람·구철회, 「인쇄 공정의 최적화를 위한 하드카피 프루프 프로파일링」, 한국인쇄학회지 28(1), 2010, 25–42", use: "장치마다 다른 색 재현 특성을 ICC 프로파일에 담아 변환한다는 설명", url: "https://www.kci.go.kr/kciportal/ci/sereArticleSearch/ciSereArtiView.kci?sereArticleSearchBean.artiId=ART001474484" },
       { name: "차재영·조가람·구철회, 「소프트 프루핑에서 최적의 Profiling을 이용한 컬러 관리에 관한 연구」, 한국인쇄학회지 27(1), 2009, 1–14", use: "입력 장치와 출력 장치의 색역이 달라 화면과 인쇄물의 색이 어긋난다는 점(소프트 프루핑의 전제)", url: "https://www.koreascience.or.kr/article/JAKO200926239076118.page?lang=ko" },
@@ -148,7 +147,7 @@ export default function SourcesPage() {
         </section>
       ))}
 
-      <div className="disclaimer">링크는 자료를 받은 곳이며 각 자료의 저작권과 이용 조건은 해당 배포처를 따릅니다. ICC 프로파일은 재배포가 금지되어 저장소에 넣지 않았고 공공 데이터는 공공누리 제1유형(출처표시) 조건으로 썼습니다. 빠진 출처를 발견하면 알려 주세요 — 쓴 자료는 전부 여기에 적는 것이 원칙입니다.</div>
+      <div className="disclaimer">링크는 자료를 받은 곳입니다. ICC 프로파일은 재배포가 금지되어 저장소에 넣지 않았고 공공 데이터는 공공누리 제1유형(출처표시) 조건으로 썼습니다. 빠진 출처를 발견하면 알려 주세요.</div>
     </main>
   );
 }
