@@ -1,6 +1,7 @@
 // 인쇄 불량 위험도 (뒷묻음, 눌림, 색판 어긋남, 농도 얼룩, 줄무늬). 학습 모델이 아니라 점수표 규칙이다.
 // 각 요인은 원문을 직접 확인한 자료(eval/kb/print_guide_defects.md 6장)에 근거하고, 근거가 없는 요인은 "(추정)"을 붙인다.
-// 점수·임계값은 가설이며 실제 불량 데이터로 보정하지 않았다.
+// 요인의 방향(무엇이 불량을 키우는가)만 자료에서 확인했다. 점수 크기와 높음/중간/낮음 구분선은 측정해서 정한 값이 아니라
+// 임의로 정한 값이며 실제 불량 데이터로 맞춰 본 적이 없다. 그래서 등급은 확률이 아니라 "먼저 확인할 순서"로만 읽어야 한다.
 import type { Analysis } from "./analyze";
 import type { FinishId, Paper } from "./papers";
 
@@ -31,11 +32,11 @@ export function assess(x: RiskInput): Risk[] {
   else so.push(special);
   if (x.imageShare >= 0.3) { s1 += 1; so.push(`이미지가 쪽 면적의 ${(x.imageShare * 100).toFixed(0)}%로 잉크 면적이 넓다 — 분말 입자는 잉크 면적에 맞춰야 한다 (Sappi)`); }
 
-  // 눌림: Müller Martini(제본 압력·마찰, 코팅·라미네이팅이 도움), 한국펄프종이공학회지 2008(오시 압력, 코팅 판지 갈라짐, 인쇄가 갈라짐을 키움)
+  // 눌림: 한국펄프종이공학회지 2008(오시 압력, 코팅 판지 갈라짐, 인쇄가 갈라짐을 키움)
   const ind: string[] = []; let s2 = 0;
   if (x.finish === "unknown") ind.push("후가공(접지·제본·박·형압)은 PDF에 들어 있지 않아 자동으로 알 수 없습니다. 후가공을 직접 고르면 판단합니다.");
   if (x.finish === "foil") { s2 += 2; ind.push("박·형압은 종이를 눌러 찍는 후가공이라 눌림이 직접 생긴다 (정의상)"); }
-  if (x.finish === "bind") { s2 += 1; ind.push("제본 공정의 압력·마찰·이송이 눌림 자국을 만든다 (Müller Martini)"); }
+  if (x.finish === "bind") ind.push("제본 공정의 압력·마찰·이송도 눌림 자국을 만들지만, 확인한 자료가 없어 점수에 넣지 않았다");
   if (x.finish === "fold") {
     s2 += 1; ind.push("오시 압력이 낮으면 접는 선이 얕고 높으면 섬유가 깨져 갈라진다 (한국펄프종이공학회지 2008)");
     if (p.coated === true) { s2 += 1; ind.push("코팅지는 접힌 선을 따라 흰 줄 갈라짐이 생긴다 (같은 논문)"); }

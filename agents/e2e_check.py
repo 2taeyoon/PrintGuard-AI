@@ -34,20 +34,8 @@ if j.get("question"):
 logs = httpx.get(f"{BASE}/logs", params={"context_id": ctx}).json()["data"]
 print("공통 로그", len(logs), "줄:", [f"{x['source']}:{x['kind']}" for x in logs][:12])
 
-# 5단계: 목업 견적(B) → 주문(C, 사람 승인) → 보고서(A, ΔE 재계산 대조)
-if j["status"] == "completed" and "--commerce" in sys.argv:
-    q = httpx.post(f"{BASE}/jobs/{ctx}/quote", json={"partner": "mock_ganada", "copies": 200}, timeout=60).json()["data"]
-    print("견적", q["status"], q["output"].get("quote", {}).get("amount"), q["output"].get("decision", {}).get("reason") or q["output"])
-    bad = httpx.post(f"{BASE}/jobs/{ctx}/quote", json={"partner": "mock_ganada", "copies": 200, "spec": {"pages": 99}}, timeout=60).json()["data"]
-    print("사양 틀린 견적", bad["status"], bad["output"].get("reason"))
-    q = httpx.post(f"{BASE}/jobs/{ctx}/quote", json={"partner": "mock_ganada", "copies": 200}, timeout=60).json()["data"]
-    o = httpx.post(f"{BASE}/jobs/{ctx}/order", timeout=60).json()["data"]
-    print("주문 1차", o["status"], (o.get("question") or {}).get("text"))
-    rid = o["question"]["review_id"]
-    print("에이전트 토큰으로 승인", httpx.post(f"{BASE}/reviews/{rid}/decide", json={"approve": True}, headers={"Authorization": "Bearer mock:orchestrator"}).status_code)
-    print("사람 승인", httpx.post(f"{BASE}/reviews/{rid}/decide", json={"approve": True}, headers={"Authorization": "Bearer human:e2e"}).json()["data"]["status"])
-    o = httpx.post(f"{BASE}/jobs/{ctx}/order", timeout=60).json()["data"]
-    print("주문 2차", o["status"], o["output"].get("order"))
+# 보고서(A 등급: safety 관문을 거치고 ΔE는 report가 color로 다시 계산해 대조한다)
+if j["status"] == "completed" and "--report" in sys.argv:
     rp = httpx.post(f"{BASE}/jobs/{ctx}/report", timeout=120).json()["data"]
     print("보고서", rp["status"], rp["output"].get("verified"), rp["output"].get("path"))
     print(rp["output"].get("markdown", "")[:900])

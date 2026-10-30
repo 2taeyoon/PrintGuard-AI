@@ -63,9 +63,9 @@ def test_parallel_calls_to_same_agent_pair_in_order():
 
 def test_gates_and_failed_call():
     ctx = "ctx_job_trace4"
-    put(ctx, at(0), "safety_decision", "safety", requester="shop", skill="shop.place_order", status="pending_review", grade="C",
+    put(ctx, at(0), "safety_decision", "safety", requester="report", skill="report.compile_report", status="pending_review", grade="C",
         payload={"reason": "C 등급: 사람 승인 필요", "amount": 123456, "review_id": "rv_1", "execution_id": "ex_1"})
-    put(ctx, at(50), "human_review", "safety", requester="human:web-user", skill="shop.place_order", status="approved", grade="C",
+    put(ctx, at(50), "human_review", "safety", requester="human:web-user", skill="report.compile_report", status="approved", grade="C",
         payload={"review_id": "rv_1", "amount": 123456})
     put(ctx, at(80), "task_status", "orchestrator", skill="predict_color", status="failed", outcome="unreachable", payload={"target": "color"})
     t = build_trace(ctx)

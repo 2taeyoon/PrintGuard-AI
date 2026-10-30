@@ -31,7 +31,7 @@ from ..contracts import AgentCard, AgentRequest
 from ..tracing import build_trace
 from .engine import Engine, Job
 from .fakes import fake_caller
-from .plan import build_plan, quote_spec, report_input
+from .plan import build_plan, report_input
 
 NAME = "orchestrator"
 DEPTS = [n for n in PORTS if n != NAME]
@@ -154,7 +154,7 @@ async def answer(ctx: str, body: dict[str, Any]) -> dict[str, Any]:
     return {"data": {"context_id": ctx, "status": "working"}, "meta": {}}
 
 
-# ---------- 5단계: 인쇄소 견적·주문(목업)·사람 승인·보고서 ----------
+# ---------- 인쇄소 찾기·사람 승인·보고서 ----------
 async def _ask(agent: str, skill: str, ctx: str, inp: dict[str, Any]) -> dict[str, Any]:
     set_agent_name(NAME)
     r = await call_agent(agent, AgentRequest(meta=new_meta(ctx, seconds=60), skill=skill, input=inp))
@@ -177,30 +177,6 @@ async def guide(q: str, k: int = 5) -> dict[str, Any]:
 @app.get("/shops")
 async def shops(q: str = "", sido: str = "", limit: int = 20) -> dict[str, Any]:
     return {"data": await _ask("shop", "find_shops", "ctx_shop_search", {"q": q, "sido": sido, "limit": limit}), "meta": {}}
-
-
-@app.post("/jobs/{ctx}/quote")
-async def quote(ctx: str, body: dict[str, Any]) -> dict[str, Any]:
-    """사양은 검수 결과(쪽수)와 의뢰 옵션(크기·도련·종이)에서 만든다. 부수와 협력사만 사용자가 고른다."""
-    j = _job(ctx)
-    spec = quote_spec(j, int(body.get("copies") or 100), body.get("spec"))
-    r = await _ask("shop", "request_quote", ctx, {"pdf_ref": j.pdf_ref, "partner": body.get("partner"), "spec": spec})
-    if r["status"] == "completed":
-        j.results["quote"] = r["output"]["quote"]
-        j.results.pop("order", None)
-    return {"data": r, "meta": {}}
-
-
-@app.post("/jobs/{ctx}/order")
-async def order(ctx: str) -> dict[str, Any]:
-    """처음 부르면 사람 승인 대기(input-required), 승인 뒤 다시 부르면 주문이 생긴다."""
-    j = _job(ctx)
-    if "quote" not in j.results:
-        raise HTTPException(409, "견적을 먼저 받으세요")
-    r = await _ask("shop", "place_order", ctx, {"quote_id": j.results["quote"]["quote_id"]})
-    if r["status"] == "completed":
-        j.results["order"] = r["output"]["order"]
-    return {"data": r, "meta": {}}
 
 
 @app.get("/reviews")
