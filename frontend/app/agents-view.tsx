@@ -18,11 +18,16 @@ const secs = (ms: number) => `${(ms / 1000).toFixed(ms < 10000 ? 2 : 1)}초`;
 // 에이전트는 서버가 주는 차례가 호출 순서에 따라 달라지므로, 일하는 차례대로 고정해서 보여 준다
 const ORDER = ["orchestrator", "preflight", "color", "paper", "guide", "proofread", "shop", "report", "safety"];
 const rank = (n: string) => { const i = ORDER.indexOf(n.replace("(fake)", "")); return i < 0 ? ORDER.length : i; };
-// 공통 로그의 시각은 UTC로 남는다. 화면에는 한국 시간으로 '2026년 10월 30일 오전 06:31'처럼 적는다
+// 공통 로그의 시각은 UTC로 남는다. 화면에는 한국 시간으로 '2026년 10월 27일 오후 3시 55분'처럼 적는다
 const KST = new Intl.DateTimeFormat("ko-KR", {
-  timeZone: "Asia/Seoul", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: true,
+  timeZone: "Asia/Seoul", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", hour12: true,
 });
-const when = (iso: string) => { const t = new Date(iso); return Number.isNaN(t.getTime()) ? iso : KST.format(t); };
+const when = (iso: string) => {
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return iso;
+  const p = Object.fromEntries(KST.formatToParts(t).map((x) => [x.type, x.value]));
+  return `${p.year}년 ${p.month}월 ${p.day}일 ${p.dayPeriod} ${p.hour}시 ${p.minute}분`;
+};
 
 /** 에이전트가 전부 살아 있는지 한눈에 보는 뱃지. 접어 둔 상태에서도 보이게 제목 옆에 붙인다 */
 export function AgentHealth() {

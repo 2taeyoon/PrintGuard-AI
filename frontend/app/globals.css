@@ -519,3 +519,29 @@ small, .pcard small { font-size: 1.4rem; }
 .gs_toggle b { max-width: 100%; }
 /* leaflet.css가 뒤에 실려 0.75rem(=7.5px)로 덮어쓰므로 더 좁은 선택자로 되돌린다 */
 .map.leaflet-container, .mapwrap .leaflet-control-attribution, .mapwrap .leaflet-control { font-size: 1.4rem; }
+
+/* ===== 모서리: 모두 각지게 ===== */
+/* 상자·입력·버튼·표시 어디에도 둥근 모서리를 쓰지 않는다(호버 상태도 마찬가지).
+   동그라미여야 뜻이 통하는 것만 남긴다 — 상태 점, 로딩 원. */
+.panel, .gsearch, .card, .pcard, .rcard, .acard, .gcard, .gresult, .cm_quote, .ev_pick, .warn, .err,
+.agent_side, .map, .shoplist a, .viewer, .sheet, .qa, .qa > summary::before, .ev_kpis div, .qa_shot img,
+.box, .question, .loading_box, .progress, .progress span, .b_track, .b_fill, .wf_track, .wf_bar,
+input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, .ap_steps li { border-radius: 0; }
+@media (hover: hover) {
+  .ev_toc a:hover, .qa_more a:hover, .qa_body a:hover, .modebar a:hover, .src_name a:hover,
+  .card:hover, .shoplist a:hover, button:hover, .pill:hover, .topmenu a:hover { border-radius: 0; }
+}
+.dot, .spinner { border-radius: 999px; }
+/* Q&A 안팎 여백을 24px로 맞춘다 */
+.qa > summary { padding: 24px; }
+.qa_body { padding: 24px; padding-top: 0; }
+/* 차례(ev_toc)는 헤더 메뉴와 같은 모양의 칸으로. 지금 보는 곳 표시는 없고 호버만 있다 */
+.ev_toc { display: flex; flex-wrap: wrap; align-items: stretch; gap: 0; padding: 0; overflow: hidden; }
+.ev_toc a { display: inline-flex; align-items: center; justify-content: center; height: 56px; padding: 0 20px;
+  font-size: 1.5rem; font-weight: 600; color: var(--blackmute); white-space: nowrap; transition: background 0.2s ease, color 0.2s ease; }
+@media (hover: hover) { .ev_toc a:hover { background: var(--thema); color: var(--white); } }
+@media (max-width: 768px) {
+  .qa > summary, .qa_body { padding: 16px; }
+  .qa_body { padding-top: 0; }
+  .ev_toc a { height: 48px; padding: 0 14px; }
+}
