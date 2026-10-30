@@ -56,11 +56,6 @@ def render(i: dict[str, Any], de: dict[str, Any] | None) -> str:
     risks = i.get("risks") or []
     if risks:
         L += ["## 종이·후가공 위험"] + [f"- [{SEV.get(r.get('level'), r.get('level', ''))}] {r.get('title', '')}" for r in risks[:20]] + [""]
-    if i.get("quote"):
-        q = i["quote"]
-        L += ["## 견적(목업)", f"- {q.get('partner_name')} {int(q.get('amount', 0)):,}원 (견적 {q.get('quote_id')})"]
-        if i.get("order"):
-            L.append(f"- 주문 {i['order'].get('order_id')} (사람 승인 후 목업 주문)")
         L.append("")
     return "\n".join(L)
 

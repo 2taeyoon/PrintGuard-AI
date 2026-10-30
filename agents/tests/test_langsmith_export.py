@@ -20,9 +20,9 @@ def seed(ctx):
     put(ctx, at(0), "job_opened", "orchestrator", payload={"agents": ["preflight"]})
     put(ctx, at(100), "request_received", "preflight", requester="orchestrator", skill="check_structure")
     put(ctx, at(400), "result_sent", "preflight", requester="orchestrator", skill="check_structure", status="completed", grade="read")
-    put(ctx, at(500), "request_received", "shop", requester="orchestrator", skill="request_quote")
-    put(ctx, at(700), "result_sent", "shop", requester="orchestrator", skill="request_quote", status="rejected", outcome="SAFETY_REJECTED", grade="B")
-    put(ctx, at(800), "safety_decision", "safety", requester="shop", skill="shop.request_quote", status="rejected", grade="B",
+    put(ctx, at(500), "request_received", "report", requester="orchestrator", skill="compile_report")
+    put(ctx, at(700), "result_sent", "report", requester="orchestrator", skill="compile_report", status="rejected", outcome="SAFETY_REJECTED", grade="B")
+    put(ctx, at(800), "safety_decision", "safety", requester="report", skill="report.compile_report", status="rejected", grade="B",
         payload={"reason": "교차 검증 실패", "amount": 1000, "review_id": None, "execution_id": "ex_1"})
     put(ctx, at(900), "request_received", "guide", requester="orchestrator", skill="search_guide")  # 끝나지 않은 구간
 
@@ -48,7 +48,7 @@ def test_sends_root_and_finished_spans():
     root, *spans = c.runs
     assert root["run_type"] == "chain" and root["project_name"] == "테스트"
     assert root["outputs"]["log_lines"] == 7 and len(root["outputs"]["gates"]) == 1
-    assert [s["name"] for s in spans] == ["preflight.check_structure", "shop.request_quote"]
+    assert [s["name"] for s in spans] == ["preflight.check_structure", "report.compile_report"]
     assert all(s["parent_run_id"] == root["id"] for s in spans)
     assert (spans[0]["end_time"] - spans[0]["start_time"]).total_seconds() == 0.3
     assert spans[0]["error"] is None and spans[1]["error"] == "SAFETY_REJECTED"

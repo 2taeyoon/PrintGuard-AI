@@ -1,7 +1,7 @@
 """safety 에이전트(:8701) — 상태를 바꾸는 모든 행동의 실행 관문(ax-company-hq SAF 규칙을 옮김).
 
 - 등급은 요청이 아니라 레지스트리(행동 주인 에이전트의 Agent Card)에서 읽는다. params에 grade를 적어도 무시한다.
-- 금액은 코드(shop.pricing)로 다시 계산하고, 요청에 적힌 금액과 다르면 거절한다.
+- 금액이 있는 행동이라면 금액도 safety 코드가 다시 계산한다(지금 등록된 행동에는 돈이 오가는 것이 없다).
 - A: 바로 실행 / B: 카드의 verifier가 교차 검증해 맞을 때만 실행 / C: 사람 승인 대기열(기한이 지나면 자동 거절)
 - 하루 누적 한도(실행 + 승인 대기 금액). 넘으면 거절.
 - 어떤 단계든 확인하지 못하면 거절(fail-closed). 자기 skill만 실행 요청할 수 있다(action 'agent.skill'의 agent = 요청자).
@@ -28,7 +28,6 @@ from ..common_log import log_event
 from ..config import DATA, agent_url, is_mock
 from ..contracts import AgentCard, AgentRequest, AgentResult, ExecuteDecision, ExecuteRequest, TaskStatus, now_utc
 from ..server import create_agent_app
-from ..shop import pricing
 
 NAME = "safety"
 DB = DATA / "safety.sqlite"
@@ -43,10 +42,10 @@ def review_ttl() -> float:
     return float(os.environ.get("PG_REVIEW_TTL", "600"))
 
 
-# 행동별 금액 계산과 검증자 입력은 safety 코드가 정한다(요청자가 정하지 않는다)
-AMOUNT = {"shop.request_quote": lambda p: pricing.quote(p["partner"], p["spec"])["amount"],
-          "shop.place_order": lambda p: pricing.quote(p["partner"], p["spec"])["amount"]}
-VERIFY_INPUT = {"shop.request_quote": lambda p: {"pdf_ref": p["pdf_ref"], "spec": p["spec"]}}
+# 행동별 금액 계산과 검증자 입력은 safety 코드가 정한다(요청자가 정하지 않는다).
+# 지금 등록된 행동에는 금액이 없다 — 돈이 오가는 행동은 이 앱에서 하지 않는다.
+AMOUNT: dict[str, Any] = {}
+VERIFY_INPUT: dict[str, Any] = {}
 VERIFY_SKILL = {"preflight": "verify_spec", "color": "recompute_delta_e"}
 COUNTS_TO_LIMIT = {"C"}
 
@@ -171,7 +170,7 @@ async def decide(meta: Any, x: ExecuteRequest) -> dict[str, Any]:
                    _today(), now_utc().isoformat(), json.dumps(computed, ensure_ascii=False)))
         if review_id:
             expires = (now_utc() + timedelta(seconds=review_ttl())).isoformat()
-            summary = json.dumps({k: x.params.get(k) for k in ("partner", "spec", "quote_id")}, ensure_ascii=False)
+            summary = json.dumps({k: v for k, v in x.params.items() if isinstance(v, (str, int, float))}, ensure_ascii=False)[:500]
             c.execute("INSERT INTO reviews VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                       (review_id, eid, "pending", expires, None, None, now_utc().isoformat(), x.action, amount, summary, x.context_id))
         c.commit()
@@ -186,7 +185,7 @@ CARD = AgentCard.model_validate({
     "name": NAME, "description": "실행 관문: 등급은 레지스트리에서, 금액은 코드로, A 실행·B 교차 검증·C 사람 승인, 하루 한도, fail-closed",
     "url": "http://127.0.0.1:8701",
     "skills": [{"id": "execute", "description": "상태를 바꾸는 행동을 실행해도 되는지 결정한다", "grade": "read",
-                "allowed_requesters": ["shop", "report", "orchestrator", "mcp"],
+                "allowed_requesters": ["report", "orchestrator", "mcp"],
                 "input_schema": {"action": "agent.skill", "idempotency_key": "string", "params": "object"},
                 "output_schema": {"decision": "executed|pending_review|rejected", "grade": "A|B|C", "reason": "string", "review_id": "string?"}}],
 })

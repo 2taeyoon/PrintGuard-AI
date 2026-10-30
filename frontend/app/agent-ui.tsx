@@ -10,8 +10,7 @@ export const agentLabel = (n: string) => AGENT_LABEL[n.replace("(fake)", "")] ??
 const SKILL_LABEL: Record<string, string> = {
   check_structure: "PDF 구조 검사", predict_color: "인쇄 색 차이 예측", recompute_delta_e: "색 차이 다시 계산",
   recommend_paper: "종이 추천", assess_risk: "인쇄 불량 위험도 평가", search_guide: "인쇄 가이드 검색",
-  suggest_corrections: "오탈자 수정 제안", find_shops: "인쇄소 찾기", request_quote: "견적 요청",
-  place_order: "주문 넣기", compile_report: "검수 보고서 작성", verify_spec: "주문 내용 교차 검증",
+  suggest_corrections: "오탈자 수정 제안", find_shops: "인쇄소 찾기", compile_report: "검수 보고서 작성", verify_spec: "사양 교차 검증",
   execute: "행동 실행 허가(안전 관문)",
 };
 export const skillLabel = (id: string) => SKILL_LABEL[id] ?? id;

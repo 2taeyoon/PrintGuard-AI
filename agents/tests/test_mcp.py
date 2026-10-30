@@ -14,7 +14,7 @@ from pg_agents.safety import agent as sa  # noqa: E402
 from pg_agents.shop import agent as sh  # noqa: E402
 
 READ_TOOLS = {"check_pdf", "get_job", "answer_question", "list_agents", "get_trace", "find_shops", "list_reviews", "search_guide"}
-WRITE_TOOLS = {"request_quote", "place_order", "compile_report"}
+WRITE_TOOLS = {"compile_report"}
 
 
 def job_public(**kw):
@@ -29,8 +29,7 @@ def job_public(**kw):
                                                   "heat": {"w": 8, "h": 8, "rgba": "A" * 5000}}]},
                         "color": {"color_report": {"weightedMeanDE": 2.5, "areaShare": 0.3, "images": 2}, "max_tac": 280, "issues": [],
                                   "profile": "PSOcoated_v3.icc"},
-                        "risk": {"risks": [{"id": "setoff", "name": "뒷묻음", "level": "medium"}], "paper": {"name": "아트지"}},
-                        "quote": {"quote_id": "q_abc", "amount": 1000}},
+                        "risk": {"risks": [{"id": "setoff", "name": "뒷묻음", "level": "medium"}], "paper": {"name": "아트지"}}},
             **kw}
 
 
@@ -39,7 +38,7 @@ def orch(monkeypatch):
     """오케스트레이터 HTTP 대신 쓰는 가짜 응답. 보낸 요청을 기록한다."""
     sent = []
     data = {"/jobs/ctx_job_mcp1": job_public(), "/agents": {"shop": {"status": "on", "card": sh.CARD.model_dump(mode="json")}},
-            "/reviews": [{"review_id": "rv_1", "status": "pending", "amount": 1000, "action": "shop.place_order"}]}
+            "/reviews": [{"review_id": "rv_1", "status": "pending", "amount": 0, "action": "demo.act_c"}]}
 
     async def _orch(method, path, **kw):
         sent.append((method, path, kw))
@@ -83,8 +82,7 @@ async def test_no_approval_tool():
 
 def test_cards_allow_mcp():
     """직접 부르는 skill은 Agent Card에서 mcp에게 열려 있어야 한다(카드가 바뀌면 이 테스트가 먼저 깨진다)."""
-    for card, skill in [(sh.CARD, "find_shops"), (sh.CARD, "request_quote"), (sh.CARD, "place_order"),
-                        (ra.CARD, "compile_report"), (ga.CARD, "search_guide")]:
+    for card, skill in [(sh.CARD, "find_shops"), (ra.CARD, "compile_report"), (ga.CARD, "search_guide")]:
         s = next(x for x in card.skills if x.id == skill)
         assert m.NAME in s.allowed_requesters, f"{card.name}.{skill}"
     assert m.NAME in next(s for s in sa.CARD.skills if s.id == "execute").allowed_requesters
@@ -123,42 +121,22 @@ async def test_get_job_section_and_unknown_section(orch):
 
 
 # ---------- 쓰기 도구: 관문 결과를 그대로 ----------
-async def test_request_quote_passes_safety_rejection_through(orch, agent_calls):
+async def test_compile_report_passes_safety_rejection_through(orch, agent_calls):
     sent, box = agent_calls
-    reason = "하루 누적 한도 1,000,000원 초과"
+    reason = "확인 실패(fail-closed)"
     box["result"] = lambda req: AgentResult(meta=req.meta, status=TaskStatus.REJECTED, outcome="SAFETY_REJECTED",
-                                            output={"reason": reason, "decision": {"decision": "rejected", "grade": "C"}})
-    out = await m.request_quote("ctx_job_mcp1", "mock_ganada", copies=200)
+                                            output={"reason": reason, "decision": {"decision": "rejected", "grade": "A"}})
+    out = await m.compile_report("ctx_job_mcp1")
     assert out["status"] == "rejected" and out["outcome"] == "SAFETY_REJECTED" and out["output"]["reason"] == reason
     target, req = sent[0]
-    assert (target, req.skill) == ("shop", "request_quote") and req.meta.token == "mock:mcp"
-    assert req.input["spec"] == {"pages": 8, "copies": 200, "width_mm": 148, "height_mm": 210, "bleed_mm": 3, "paper_id": "art"}
-    assert req.input["pdf_ref"] == "a" * 64
+    assert (target, req.skill) == ("report", "compile_report") and req.meta.token == "mock:mcp"
 
 
-async def test_request_quote_passes_forbidden_skill_through(orch, agent_calls):
+async def test_compile_report_passes_forbidden_skill_through(orch, agent_calls):
     _, box = agent_calls
     box["result"] = lambda req: AgentResult(meta=req.meta, status=TaskStatus.REJECTED, outcome="FORBIDDEN_SKILL")
-    out = await m.request_quote("ctx_job_mcp1", "mock_ganada")
+    out = await m.compile_report("ctx_job_mcp1")
     assert (out["status"], out["outcome"]) == ("rejected", "FORBIDDEN_SKILL")
-
-
-async def test_place_order_waits_for_human(orch, agent_calls):
-    sent, box = agent_calls
-    box["result"] = lambda req: AgentResult(meta=req.meta, status=TaskStatus.INPUT_REQUIRED, reason_code="human_input",
-                                            question={"kind": "approval", "field": "approval", "review_id": "rv_9", "amount": 1000,
-                                                      "text": "목업 주문을 넣을까요?"},
-                                            output={"decision": {"decision": "pending_review", "review_id": "rv_9"}})
-    out = await m.place_order("ctx_job_mcp1")
-    assert out["status"] == "input-required" and out["question"]["review_id"] == "rv_9"
-    assert "사람이 웹 화면" in out["how_to_approve"] and out["quote_id"] == "q_abc"
-    assert sent[0][1].input == {"quote_id": "q_abc"}  # 의뢰에 있던 견적을 쓴다
-
-
-async def test_place_order_needs_quote(orch, agent_calls):
-    orch[1]["/jobs/ctx_job_mcp1"] = job_public(results={"preflight": {"pages": 1}})
-    with pytest.raises(m.ToolError, match="견적이 없습니다"):
-        await m.place_order("ctx_job_mcp1")
 
 
 async def test_compile_report_input_comes_from_job(orch, agent_calls):
@@ -176,7 +154,7 @@ async def test_compile_report_input_comes_from_job(orch, agent_calls):
 async def test_job_without_pdf_ref_is_an_error(orch):
     orch[1]["/jobs/ctx_job_mcp1"] = {k: v for k, v in job_public().items() if k != "pdf_ref"}
     with pytest.raises(m.ToolError, match="pdf_ref"):
-        await m.request_quote("ctx_job_mcp1", "mock_ganada")
+        await m.compile_report("ctx_job_mcp1")
 
 
 # ---------- 그 밖의 도구 ----------
@@ -197,8 +175,7 @@ async def test_answer_question_only_when_asked(orch):
 async def test_list_agents_marks_mcp_callable(orch):
     out = await m.list_agents()
     skills = {s["id"]: s for s in out["agents"][0]["skills"]}
-    assert skills["request_quote"]["callable_by_mcp"] is True and skills["request_quote"]["grade"] == "B"
-    assert skills["request_quote"]["verifier"] == "preflight"
+    assert skills["find_shops"]["callable_by_mcp"] is True and skills["find_shops"]["grade"] == "read"
 
 
 async def test_list_reviews_says_only_humans_approve(orch):
