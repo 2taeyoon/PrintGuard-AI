@@ -17,7 +17,12 @@ export default function Papers() {
 
   useEffect(() => { loadPapers().then(setDb).catch((e) => setErr(String(e))); }, []);
 
-  const makers = useMemo(() => ["전체", ...Array.from(new Set(db?.papers.filter((p) => p.maker).map((p) => p.maker) ?? []))], [db]);
+  // 제조·유통사 목록은 종 수가 많은 곳부터. 숫자를 함께 보여 줘야 '1종뿐'인 곳이 오류처럼 보이지 않는다.
+  const makers = useMemo(() => {
+    const c = new Map<string, number>();
+    for (const p of db?.papers ?? []) if (p.maker) c.set(p.maker, (c.get(p.maker) ?? 0) + 1);
+    return [...c.entries()].sort((a, b) => b[1] - a[1]);
+  }, [db]);
   const shown = useMemo(() => {
     const t = q.trim();
     return (db?.papers ?? []).filter((p) => (group === "전체" || p.group === group) && (kind === "all" || p.kind === kind)
@@ -38,13 +43,16 @@ export default function Papers() {
       </header>
 
       <div className="toolbar">
-        <div className="search"><input value={q} onChange={(e) => { setQ(e.target.value); reset(); }} placeholder="종이 이름·제조사·특징 검색 (예: 러프그로스, 펄, 크라프트)" /></div>
-        <select value={kind} onChange={(e) => { setKind(e.target.value as typeof kind); reset(); }}>
+        <div className="search"><input value={q} onChange={(e) => { setQ(e.target.value); reset(); }} placeholder="종이 이름·제조사·유통사·특징 검색 (예: 랑데뷰, 두성종이, 펄, 크라프트)" /></div>
+        <select value={kind} onChange={(e) => { setKind(e.target.value as typeof kind); if (e.target.value === "type") setMaker("전체"); reset(); }}>
           <option value="all">기본 종류 + 브랜드</option><option value="type">기본 종류만</option><option value="brand">브랜드만</option>
         </select>
-        <select value={maker} onChange={(e) => { setMaker(e.target.value); reset(); }}>
-          {makers.map((m) => <option key={m} value={m}>{m === "전체" ? "제조·유통사 전체" : m}</option>)}
-        </select>
+        {kind !== "type" && (
+          <select value={maker} onChange={(e) => { setMaker(e.target.value); reset(); }} aria-label="제조·유통사">
+            <option value="전체">제조·유통사 전체</option>
+            {makers.map(([m, n]) => <option key={m} value={m}>{m} ({n}종)</option>)}
+          </select>
+        )}
       </div>
       <div className="filters">
         {["전체", ...GROUPS].map((g) => (
