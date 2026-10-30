@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import math
+import os
 import re
 from collections import Counter
 from functools import lru_cache
@@ -72,19 +73,63 @@ def z(x: np.ndarray) -> np.ndarray:
     return (x - x.mean()) / sd if sd > 1e-9 else np.zeros_like(x)
 
 
+# ---- 임베딩: 브라우저(바로 검사)와 같은 모델·같은 양자화를 쓴다 ----
+# 예전에는 sentence-transformers(torch, fp32)로 돌렸는데, 그러면 브라우저 쪽 int8 결과와 미세하게 달라지고
+# 메모리도 2GB대로 커져 작은 서버에 올릴 수 없었다. 같은 int8 ONNX를 onnxruntime로 직접 돌려 둘을 맞춘다.
+MODEL_REPO = "Xenova/multilingual-e5-small"
+LOCAL_MODEL = ROOT / "frontend" / "public" / "models" / "Xenova" / "multilingual-e5-small"
+
+
+def model_files() -> tuple[str, str]:
+    """(tokenizer.json, model_quantized.onnx) 경로. 앱이 쓰는 로컬 파일을 먼저 보고, 없으면 Hugging Face에서 받는다."""
+    local_tok, local_onnx = LOCAL_MODEL / "tokenizer.json", LOCAL_MODEL / "onnx" / "model_quantized.onnx"
+    if local_tok.exists() and local_onnx.exists():
+        return str(local_tok), str(local_onnx)
+    from huggingface_hub import hf_hub_download  # 서버 배포용: 캐시에 한 번만 받는다
+    return (hf_hub_download(MODEL_REPO, "tokenizer.json"), hf_hub_download(MODEL_REPO, "onnx/model_quantized.onnx"))
+
+
+@lru_cache(maxsize=1)
+def encoder():
+    import onnxruntime as ort
+    from tokenizers import Tokenizer
+    tok_path, onnx_path = model_files()
+    tok = Tokenizer.from_file(tok_path)
+    tok.enable_truncation(max_length=512)
+    tok.enable_padding(pad_id=1, pad_token="<pad>")  # XLM-R 계열: <pad>=1
+    opts = ort.SessionOptions()
+    opts.intra_op_num_threads = int(os.environ.get("PG_ONNX_THREADS", "2"))
+    sess = ort.InferenceSession(onnx_path, opts, providers=["CPUExecutionProvider"])
+    return tok, sess
+
+
+def embed(texts: list[str], batch: int = 16) -> np.ndarray:
+    """e5 규칙대로 'query: '/'passage: '를 붙여 넣은 문장을 벡터로. 평균 풀링 뒤 L2 정규화(브라우저 쪽과 같은 계산)."""
+    tok, sess = encoder()
+    out = []
+    for i in range(0, len(texts), batch):
+        enc = tok.encode_batch(texts[i:i + batch])
+        ids = np.array([e.ids for e in enc], dtype=np.int64)
+        mask = np.array([e.attention_mask for e in enc], dtype=np.int64)
+        h = sess.run(["last_hidden_state"], {"input_ids": ids, "attention_mask": mask,
+                                             "token_type_ids": np.zeros_like(ids)})[0]
+        m = mask[..., None].astype(np.float32)
+        v = (h * m).sum(1) / np.clip(m.sum(1), 1e-9, None)
+        out.append(v / np.clip(np.linalg.norm(v, axis=1, keepdims=True), 1e-9, None))
+    return np.concatenate(out) if out else np.zeros((0, 384), dtype=np.float32)
+
+
 @lru_cache(maxsize=1)
 def index():
-    from sentence_transformers import SentenceTransformer  # 무거워서 첫 요청 때 불러온다
     secs = parse(KB.read_text(encoding="utf-8"))
     children = [(c, i) for i, s in enumerate(secs) for c in fixed(s["text"])]
-    model = SentenceTransformer("intfloat/multilingual-e5-small", device="cpu")
-    vec = model.encode(["passage: " + c for c, _ in children], normalize_embeddings=True, batch_size=32)
-    return secs, children, model, vec, BM25([c for c, _ in children])
+    vec = embed(["passage: " + c for c, _ in children])
+    return secs, children, vec, BM25([c for c, _ in children])
 
 
 def search(q: str, k: int = 3) -> list[dict]:
-    secs, children, model, vec, bm = index()
-    qv = model.encode(["query: " + q], normalize_embeddings=True)[0]
+    secs, children, vec, bm = index()
+    qv = embed(["query: " + q])[0]
     fused = DENSE_WEIGHT * z(vec @ qv) + (1 - DENSE_WEIGHT) * z(bm.scores(q))
     best: dict[int, tuple[float, str]] = {}
     for (child, p), s in zip(children, fused):

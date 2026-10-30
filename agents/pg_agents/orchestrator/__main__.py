@@ -1,5 +1,5 @@
 import uvicorn
 
-from ..config import PORTS
+from ..config import HOST, listen_port
 
-uvicorn.run("pg_agents.orchestrator.app:app", host="127.0.0.1", port=PORTS["orchestrator"], log_level="warning")
+uvicorn.run("pg_agents.orchestrator.app:app", host=HOST, port=listen_port("orchestrator"), log_level="warning")

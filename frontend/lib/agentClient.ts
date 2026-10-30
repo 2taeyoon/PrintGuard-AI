@@ -5,6 +5,8 @@ import type { Hit } from "./guide";
 import type { Risk } from "./risk";
 
 export const ORCH = process.env.NEXT_PUBLIC_PG_ORCHESTRATOR ?? "http://127.0.0.1:8700";
+/** 에이전트가 내 PC가 아니라 다른 서버에 있는가(공개 배포). 화면 문구와 기본 모드가 달라진다. */
+export const HOSTED = !/^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:|\/|$)/.test(ORCH);
 
 export type Step = { agent: string; skill: string; key: string; status: string; outcome: string | null; ms: number; fallback: boolean };
 export type Question = { field: string; text: string; options: { value: string; label: string; hint?: string }[]; agent: string; skill: string; why?: string };

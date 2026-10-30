@@ -11,7 +11,7 @@ import { AgentProgress, QuestionCard } from "./agent-ui";
 import AgentsView, { AgentHealth } from "./agents-view";
 import { FINISHES, GROUPS, loadPapers, surface, type FinishId, type Paper, type PaperDb } from "@/lib/papers";
 import { assess, inputFrom, type Risk } from "@/lib/risk";
-import { answerJob, createJob, orchestratorUp, toScreen, waitJob, type JobView } from "@/lib/agentClient";
+import { answerJob, createJob, HOSTED, orchestratorUp, toScreen, waitJob, type JobView } from "@/lib/agentClient";
 
 const LEVEL_LABEL = { check: "확인 필요", none: "해당 없음", na: "판단 불가" } as const;
 
@@ -72,7 +72,10 @@ function Home() {
   }
   // 검사 방식: direct = 이 브라우저 안에서 바로, agent = 로컬 에이전트들이 A2A로 나눠 검사
   // 주소의 ?mode=agent로 시작 모드를 기억한다(에이전트 모드로 열면 브라우저 임베딩 모델을 아예 불러오지 않는다)
-  const [mode, setModeState] = useState<"direct" | "agent">(sp.get("mode") === "agent" ? "agent" : "direct");
+  // 공개 배포(에이전트가 다른 서버에 있는 경우)에서는 에이전트 검사를 기본으로 둔다.
+  // 그 서버에만 ICC 프로파일과 검색 모델이 있어서, 바로 검사는 사용자가 ICC를 올려야 색을 잴 수 있다.
+  const [mode, setModeState] = useState<"direct" | "agent">(
+    sp.get("mode") === "agent" || (HOSTED && sp.get("mode") !== "direct") ? "agent" : "direct");
   const [showAgents, setShowAgents] = useState(true); // '에이전트 검사'를 고르면 에이전트 탭 내용을 이 자리에 펼친다
   const setMode = (m: "direct" | "agent") => {
     setModeState(m);
@@ -161,8 +164,15 @@ function Home() {
       pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
       const { analyze } = await import("@/lib/analyze");
       const { ColorEngine } = await import("@/lib/color");
-      const icc = iccFile ? new Uint8Array(await iccFile.arrayBuffer())
-        : new Uint8Array(await (await fetch(`/icc/${profile.file}`)).arrayBuffer());
+      let icc: Uint8Array;
+      if (iccFile) {
+        icc = new Uint8Array(await iccFile.arrayBuffer());
+      } else {
+        const r = await fetch(`/icc/${profile.file}`);
+        if (!r.ok) throw new Error("이 사이트에는 ICC 프로파일이 들어 있지 않습니다(재배포가 허용되지 않습니다). "
+          + "인쇄소에서 받은 ICC 파일을 위 ‘인쇄소 CMYK 프로파일(ICC)’에 올리거나, 에이전트 검사 모드를 쓰세요.");
+        icc = new Uint8Array(await r.arrayBuffer());
+      }
       const color = await ColorEngine.create(icc, { intent, tacLimit: tac, paperColor, substrateWhite: parseWhite(whiteIn) ?? undefined,
         wasmUrl: "/lcms/lcms.wasm", moduleUrl: "/lcms/lcms.js" });
       const result = await analyze(data, pdfjs, { widthMm: w, heightMm: h, bleedMm: bleed, color });
@@ -237,7 +247,7 @@ function Home() {
       <header className="page_head">
         <h1>인쇄 검수</h1>
         {mode === "direct" ? <GuideBadge ready={!!guide} status={guideStatus} /> : <span className="badge">가이드 검색은 guide 에이전트가 합니다</span>}
-        <p className="lead">폰트·도련·해상도·색·문구를 검사하고, 고른 종이로 인쇄 색 차이와 불량 위험을 예측합니다. 오탈자 등은 자동으로 고치지 않고 수정 제안만 보여 주니 원본 파일에서 직접 고치세요. {mode === "direct" ? "파일은 어디로도 보내지 않습니다." : "파일은 이 PC에서 도는 에이전트에만 보냅니다."}</p>
+        <p className="lead">폰트·도련·해상도·색·문구를 검사하고, 고른 종이로 인쇄 색 차이와 불량 위험을 예측합니다. 오탈자 등은 자동으로 고치지 않고 수정 제안만 보여 주니 원본 파일에서 직접 고치세요. {mode === "direct" ? "파일은 어디로도 보내지 않습니다." : HOSTED ? "에이전트 검사 모드에서는 PDF가 에이전트 서버로 올라갑니다." : "파일은 이 PC에서 도는 에이전트에만 보냅니다."}</p>
       </header>
 
       {/* 가이드 검색: 검수 전에 규격을 확인할 수 있게 맨 위에 둔다(기본은 접힘) */}
@@ -249,10 +259,14 @@ function Home() {
         <button type="button" role="tab" aria-selected={mode === "agent"} className={`pill${mode === "agent" ? " on" : ""}`} onClick={() => setMode("agent")}>
           에이전트 검사 <span className="count">에이전트 협업(A2A)</span></button>
         <span className="note">
-          {mode === "direct" ? "모든 계산을 이 브라우저 안에서 합니다. 파일은 어디로도 보내지 않습니다."
+          {mode === "direct" ? (HOSTED
+            ? "모든 계산을 이 브라우저 안에서 합니다. 파일은 어디로도 보내지 않습니다. 다만 이 사이트에는 ICC 프로파일이 없어, 색 차이를 재려면 인쇄소에서 받은 ICC 파일을 아래에 올려야 합니다."
+            : "모든 계산을 이 브라우저 안에서 합니다. 파일은 어디로도 보내지 않습니다.")
             : agentUp === null ? "에이전트 연결 확인 중…"
-            : agentUp ? "로컬 에이전트(사전 검사·색·종이·가이드…)가 나눠서 검사합니다. 파일은 이 PC의 에이전트에만 보냅니다. 아래에서 에이전트 상태와 소통 기록을 바로 볼 수 있습니다."
-            : <span className="sev-high">에이전트가 꺼져 있습니다. <code>agents</code> 폴더에서 <code>python run_agents.py</code>로 켜세요.</span>}
+            : agentUp ? (HOSTED
+              ? "에이전트(사전 검사·색·종이·가이드…)가 나눠서 검사합니다. PDF는 에이전트 서버로 올라가고, 서버가 다시 뜨면 기록은 지워집니다. 아래에서 에이전트 상태와 소통 기록을 바로 볼 수 있습니다."
+              : "로컬 에이전트(사전 검사·색·종이·가이드…)가 나눠서 검사합니다. 파일은 이 PC의 에이전트에만 보냅니다. 아래에서 에이전트 상태와 소통 기록을 바로 볼 수 있습니다.")
+            : <span className="sev-high">{HOSTED ? "에이전트 서버가 쉬고 있습니다. 잠깐 기다렸다가 다시 눌러 주세요(무료 서버라 한동안 요청이 없으면 잠듭니다)." : <>에이전트가 꺼져 있습니다. <code>agents</code> 폴더에서 <code>python run_agents.py</code>로 켜세요.</>}</span>}
         </span>
       </div>
 

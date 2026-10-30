@@ -26,7 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from ..client import call_agent, new_meta
 from ..common_log import log_event, query
-from ..config import PORTS, STORE, agent_url, ensure_dirs, set_agent_name
+from ..config import CORS_ORIGIN_REGEX, PORTS, STORE, agent_url, ensure_dirs, set_agent_name
 from ..contracts import AgentCard, AgentRequest
 from ..tracing import build_trace
 from .engine import Engine, Job
@@ -45,7 +45,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="PrintGuard orchestrator", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origin_regex=r"http://(127\.0\.0\.1|localhost):\d+", allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(CORSMiddleware, allow_origin_regex=CORS_ORIGIN_REGEX, allow_methods=["*"], allow_headers=["*"])
 JOBS: dict[str, Job] = {}
 BY_KEY: dict[str, str] = {}
 FAKE = os.environ.get("PG_FAKE_AGENTS") == "1"

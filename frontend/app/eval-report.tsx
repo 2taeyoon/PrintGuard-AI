@@ -144,7 +144,7 @@ export default function EvalReport() {
               </tbody>
             </table>
           </div>
-          <p className="note">파일 크기는 fp32 기준입니다. 앱은 이 중 multilingual-e5-small의 int8 ONNX(약 118MB)를 브라우저에서 돌립니다
+          <p className="note">파일 크기는 fp32 기준입니다. 앱은 이 중 multilingual-e5-small의 int8 ONNX(약 118MB)를 씁니다 — 바로 검사는 브라우저에서, 에이전트 검사는 서버에서 같은 파일을 돌립니다
             {d.browser && <> — 실제 Chrome에서 같은 질문 {d.browser.n}개를 쟀을 때 Hit@1 {pct(d.browser.hit1)}, MRR {num(d.browser.mrr, 3)},
               모델 로딩 {(d.browser.load_ms / 1000).toFixed(1)}초, 질문당 {num(d.browser.query_ms, 1)}ms</>}.</p>
 

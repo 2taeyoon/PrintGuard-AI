@@ -1,5 +1,5 @@
 import uvicorn
 
-from ..config import PORTS
+from ..config import HOST, listen_port
 
-uvicorn.run("pg_agents.proofread.agent:app", host="127.0.0.1", port=PORTS["proofread"], log_level="warning")
+uvicorn.run("pg_agents.proofread.agent:app", host=HOST, port=listen_port("proofread"), log_level="warning")

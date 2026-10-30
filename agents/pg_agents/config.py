@@ -16,6 +16,18 @@ PORTS: dict[str, int] = {
     "paper": 8705, "proofread": 8706, "shop": 8707, "report": 8708,
 }
 
+# 배포용 설정. 기본값은 로컬 그대로이고, 컨테이너에서는 환경변수로 바꾼다.
+HOST = os.environ.get("PG_HOST", "127.0.0.1")           # 컨테이너에서는 0.0.0.0
+# 바깥에 열어 주는 창구는 오케스트레이터 하나뿐이다. 호스팅이 정해 주는 포트(PORT)를 따른다.
+CORS_ORIGIN_REGEX = os.environ.get("PG_CORS_ORIGIN_REGEX", r"http://(127\.0\.0\.1|localhost):\d+")
+
+
+def listen_port(name: str) -> int:
+    if name == "orchestrator" and os.environ.get("PORT"):
+        return int(os.environ["PORT"])
+    return PORTS[name]
+
+
 _name: ContextVar[str] = ContextVar("pg_agent_name", default="anonymous")
 
 

@@ -100,7 +100,7 @@ const GROUPS: Group[] = [
       { name: "Pretendard", use: "화면 글꼴", url: "https://github.com/orioncactus/pretendard" },
       { name: "FastAPI · Uvicorn · httpx · Pydantic", use: "로컬 에이전트 서버와 에이전트 간 호출 계약", url: "https://fastapi.tiangolo.com" },
       { name: "PyMuPDF", use: "교정 에이전트의 쪽별 글과 위치 추출", url: "https://pymupdf.readthedocs.io" },
-      { name: "sentence-transformers · NumPy", use: "가이드 에이전트의 임베딩·점수 계산", url: "https://www.sbert.net" },
+      { name: "onnxruntime · tokenizers · NumPy", use: "가이드 에이전트의 임베딩·점수 계산. 브라우저와 같은 int8 ONNX 모델을 서버에서도 그대로 돌립니다", url: "https://onnxruntime.ai" },
       { name: "Model Context Protocol (MCP)", use: "외부 LLM 도구가 이 앱의 조회·요청 기능을 쓰게 하는 서버", url: "https://modelcontextprotocol.io" },
       { name: "LangSmith", use: "선택 기능인 추적 내보내기 — 사용자가 키를 직접 넣을 때만 켜집니다", url: "https://smith.langchain.com" },
       { name: "SQLite", use: "공통 로그와 안전 관문 기록 저장", url: "https://www.sqlite.org" },

@@ -93,11 +93,20 @@ export async function loadGuide(onStatus: (s: string) => void,
 
   onStatus("임베딩 모델 불러오는 중 (최초 1회, 약 118MB)");
   const tf = await import("@huggingface/transformers");
-  tf.env.allowRemoteModels = false;
-  tf.env.allowLocalModels = true;
-  tf.env.localModelPath = opts.localModelPath ?? "/models/";
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  if (opts.wasmPaths !== null) (tf.env.backends.onnx as any).wasm.wasmPaths = opts.wasmPaths ?? "/ort/";
+  // 모델 파일이 이 앱 안에 있으면 그것을 쓰고(로컬 실행), 없으면 Hugging Face에서 받는다(공개 배포).
+  // 저장소에는 118MB짜리 모델을 넣지 않기 때문에, 배포본에서는 remote가 유일한 경로다.
+  const local = opts.localModelPath ?? "/models/";
+  const haveLocal = await fetch(`${local}${MODEL}/tokenizer.json`, { method: "HEAD" }).then((r) => r.ok).catch(() => false);
+  tf.env.allowLocalModels = haveLocal;
+  tf.env.allowRemoteModels = !haveLocal;
+  tf.env.localModelPath = local;
+  if (opts.wasmPaths !== null) {
+    const ortPath = opts.wasmPaths ?? "/ort/";
+    const haveOrt = await fetch(`${ortPath}ort-wasm-simd-threaded.jsep.mjs`, { method: "HEAD" }).then((r) => r.ok).catch(() => false);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (haveOrt) (tf.env.backends.onnx as any).wasm.wasmPaths = ortPath;   // 없으면 transformers.js 기본 CDN을 쓴다
+  }
+  if (!haveLocal) onStatus("임베딩 모델 불러오는 중 (최초 1회, 약 118MB — Hugging Face)");
   // 파일별 다운로드 진행률을 모아 하나의 %로 보여 준다(캐시돼 있으면 바로 끝난다)
   const prog = new Map<string, { loaded: number; total: number }>();
   const onProgress = (p: { status: string; file?: string; loaded?: number; total?: number }) => {
