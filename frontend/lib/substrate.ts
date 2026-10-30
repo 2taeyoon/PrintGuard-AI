@@ -1,5 +1,5 @@
 // 종이 흰색 보정(substrate correction). 프로파일이 가정한 종이(A)와 실제 종이(B)의 흰색이 다를 때,
-// 인쇄 결과의 XYZ를 B 종이 기준으로 옮긴다. ISO 15339-1·CGATS.21의 tristimulus 보정과 같은 원리이며(원문은 유료라 식은 확인 못 함),
+// 인쇄 결과의 XYZ를 B 종이 기준으로 옮긴다. 규격을 확인하고 옮긴 식이 아니라,
 // 어떤 식을 쓸지는 공개 측정 프로파일 쌍으로 검증해 골랐다(frontend/scripts/test-substrate.mts, eval/substrate_check.json).
 export type Xyz = [number, number, number];
 const D50: Xyz = [0.9642, 1.0, 0.8249];

@@ -32,7 +32,6 @@ const GROUPS: Group[] = [
     items: [
       { name: "ECI (European Color Initiative) 오프셋 프로파일", use: "PSOcoated_v3, PSOuncoated_v3_FOGRA52, ISOcoated_v2_eci, ISOuncoatedyellowish, PSO_LWC_Improved/Standard, PSO_MFC_Paper, PSO_SNP_Paper, PSO_INP_Paper — 코팅·비코팅·신문·초미색 등 종이 등급별 변환", url: "https://www.eci.org" },
       { name: "ICC 프로파일 레지스트리", use: "PSOsc-b_paper_v3_FOGRA54, APTEC_PC10_CardBoard_2023_v1(판지), JapanColor2011Coated", url: "https://www.color.org/registry/index.xalter" },
-      { name: "Microsoft Windows 내장 RSWOP.icm", use: "미국 SWOP 코팅지 조건 비교용", note: "내려받는 곳이 없습니다 — 설치된 Windows의 color 폴더(C:\Windows\System32\spool\drivers\color)에서 가져옵니다" },
       { name: "Sharma, Wu, Dalal, 「The CIEDE2000 Color-Difference Formula: Implementation Notes, Supplementary Test Data, and Mathematical Observations」, Color Research & Application 30(1), 2005", use: "CIEDE2000 색 차이 공식의 구현(lib/color.ts의 ΔE00 계산)", url: "https://hajim.rochester.edu/ece/sites/gsharma/ciede2000/" },
       { name: "ICC.1 규격 (International Color Consortium)", use: "프로파일 구조와 렌더링 의도(지각적·상대 비색·채도)의 정의", url: "https://www.color.org" },
       { name: "김주정·오성상·조가람·이재수, 「옥내외 광고용 디지털 인쇄의 색 관리 방안에 관한 연구」, 한국인쇄학회지 31(1), 2013, 15–37", use: "장치 선형화 → G7 보정 → ICC 프로파일 적용 순서의 색 관리 절차", url: "https://scienceon.kisti.re.kr/srch/selectPORSrchArticle.do?cn=JAKO201334460141769&dbt=NART" },
@@ -40,7 +39,6 @@ const GROUPS: Group[] = [
       { name: "차재영·조가람·구철회, 「소프트 프루핑에서 최적의 Profiling을 이용한 컬러 관리에 관한 연구」, 한국인쇄학회지 27(1), 2009, 1–14", use: "입력 장치와 출력 장치의 색역이 달라 화면과 인쇄물의 색이 어긋난다는 점(소프트 프루핑의 전제)", url: "https://www.koreascience.or.kr/article/JAKO200926239076118.page?lang=ko" },
       { name: "이원규·조가람·구철회, 「국내 오프셋 인쇄물 평가를 위한 최적의 Proofing 조건에 관한 연구」, 한국인쇄학회지 29(1), 2011, 1–21", use: "교정쇄로 최종 인쇄 색을 예측할 때 ΔE를 최소화하는 기준과 ISO 12647-7", url: "https://www.kci.go.kr/kciportal/ci/sereArticleSearch/ciSereArtiView.kci?sereArticleSearchBean.artiId=ART001556385" },
       { name: "조가람·강형곤, 「패키지용 도포지의 인쇄 시 그레이 밸런스 적용에 따른 컬러 재현성에 관한 연구」, 한국인쇄학회지 34(1), 2019, 37–54", use: "같은 코팅지라도 물성이 다르면 색 재현이 달라진다는 측정(판지·패키지 용지 기준)", url: "https://www.earticle.net/Article/A376208" },
-      { name: "ISO 15339-1 · CGATS.21", use: "종이 흰색 보정의 원리(삼자극치 보정)", note: "유료 규격이라 공개 링크가 없고 식을 직접 확인하지 못했습니다. 그래서 보정식은 측정 프로파일 12쌍으로 직접 비교해 골랐고 그 결과를 평가 측정표에 적었습니다" },
       { name: "Little CMS (lcms-wasm)", use: "브라우저에서 ICC 변환을 실제로 수행하는 엔진", url: "https://www.littlecms.com" },
       { name: "Kodak Lossless True Color Image Suite (kodim03·07·08·13·15·20·22·23)", use: "종이별 색 차이와 색 엔진 대조에 쓴 공개 테스트 사진 8장", url: "https://r0k.us/graphics/kodak/" },
     ],
@@ -51,7 +49,6 @@ const GROUPS: Group[] = [
     lead: "종이 종류와 브랜드 목록, 평량·용도 설명의 출처입니다. 브랜드 종이의 색을 직접 측정한 자료는 공개된 것이 없어 같은 등급의 공개 프로파일로 근사하고 화면에 ‘근사’라고 표시합니다.",
     items: [
       { name: "한국제지연합회 「종이의 분류」", use: "종이 대분류와 등급 체계", url: "http://paper.or.kr/sub_3/3_3.php" },
-      { name: "프린트올데이 「알아두면 쓸데있는 기본 종이 상식」", use: "인쇄 현장에서 쓰는 종이 이름과 용도", note: "글을 받아 둔 주소가 지금은 열리지 않아 링크를 걸지 않았습니다" },
       { name: "독립출판 종이 가이드 (brunch.co.kr/@chochoya/118)", use: "아트지·스노우지·모조지·랑데뷰지의 쓰임과 평량 기준", url: "https://brunch.co.kr/@chochoya/118" },
       { name: "두성종이 제품 목록", use: "브랜드 종이 282종의 이름·제조사·표면", url: "https://www.doosungpaper.co.kr/goods/goods_list.php?cateCd=001", note: "2026-10-14 수집" },
       { name: "삼원페이퍼 제품 목록", use: "브랜드 종이 160종", url: "https://www.samwonpaper.com/product/packageBook/list", note: "2026-10-14 수집" },
@@ -111,6 +108,7 @@ const GROUPS: Group[] = [
       { name: "인쇄 가이드 문서 (public/kb/print_guide.md)", use: "검색이 보여 주는 원문. 위 1·2번 자료와 일반적인 인쇄 상식을 정리해 직접 썼습니다", note: "이 저장소 안의 파일입니다" },
       { name: "검색 평가 질문 92개 (eval/questions.json)", use: "청킹·모델·가중치 비교. 가이드를 쓴 사람이 직접 만든 질문이라 단어가 겹쳐 쉬운 편입니다", note: "이 저장소 안의 파일입니다" },
       { name: "교정 평가셋 (문서 60개·오류 360개)", use: "규칙·Kiwi·LLM 비교. 오류를 규칙으로 넣고 규칙으로 찾는 부분은 순환이라 실력이 아닙니다", note: "이 저장소 안의 파일입니다" },
+      { name: "종이 흰색 보정식 (lib/substrate.ts)", use: "밖에서 가져온 식이 아닙니다. 종이 흰색이 다른 측정 프로파일 12쌍에서 보정 없음·비례·선형을 직접 비교해 가장 가까운 선형을 골랐고, 그 비교표는 평가 측정표에 있습니다", note: "이 저장소 안의 파일입니다" },
       { name: "인쇄 불량 위험도 점수표 (lib/risk.ts)", use: "학습 모델이 아닙니다. 어떤 요인이 불량을 키우는지(방향)는 1번 자료에서 확인했지만 점수 크기와 높음/중간/낮음 구분선은 측정해서 정한 값이 아니라 임의로 정한 값입니다. 그래서 등급은 확률이 아니라 ‘먼저 확인할 순서’로만 읽어야 합니다", note: "이 저장소 안의 파일입니다" },
       { name: "측정 산출물 (public/data/eval_summary.json, proofread_eval.json)", use: "평가 측정표 화면이 그대로 읽는 수치", note: "이 저장소 안의 파일입니다" },
     ],
