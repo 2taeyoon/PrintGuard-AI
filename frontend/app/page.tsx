@@ -382,7 +382,7 @@ function Home() {
               <span className="chip">전체 면적 중 ΔE00&gt;5<b>{(res.colorReport.areaOver5 * 100).toFixed(1)}%</b></span>
               <span className="chip">ΔE00&gt;10<b>{(res.colorReport.areaOver10 * 100).toFixed(1)}%</b></span>
               <span className="chip">잉크 한도 초과<b>{(res.colorReport.areaOverTAC * 100).toFixed(1)}%</b></span>
-              <span className="note">ΔE00 2 이하는 거의 같고, 5를 넘으면 눈에 띄는 차이로 봅니다(경험 기준). 실제 인쇄 결과를 보장하지 않는 예측입니다.</span>
+              <span className="note">ΔE00 2 이하는 거의 같고 5를 넘으면 눈에 띄는 차이로 봅니다(경험 기준). 실제 인쇄 결과를 보장하지 않는 예측입니다.</span>
             </div>
           )}
           {risks.length > 0 && (
@@ -401,7 +401,7 @@ function Home() {
                   </div>
                 ))}
               </div>
-              <span className="note">학습한 모델이 아니라 공개 자료의 원인에서 정한 점수표 규칙입니다. 점수와 등급 구분선은 재서 정한 값이 아니라 임의로 정한 값이라, 높음/중간/낮음은 확률이 아니라 먼저 확인할 순서로 읽으세요. 후가공(접지·제본·박·형압)은 PDF에 정보가 없어 자동으로 검사하지 못하며, 직접 고른 값만 씁니다.</span>
+              <span className="note">학습한 모델이 아니라 공개 자료의 원인에서 정한 점수표 규칙입니다. 점수와 등급 구분선은 재서 정한 값이 아니라 임의로 정한 값이라, 높음/중간/낮음은 확률이 아니라 먼저 확인할 순서로 읽으세요. 후가공(접지·제본·박·형압)은 PDF에 정보가 없어 자동으로 검사하지 못하며 직접 고른 값만 씁니다.</span>
             </div>
           )}
           <div className="ws">
@@ -453,10 +453,7 @@ function Home() {
           </div>
         </>
       )}
-      <div className="disclaimer">
-        이 검수 결과는 인쇄소의 최종 승인과 사람의 교정을 대체하지 않으며, 색상은 실제 인쇄 결과를 보장하지 않는 위험 예측입니다.
-        색 공간은 PDF 안의 정보를 읽은 값이고, 이미지 매칭은 가로·세로 픽셀 수로 하므로 같은 크기의 이미지가 여러 개면 틀릴 수 있습니다.
-      </div>
+      <div className="disclaimer">이 검수 결과는 인쇄소의 최종 승인과 사람의 교정을 대체하지 않으며, 색상은 실제 인쇄 결과를 보장하지 않는 위험 예측입니다. 색 공간은 PDF 안의 정보를 읽은 값이고 이미지 매칭은 가로·세로 픽셀 수로 하므로 같은 크기의 이미지가 여러 개면 틀릴 수 있습니다.</div>
     </div>
   );
 }
