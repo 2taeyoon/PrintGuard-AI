@@ -100,7 +100,7 @@ export default function Shops() {
       <p className="lead">
         행정안전부 전국 인쇄사 인허가 데이터에서 <b>영업/정상</b> 상태인 업체를 표시합니다
         {meta && <> ({shops.length.toLocaleString()}곳, 데이터 갱신 시점 기준)</>}. 보라색은 파주출판도시 입주기업협의회 목록에 있는 인쇄 업체입니다.
-        인허가 상태는 지자체 신고 기준이라 실제 영업 여부와 다를 수 있으니 주문 전에 전화로 확인하세요.
+        인허가 상태는 지자체 신고 기준입니다. 실제 영업 여부와 다를 수 있으니 주문 전에 전화로 확인하세요.
         목록에서 업체를 누르면 구글 지도가 새 탭으로 열립니다.
       </p>
       </header>
@@ -133,7 +133,7 @@ export default function Shops() {
       </div>
       <div className="disclaimer">
         출처: {src ? <>{src.name}, 전체 {src.rows.toLocaleString()}건 중 영업/정상 {src.status?.["영업/정상"]?.toLocaleString()}건, 좌표가 없거나 국외로 나온 {meta?.nocoord}건 제외</> : "불러오는 중"}.
-        좌표는 EPSG:5174를 WGS84로 바꾼 값이며, 표본 80곳을 역지오코딩해 80곳 모두 주소와 같은 시군구에 찍히는 것을 확인했습니다.
+        좌표는 EPSG:5174를 WGS84로 바꾼 값입니다. 표본 80곳을 역지오코딩해 80곳 모두 주소와 같은 시군구에 찍히는 것을 확인했습니다.
         1인 사업장은 개인정보 보호로 주소 번지가 *로 가려져 있습니다. 파주출판도시 협의회 목록(인쇄 업종 {meta?.sources[1]?.printing}곳) 중 {meta?.book_matched}곳은 인허가 데이터와 이름·도로명이 맞아 그 좌표로 표시합니다.
         좌표를 도로 단위로 추정했던 {dropped}곳은 실제 그 자리에 업체가 있는지 확인할 수 없어(폐업·인허가 없음으로 확인된 곳 포함) 지도에서 뺐습니다.
         지도 타일 © OpenStreetMap contributors.

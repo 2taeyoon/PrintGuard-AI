@@ -10,7 +10,7 @@ const GROUPS: Group[] = [
   {
     id: "knowledge",
     title: "1. 인쇄 지식과 불량 원인 — 가이드 문서의 근거",
-    lead: "앱이 검색해서 보여 주는 인쇄 가이드(public/kb/print_guide.md)는 제가 정리해 쓴 글이고 불량 원인처럼 사실 확인이 필요한 대목에는 아래 자료를 원문으로 확인해 각 절에 출처를 적어 두었습니다. 위험도 점수표의 '방향'도 여기서 가져왔습니다.",
+    lead: "앱은 인쇄 가이드(public/kb/print_guide.md)를 검색해서 보여 줍니다. 제가 정리해 쓴 글입니다. 불량 원인처럼 사실 확인이 필요한 대목은 아래 자료를 원문으로 확인했고 각 절에 출처를 적어 두었습니다. 위험도 점수표의 '방향'도 여기서 가져왔습니다.",
     items: [
       { name: "Sappi, Printer Tech Tips — Sheetfed Ink Setoff", use: "뒷묻음(세팅오프)의 원인: 건조 지연, 잉크막 두께, 쌓은 높이, 분말 부족, 높은 습도", url: "https://www.sappi.com" },
       { name: "Bernd Schwegmann, WIRBELWIND 분말 기술자료", use: "코팅지·비코팅지의 건조 시간 차이와 종이 평량에 맞춘 분말 입자 크기", url: "https://www.schwegmannnet.de/PDF/merkblaetter/druck/EN/WIRBELWIND_EN_TDS.pdf" },
@@ -30,7 +30,7 @@ const GROUPS: Group[] = [
   {
     id: "color",
     title: "2. 색 — 프로파일과 계산 규격",
-    lead: "인쇄 색 차이(ΔE)는 공개된 ICC 프로파일로 직접 변환해 계산합니다. 프로파일은 재배포가 금지되어 저장소에 넣지 않고 아래 배포처에서 직접 받아 frontend/public/icc/에 둡니다.",
+    lead: "인쇄 색 차이(ΔE)는 공개된 ICC 프로파일로 직접 변환해 계산합니다. 프로파일은 재배포가 금지됩니다. 그래서 저장소에 넣지 않고 아래 배포처에서 직접 받아 frontend/public/icc/에 둡니다.",
     items: [
       { name: "ECI (European Color Initiative) 오프셋 프로파일", use: "PSOcoated_v3, PSOuncoated_v3_FOGRA52, ISOcoated_v2_eci, ISOuncoatedyellowish, PSO_LWC_Improved/Standard, PSO_MFC_Paper, PSO_SNP_Paper, PSO_INP_Paper — 코팅·비코팅·신문·초미색 등 종이 등급별 변환", url: "https://www.eci.org" },
       { name: "ICC 프로파일 레지스트리", use: "PSOsc-b_paper_v3_FOGRA54, APTEC_PC10_CardBoard_2023_v1(판지), JapanColor2011Coated", url: "https://www.color.org/registry/index.xalter" },
@@ -48,7 +48,7 @@ const GROUPS: Group[] = [
   {
     id: "paper",
     title: "3. 종이 데이터 (489종)",
-    lead: "종이 종류와 브랜드 목록, 평량·용도 설명의 출처입니다. 두성종이·삼원페이퍼는 유통사 카탈로그라 제조사가 적혀 있지 않고, 국내 제지사 종이는 제조사 공식 제품 페이지에서 확인했습니다. 공식 페이지에서 찾지 못한 2종(아이리스·몽블랑)은 뺐습니다. 브랜드 종이의 색을 직접 측정한 자료는 공개된 것이 없어 같은 등급의 공개 프로파일로 근사하고 화면에 ‘근사’라고 표시합니다.",
+    lead: "종이 종류와 브랜드 목록, 평량·용도 설명의 출처입니다. 두성종이·삼원페이퍼는 유통사 카탈로그라서 제조사가 적혀 있지 않습니다. 국내 제지사 종이는 제조사 공식 제품 페이지에서 확인했습니다. 공식 페이지에서 찾지 못한 2종(아이리스·몽블랑)은 뺐습니다. 브랜드 종이는 색을 직접 측정한 공개 자료가 없습니다. 같은 등급의 공개 프로파일로 근사해 쓰고 화면에 ‘근사’라고 표시합니다.",
     items: [
       { name: "한국제지연합회 「종이의 분류」", use: "종이 대분류와 등급 체계", url: "http://paper.or.kr/sub_3/3_3.php" },
       { name: "독립출판 종이 가이드 (brunch.co.kr/@chochoya/118)", use: "아트지·스노우지·모조지·랑데뷰지의 쓰임과 평량 기준", url: "https://brunch.co.kr/@chochoya/118" },
@@ -63,7 +63,7 @@ const GROUPS: Group[] = [
   {
     id: "shops",
     title: "4. 인쇄소 지도",
-    lead: "지도에 찍히는 인쇄소는 공공 인허가 데이터이고 좌표는 EPSG:5174를 WGS84로 바꾼 값입니다. 인허가 ‘영업/정상’은 신고 기준이라 실제 영업 여부와 다를 수 있습니다.",
+    lead: "지도에 찍히는 인쇄소는 공공 인허가 데이터입니다. 좌표는 EPSG:5174를 WGS84로 바꾼 값입니다. 인허가 ‘영업/정상’은 신고 기준이어서 실제 영업 여부와 어긋날 수 있습니다.",
     items: [
       { name: "행정안전부 LOCALDATA 「기타_인쇄사」 (공공데이터포털 15045057)", use: "전체 24,090건 중 영업/정상 18,014건을 표시(좌표 없는 건 제외)", url: "https://www.data.go.kr/data/15045057/fileData.do", note: "공공누리 제1유형(출처표시). 내려받은 곳은 LOCALDATA이고 여기 링크는 같은 자료의 공공데이터포털 쪽 페이지입니다" },
       { name: "파주출판도시 입주기업협의회 입주기업 게시판", use: "출판도시 입주 인쇄 업체 표시(인쇄 업종 21곳)", url: "https://www.bookcity.or.kr/bbs/board.php?bo_table=tenant", note: "2026-10-14 수집" },
@@ -75,7 +75,7 @@ const GROUPS: Group[] = [
   {
     id: "models",
     title: "5. 모델",
-    lead: "이 앱은 모델을 직접 학습시키지 않았습니다. 공개된 모델을 그대로 쓰고 어느 것을 쓸지만 직접 재서 골랐습니다(평가 측정표 참고).",
+    lead: "이 앱에 직접 학습시킨 모델은 없습니다. 공개된 모델을 그대로 쓰고 어느 것을 쓸지만 직접 재서 골랐습니다(평가 측정표 참고).",
     items: [
       { name: "intfloat/multilingual-e5-small", use: "가이드 검색 임베딩 — 앱이 실제로 쓰는 모델(Xenova의 int8 ONNX 변환본을 브라우저에서 실행)", url: "https://huggingface.co/intfloat/multilingual-e5-small" },
       { name: "Xenova/multilingual-e5-small (ONNX)", use: "위 모델의 브라우저용 변환본(약 118MB)", url: "https://huggingface.co/Xenova/multilingual-e5-small" },
@@ -109,13 +109,13 @@ const GROUPS: Group[] = [
   {
     id: "mine",
     title: "7. 개발자가 만든 것",
-    lead: "밖에서 가져오지 않고 개발자가 쓰거나 만든 것들입니다. 출처가 개발자 자신이라 치우쳤을 수 있다는 점은 평가 측정표의 ‘주의’에 함께 적어 두었습니다.",
+    lead: "밖에서 가져오지 않고 개발자가 쓰거나 만든 것들입니다. 출처가 개발자 자신이라 치우쳤을 수 있습니다. 이 점은 평가 측정표의 ‘주의’에 함께 적어 두었습니다.",
     items: [
       { name: "인쇄 가이드 문서 (public/kb/print_guide.md)", use: "검색이 보여 주는 원문. 위 1·2번 자료와 일반적인 인쇄 상식을 정리해 개발자가 썼습니다" },
-      { name: "검색 평가 질문 92개 (eval/questions.json)", use: "청킹·모델·가중치 비교. 가이드를 쓴 개발자가 만든 질문이라 단어가 겹쳐 쉬운 편입니다" },
-      { name: "교정 평가셋 (문서 60개·오류 360개)", use: "규칙·Kiwi·LLM 비교. 오류를 규칙으로 넣고 규칙으로 찾는 부분은 순환이라 실력이 아닙니다" },
-      { name: "종이 흰색 보정식 (lib/substrate.ts)", use: "규격을 보고 옮긴 식이 아니라, 실제로 측정해 만든 공개 프로파일 12쌍(종이 흰색이 서로 다른 같은 등급 쌍)으로 보정 없음·비례·선형을 비교해 고른 식입니다. 12쌍 중 9쌍에서 선형이 가장 가까웠고 보정 없음보다 나빠진 쌍은 없었습니다. 비교표는 평가 측정표에 있고, 실물 인쇄를 측색해 검증한 것은 아닙니다" },
-      { name: "인쇄 불량 점검 규칙 (lib/risk.ts)", use: "위험 점수를 매기지 않습니다. 1번 자료에서 확인한 불량 원인이 이 파일·이 종이에 해당하는지만 보고, 해당하면 근거와 함께 ‘확인 필요’로 적습니다. 실제 불량 사례로 맞춰 본 적이 없어 확률이나 등급은 내지 않습니다" },
+      { name: "검색 평가 질문 92개 (eval/questions.json)", use: "청킹·모델·가중치 비교. 가이드를 쓴 개발자가 만든 질문입니다. 단어가 겹쳐 쉬운 편입니다" },
+      { name: "교정 평가셋 (문서 60개·오류 360개)", use: "규칙·Kiwi·LLM 비교. 오류를 규칙으로 넣고 규칙으로 찾는 부분은 순환이라 실력과 무관합니다" },
+      { name: "종이 흰색 보정식 (lib/substrate.ts)", use: "규격을 보고 옮긴 식이 아닙니다. 실제로 측정해 만든 공개 프로파일 12쌍(종이 흰색이 서로 다른 같은 등급 쌍)으로 보정 없음·비례·선형을 비교해 골랐습니다. 12쌍 중 9쌍에서 선형이 가장 가까웠고 보정 없음보다 나빠진 쌍은 없었습니다. 비교표는 평가 측정표에 있습니다. 실물 인쇄를 측색해 검증한 것은 아닙니다" },
+      { name: "인쇄 불량 점검 규칙 (lib/risk.ts)", use: "위험 점수를 매기지 않습니다. 1번 자료에서 확인한 불량 원인이 이 파일·이 종이에 해당하는지만 봅니다. 해당하면 근거와 함께 ‘확인 필요’로 적습니다. 실제 불량 사례로 맞춰 본 적이 없어 확률이나 등급은 내지 않습니다" },
       { name: "측정 산출물 (public/data/eval_summary.json, proofread_eval.json)", use: "평가 측정표 화면이 그대로 읽는 수치" },
     ],
   },
@@ -126,7 +126,7 @@ export default function SourcesPage() {
     <main className="common_wrap">
       <header className="page_head">
         <h1>출처</h1>
-        <p className="lead">이 앱이 쓴 자료를 전부 적었습니다 — 가이드의 근거 문헌, 색 프로파일과 계산 규격, 종이·인쇄소 데이터, 모델, 라이브러리, 개발자가 만든 것까지. 원문을 확인하지 못한 것은 그렇게 적었습니다.<b> 이 앱은 모델을 직접 학습시키지 않았습니다.</b>공개 모델을 그대로 쓰고 무엇을 쓸지는 재서 골랐습니다(<a href="/help#eval">평가 측정표</a>).</p>
+        <p className="lead">이 앱이 쓴 자료를 전부 적었습니다 — 가이드의 근거 문헌, 색 프로파일과 계산 규격, 종이·인쇄소 데이터, 모델, 라이브러리, 개발자가 만든 것까지. 원문을 확인하지 못한 것은 그렇게 표시했습니다.<b> 이 앱은 모델을 직접 학습시키지 않았습니다.</b>공개 모델을 그대로 쓰고 무엇을 쓸지는 재서 골랐습니다(<a href="/help#eval">평가 측정표</a>).</p>
       </header>
 
       <Toc items={GROUPS.map((g) => ({ id: g.id, label: g.title.replace(/^\d+\.\s*/, "") }))} />
@@ -149,7 +149,7 @@ export default function SourcesPage() {
         </section>
       ))}
 
-      <div className="disclaimer">링크는 자료를 받은 곳입니다. ICC 프로파일은 재배포가 금지되어 저장소에 넣지 않았고 공공 데이터는 공공누리 제1유형(출처표시) 조건으로 썼습니다. 빠진 출처를 발견하면 알려 주세요.</div>
+      <div className="disclaimer">링크는 자료를 받은 곳입니다. ICC 프로파일은 재배포가 금지되어 저장소에 넣지 않았습니다. 공공 데이터는 공공누리 제1유형(출처표시) 조건으로 썼습니다. 빠진 출처를 발견하면 알려 주세요.</div>
     </main>
   );
 }

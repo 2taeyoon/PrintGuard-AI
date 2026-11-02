@@ -92,13 +92,13 @@ export default function EvalReport() {
   return (
     <>
       <Head />
-      <p className="ev_lead">이 앱이 쓰는 설정(검색 모델·청킹·가중치, 색 변환, 종이 흰색 보정, 교정 탐지기)을 무엇과 비교해서 골랐는지 전부 수치로 적었습니다. 화면의 숫자는 저장소의 평가 스크립트가 남긴 산출물을 그대로 읽은 것이고 다시 재면 이 화면도 같이 바뀝니다.</p>
+      <p className="ev_lead">이 앱이 쓰는 설정은 검색 모델과 자르기, 가중치, 색 변환, 종이 흰색 보정, 교정 탐지기입니다. 각각을 무엇과 비교해서 골랐는지 전부 수치로 적었습니다. 화면의 숫자는 저장소의 평가 스크립트가 남긴 산출물을 그대로 읽은 값입니다. 다시 재면 이 화면도 같이 바뀝니다.</p>
 
       <Toc items={[{ id: "search", label: "가이드 검색" }, { id: "color", label: "색 변환 검증" }, { id: "profiles", label: "종이별 색 차이" },
         { id: "substrate", label: "종이 흰색 보정" }, { id: "proof", label: "교정 탐지기" }, { id: "notread", label: "재지 않은 것" }]} />
 
       {s && (
-        <Section id="search" title="1. 가이드 검색 — 어떤 청킹·어떤 모델·어떤 가중치인가"
+        <Section id="search" title="1. 가이드 검색 — 어떤 자르기·어떤 모델·어떤 가중치인가"
           lead={`질문 ${s.n_questions}개로 비교했습니다(지식베이스 ${s.kb_chars.toLocaleString()}자). Hit@1은 1위 결과가 정답을 담은 비율, MRR은 정답 순위의 역수 평균입니다. 괄호는 95% 구간입니다.`}
           source={d.sources.search}>
           <Pick>
@@ -111,7 +111,7 @@ export default function EvalReport() {
             {" "}고른 모델은 {s.models[PICKED_MODEL]?.MB.toLocaleString()}MB이고 int8로 줄이면 약 118MB라 브라우저에서 그대로 돕니다
             {d.browser && <> — 실제 Chrome에서 Hit@1 {pct(d.browser.hit1)}, 질문당 {num(d.browser.query_ms, 1)}ms</>}.
           </Pick>
-          <h3>청킹 × 임베딩 모델 (임베딩만 썼을 때 Hit@1)</h3>
+          <h3>자르기 × 임베딩 모델 (임베딩만 썼을 때 Hit@1)</h3>
           <div className="scroll">
             <table className="ev_table">
               <thead><tr><th>모델</th>{chunks.map((c) => <th key={c} className="n">{c}</th>)}</tr></thead>
@@ -177,13 +177,13 @@ export default function EvalReport() {
             </table>
           </div>
           <div className="warn"><b>주의</b> 질문 {s.n_questions}개를 지식베이스를 쓴 사람이 직접 만들었습니다. 질문과 정답 문장이 단어를 공유해 단어 검색에 유리하고,
-            대부분 설정이 90% 안팎 천장에 붙습니다. 모델 사이 몇 %p 차이는 질문 한두 개로 뒤집히니, 구간이 겹치면 차이가 있다고 읽지 마세요.</div>
+            대부분 설정이 90% 안팎 천장에 붙습니다. 모델 사이 몇 %p 차이는 질문 한두 개로 뒤집힙니다. 구간이 겹치면 차이가 있다고 읽지 마세요.</div>
         </Section>
       )}
 
       {(d.color_crosscheck || d.quant) && (
         <Section id="color" title="2. 색 변환이 맞게 계산되는가" source={d.sources.color}
-          lead="앱이 브라우저에서 하는 색 변환(lcms-wasm)을 같은 ICC 프로파일로 Python(Pillow의 LittleCMS)에서 다시 돌려 대조했습니다. 두 결과가 다르면 앱 계산을 믿을 수 없습니다.">
+          lead="앱은 브라우저에서 색 변환(lcms-wasm)을 합니다. 같은 ICC 프로파일로 Python(Pillow의 LittleCMS)에서 다시 돌려 그 결과와 대조했습니다. 두 결과가 다르면 앱 계산을 믿을 수 없습니다.">
           {d.color_crosscheck && (
             <Pick>브라우저 색 변환을 그대로 씁니다. 두 구현의 평균 ΔE 차이가 {num(d.color_crosscheck.mean_abs_diff, 3)}로
               눈에 보이는 기준(ΔE 2)의 1/10도 안 되기 때문입니다. 그래서 색 계산을 서버로 보내지 않고 기기 안에서 합니다.</Pick>
@@ -225,13 +225,13 @@ export default function EvalReport() {
               </tbody>
             </table>
           </div>
-          <div className="warn"><b>주의</b>‘종이 색 포함’은 눈이 종이 흰색에 적응하는 효과를 빼 놓은 값이라 실제로 느끼는 차이보다 큰 상한에 가깝습니다. 브랜드 종이 454종은 이 12개 중 같은 등급 프로파일로 근사하며 광택 차이(아트지·스노우지)는 같은 프로파일이라 반영되지 않습니다.</div>
+          <div className="warn"><b>주의</b>‘종이 색 포함’은 눈이 종이 흰색에 적응하는 효과를 빼 놓은 값입니다. 그래서 실제로 느끼는 차이보다 큰 상한에 가깝습니다. 브랜드 종이 454종은 이 12개 중 같은 등급 프로파일로 근사합니다. 광택 차이(아트지·스노우지)는 같은 프로파일을 쓰므로 반영되지 않습니다.</div>
         </Section>
       )}
 
       {d.substrate && (
         <Section id="substrate" title="4. 종이 흰색 보정 — 어떤 식을 쓸 것인가" source={d.sources.substrate}
-          lead="같은 등급인데 종이 흰색이 다른 측정 프로파일 쌍에서, A의 인쇄 결과를 B의 종이 흰색으로 옮겼을 때 B의 실제 값에 얼마나 가까워지는지 쟀습니다. 숫자는 평균 ΔE(작을수록 좋음)입니다.">
+          lead="측정 프로파일 쌍 가운데 등급은 같고 종이 흰색만 다른 쌍을 골랐습니다. 여기서 A의 인쇄 결과를 B의 종이 흰색으로 옮겼습니다. 그 값이 B의 실제 값에 얼마나 가까워지는지 쟀습니다. 숫자는 평균 ΔE(작을수록 좋음)입니다.">
           <Pick><b>선형</b> 방식을 씁니다. 비교한 {d.substrate.rows.length}쌍 중 {subBest}쌍에서 선형이 가장 가까웠기 때문입니다
             {subNotWorse === d.substrate.rows.length && <>. 보정 없음보다 나빠진 쌍은 하나도 없었습니다</>}.</Pick>
           <div className="scroll">
@@ -299,7 +299,7 @@ export default function EvalReport() {
               </tbody>
             </table>
           </div>
-          <div className="warn"><b>주의</b> 앞 다섯 방법의 띄어쓰기·율/률·사전에 있는 오용 100%는 <b>같은 규칙으로 넣고 같은 규칙으로 찾은 순환</b>이라 실력이 아닙니다. 방법끼리 비교할 수 있는 칸은 ‘사전에 없는 오용’과 ‘무작위 오타’입니다. LLM은 평가 틀을 모르고 쟀지만 합성 문장이라 실제 원고보다 쉬울 수 있고 모델을 바꾸면 숫자도 바뀝니다. 기본값을 로컬 조합으로 둔 이유는 성능이 아니라 본문이 외부로 나가기 때문입니다.</div>
+          <div className="warn"><b>주의</b> 앞 다섯 방법의 띄어쓰기·율/률·사전에 있는 오용 100%는 <b>같은 규칙으로 넣고 같은 규칙으로 찾은 순환</b>이라 실력이 아닙니다. 방법끼리 비교할 수 있는 칸은 ‘사전에 없는 오용’과 ‘무작위 오타’입니다. LLM은 평가 틀을 모르고 쟀습니다. 다만 합성 문장이라 실제 원고보다 쉬웠을 여지가 있고 모델을 바꾸면 숫자도 바뀝니다. 기본값을 로컬 조합으로 둔 이유는 성능이 아니라 본문이 외부로 나가기 때문입니다.</div>
         </Section>
       )}
 
@@ -307,8 +307,8 @@ export default function EvalReport() {
         <ul className="ev_list">
           <li><b>실물 인쇄 측색</b> — 모든 색 수치는 프로파일 기준 계산값입니다. 실제로 찍어 재지 않았습니다.</li>
           <li><b>인쇄 불량 정답 데이터</b> — 공개 데이터셋을 찾지 못했습니다. 그래서 불량은 학습 모델로 예측하지 않고, 자료에서 확인한 원인이 해당하는지만 보여 줍니다. 어느 원인이 얼마나 더 위험한지는 재지 않았습니다.</li>
-          <li><b>실제 사용자 질문·실제 원고</b> — 검색 질문과 교정 평가셋 모두 제가 만든 것이라 난이도가 실제와 다를 수 있습니다.</li>
-          <li><b>브랜드 종이 측정 프로파일</b>— 454종은 등급 프로파일로 근사했고 종이 흰색을 측정해 넣을 때만 보정합니다.</li>
+          <li><b>실제 사용자 질문·실제 원고</b> — 검색 질문과 교정 평가셋은 모두 제가 만들었습니다. 난이도가 실제와 얼마나 맞는지는 모릅니다.</li>
+          <li><b>브랜드 종이 측정 프로파일</b>— 454종은 등급 프로파일로 근사했습니다. 종이 흰색을 측정해 넣을 때만 보정합니다.</li>
           <li><b>인쇄 비용</b> — 단가를 정할 근거가 없어 견적·주문 기능은 두지 않았습니다. 인쇄소 지도는 찾아 주기만 하고 연락은 사용자가 직접 합니다.</li>
         </ul>
       </Section>

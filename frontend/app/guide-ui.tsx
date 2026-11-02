@@ -97,7 +97,7 @@ export function ModelLoadingScreen({ status }: { status: string }) {
         <div className={`progress${pct === null ? " indeterminate" : ""}`} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct ?? undefined}>
           <span style={pct === null ? undefined : { width: `${pct}%` }} />
         </div>
-        <p className="note">처음 한 번은 모델 파일(약 118MB)을 읽고 가이드 항목을 임베딩합니다. 다음부터는 브라우저 캐시로 빨라집니다.</p>
+        <p className="note">처음 한 번은 모델 파일(약 118MB)을 읽고 가이드 항목을 임베딩(embedding)합니다. 다음부터는 브라우저에 저장해 둔 파일로 빨라집니다.</p>
       </div>
     </div>
   );
