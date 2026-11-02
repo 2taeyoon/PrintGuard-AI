@@ -396,7 +396,10 @@ function Home() {
       )}
       {err && <div className="err">{err}</div>}
       {!res && !busy && !err && !agentJob && (
-        <div className="empty">PDF를 선택하고 ‘검사 시작’을 누르세요. 파일은 서버로 보내지 않습니다.</div>
+        <div className="empty">{mode === "direct"
+          ? "PDF를 선택하고 ‘검사 시작’을 누르세요. 파일은 서버로 보내지 않습니다."
+          : HOSTED ? "PDF를 선택하고 ‘에이전트에 맡기기’를 누르세요. 파일은 위 주소의 에이전트로 올라갑니다."
+            : "PDF를 선택하고 ‘에이전트에 맡기기’를 누르세요. 파일은 이 PC의 에이전트에만 보냅니다."}</div>
       )}
 
       {res && (
