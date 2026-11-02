@@ -1,6 +1,7 @@
 // 출처 탭 — 이 앱이 쓴 자료를 전부 적는다. 데이터·프로파일·모델·라이브러리·근거 문헌, 그리고 직접 만든 것까지.
 // 링크가 없는 항목은 유료 규격이거나 원문이 사라진 것이며, 그 사실을 그대로 적는다.
 
+import { MODEL_FILE_MB } from "@/lib/guide";
 import Toc from "../toc";
 
 type Item = { name: string; use: string; url?: string; note?: string };
@@ -78,7 +79,7 @@ const GROUPS: Group[] = [
     lead: "이 앱에 직접 학습시킨 모델은 없습니다. 공개된 모델을 그대로 쓰고 어느 것을 쓸지만 직접 재서 골랐습니다(평가 측정표 참고).",
     items: [
       { name: "intfloat/multilingual-e5-small", use: "가이드 검색 임베딩 — 앱이 실제로 쓰는 모델(Xenova의 int8 ONNX 변환본을 브라우저에서 실행)", url: "https://huggingface.co/intfloat/multilingual-e5-small" },
-      { name: "Xenova/multilingual-e5-small (ONNX)", use: "위 모델의 브라우저용 변환본(약 118MB)", url: "https://huggingface.co/Xenova/multilingual-e5-small" },
+      { name: "Xenova/multilingual-e5-small (ONNX)", use: `위 모델의 브라우저용 변환본(약 ${MODEL_FILE_MB}MB)`, url: "https://huggingface.co/Xenova/multilingual-e5-small" },
       { name: "jhgan/ko-sroberta-multitask", use: "검색 모델 비교에만 사용", url: "https://huggingface.co/jhgan/ko-sroberta-multitask" },
       { name: "BAAI/bge-m3", use: "검색 모델 비교에만 사용", url: "https://huggingface.co/BAAI/bge-m3" },
       { name: "nlpai-lab/KURE-v1", use: "검색 모델 비교에만 사용", url: "https://huggingface.co/nlpai-lab/KURE-v1" },

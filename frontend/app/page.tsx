@@ -6,6 +6,8 @@ import type { Analysis, Issue, Sev } from "@/lib/analyze";
 import type { IntentName } from "@/lib/color";
 import type { Guide, Hit } from "@/lib/guide";
 import { GuideBadge, GuideCard, ModelLoadingScreen } from "./guide-ui";
+import { TermsPanel } from "./terms";
+import { GsMark } from "./gs-mark";
 import GuideSearch from "./guide-search";
 import { AgentProgress, QuestionCard } from "./agent-ui";
 import AgentsView, { AgentHealth } from "./agents-view";
@@ -301,11 +303,13 @@ function Home() {
             <b>에이전트 상태 · 의뢰 추적 · 소통 기록</b>
             <AgentHealth />
             <span className="note">누가 어떤 일을 할 수 있고(skill), 이번 의뢰를 누가 언제 얼마나 처리했는지 그대로 보여 줍니다.</span>
-            <span className="gs_mark" aria-hidden="true">{showAgents ? "－" : "＋"}</span>
+            <GsMark open={showAgents} />
           </button>
           {showAgents && <div className="gs_body"><AgentsView initialCtx={agentJob?.context_id ?? ""} showWarn={false} /></div>}
         </section>
       )}
+
+      <TermsPanel />
 
       <form className="upload panel" onSubmit={submit}>
         <label>PDF 파일

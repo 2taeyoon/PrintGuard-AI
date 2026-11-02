@@ -65,7 +65,13 @@ cd frontend && npm install          # tsx 포함(Node 에이전트 실행용)
 
 ## 실행
 
+설치는 끝났고 꺼진 것을 되살리기만 하면 되는 상황이라면 [RUN.md](RUN.md)로 가세요 — 켜는 명령과 증상별(502·530) 판별표만 모아 둔 짧은 문서입니다.
+
+**먼저 `conda activate dev`를 합니다.** `run_agents.py`는 자기를 실행한 파이썬으로 자식 에이전트를 띄우기 때문에, 환경을 켜지 않고 `python`을 치면 패키지가 없는 시스템 파이썬이 잡혀 **파이썬 에이전트 6개가 전부 코드 1로 죽습니다**(로그에는 `ModuleNotFoundError: No module named 'uvicorn'`). Node 에이전트 3개는 그대로 떠 있어서 절반만 죽은 것처럼 보입니다.
+
 ```bash
+conda activate dev                   # 빼먹으면 에이전트가 안 뜹니다
+
 # 1) 바로 검사만 — 에이전트 없이 브라우저 안에서 전부 계산합니다
 cd frontend && npm run dev -- -H 127.0.0.1 -p 8752
 
@@ -74,7 +80,37 @@ python agents/run_agents.py          # 로그는 agents/.data/logs/<이름>.log
 cd frontend && npm run dev -- -H 127.0.0.1 -p 8752
 ```
 
+`conda activate`가 안 먹는 터미널에서는 경로를 직접 줘도 됩니다.
+
+```bash
+"$HOME/miniforge3/envs/dev/python.exe" agents/run_agents.py   # Windows
+```
+
 `python agents/run_agents.py guide color`처럼 이름을 적으면 일부만 켭니다. 끄는 것은 Ctrl+C 한 번이면 전부 내려갑니다.
+
+### 공개 사이트에 내 에이전트를 붙여 쓸 때
+
+[공개 배포](#공개-배포) 구성으로 쓰는 경우, **에이전트와 터널은 한 쌍입니다.** 둘 중 하나만 켜면 공개 사이트에서 에이전트가 안 보입니다. 터미널 두 개에 각각 띄웁니다.
+
+```bash
+conda activate dev && python agents/run_agents.py   # 터미널 1
+cloudflared tunnel run printguard                   # 터미널 2
+```
+
+증상으로 어느 쪽이 꺼졌는지 가릅니다.
+
+| 증상 | 꺼진 것 |
+|---|---|
+| `curl http://127.0.0.1:8700/health`가 응답 없음 | 에이전트 |
+| 로컬은 되는데 `https://pg.2taeyoon.com`이 **530** | 터널 — 아직 아무 터널도 붙지 않았다는 뜻 |
+| 로컬도 응답이 없고 `https://pg.2taeyoon.com`이 **502** | 에이전트 — 터널은 PC까지 닿았는데 8700이 대답을 안 한다 |
+| 로컬도 터널도 되는데 화면만 안 붙음 | CORS(`agents/.env`의 `PG_CORS_ORIGIN_REGEX`) 확인 |
+
+터널을 매번 켜기 번거로우면 Windows 서비스로 등록해 둡니다. PC를 켤 때 알아서 뜨고, 그 뒤로는 에이전트만 신경 쓰면 됩니다.
+
+```bash
+cloudflared service install          # 관리자 권한 필요
+```
 
 테스트: `python -m pytest agents -q` (65개)
 타입·린트·빌드: `cd frontend && npx tsc --noEmit && npx eslint app lib && npm run build`
@@ -140,7 +176,7 @@ PG_CORS_ORIGIN_REGEX=https://.*\.vercel\.app|http://(127\.0\.0\.1|localhost):\d+
 **공개 사이트에서 달라지는 점**
 
 - 에이전트를 끄면 에이전트 검사만 멈춥니다. 바로 검사는 그대로 동작합니다.
-- 가이드 검색 모델과 onnxruntime wasm은 저장소에 없으면 CDN에서 받아 옵니다. 첫 검색에서 118MB를 내려받아 느립니다.
+- 가이드 검색 모델과 onnxruntime wasm은 저장소에 없으면 CDN에서 받아 옵니다. 첫 검색에서 약 135MB(모델 118MB + 토크나이저 17MB)를 내려받아 느립니다.
 - **ICC 프로파일은 공개 사이트에 올리지 않습니다**(재배포가 허용되지 않습니다). 색 차이를 재려면 방문자가 인쇄소에서 받은 `.icc` 파일을 화면에서 직접 올려야 합니다.
 - 에이전트 주소는 연결이 끊겼을 때만 화면에 입력칸으로 나타납니다. 거기서 바꾼 주소는 그 브라우저에만 저장되고 서버로 가지 않습니다.
 

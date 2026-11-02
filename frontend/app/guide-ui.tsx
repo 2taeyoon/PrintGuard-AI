@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { Hit } from "@/lib/guide";
+import { MODEL_DOWNLOAD_MB } from "@/lib/guide";
 
 // 임베딩 모델을 불러오는 동안 도는 진행 표시와 상태 문구
 export function GuideBadge({ ready, status }: { ready: boolean; status: string }) {
@@ -97,7 +98,7 @@ export function ModelLoadingScreen({ status }: { status: string }) {
         <div className={`progress${pct === null ? " indeterminate" : ""}`} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct ?? undefined}>
           <span style={pct === null ? undefined : { width: `${pct}%` }} />
         </div>
-        <p className="note">처음 한 번은 모델 파일(약 118MB)을 읽고 가이드 항목을 임베딩(embedding)합니다. 다음부터는 브라우저에 저장해 둔 파일로 빨라집니다.</p>
+        <p className="note">처음 한 번은 모델과 토크나이저(약 {MODEL_DOWNLOAD_MB}MB)를 내려받아 가이드 항목을 임베딩(embedding)합니다. 다음부터는 브라우저에 저장해 둔 파일로 빨라집니다.</p>
       </div>
     </div>
   );
