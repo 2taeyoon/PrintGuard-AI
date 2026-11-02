@@ -275,12 +275,13 @@ function Home() {
             : agentUp ? (HOSTED
               ? "에이전트(사전 검사·색·종이·가이드…)가 나눠서 검사합니다. PDF는 에이전트 서버로 올라가고, 서버가 다시 뜨면 기록은 지워집니다. 아래에서 에이전트 상태와 소통 기록을 바로 볼 수 있습니다."
               : "로컬 에이전트(사전 검사·색·종이·가이드…)가 나눠서 검사합니다. 파일은 이 PC의 에이전트에만 보냅니다. 아래에서 에이전트 상태와 소통 기록을 바로 볼 수 있습니다.")
-            : <span className="sev-high">{HOSTED ? "에이전트에 연결되지 않습니다. 아래 ‘에이전트 주소’가 맞는지 확인해 주세요(터널을 다시 켜면 주소가 바뀝니다)." : <>에이전트가 꺼져 있습니다. <code>agents</code> 폴더에서 <code>python run_agents.py</code>로 켜세요.</>}</span>}
+            : <span className="sev-high">{HOSTED ? "에이전트가 꺼져 있습니다. 에이전트를 돌리는 PC에서 켜야 이 모드를 쓸 수 있습니다. 그동안에는 ‘바로 검사’로 검사하세요." : <>에이전트가 꺼져 있습니다. <code>agents</code> 폴더에서 <code>python run_agents.py</code>로 켜세요.</>}</span>}
         </span>
       </div>
 
-      {/* 에이전트 주소: 서버·터널 주소가 바뀌면 여기서 바꾼다(이 브라우저에만 저장하고, 서버로 보내지 않는다) */}
-      {mode === "agent" && (
+      {/* 에이전트 주소: 주소는 고정이라 평소에는 숨긴다. 연결이 안 될 때만 꺼내 고칠 수 있게 보여 준다.
+          (이 브라우저에만 저장하고 서버로 보내지 않는다) */}
+      {mode === "agent" && agentUp === false && (
         <div className="orchbar panel">
           <label>에이전트 주소
             <input type="url" inputMode="url" spellCheck={false} placeholder={ORCH_BUILT} value={orchIn}
@@ -289,7 +290,7 @@ function Home() {
           </label>
           <button type="button" onClick={() => saveOrch(orchIn)}>저장</button>
           <button type="button" className="ghost" onClick={() => saveOrch("")}>기본값</button>
-          <span className="note">지금 부르는 곳 <code>{orch}</code> — {orch === ORCH_BUILT ? "기본값입니다." : "이 브라우저에 저장한 주소입니다."} 오케스트레이터 주소만 넣으세요(뒤의 <code>/health</code> 같은 경로는 빼고).</span>
+          <span className="note">지금 부르는 곳 <code>{orch}</code> — {orch === ORCH_BUILT ? "기본값입니다." : "이 브라우저에 저장한 주소입니다."} 다른 곳의 에이전트를 부를 때만 고치세요. 오케스트레이터 주소만 넣습니다(뒤의 <code>/health</code> 같은 경로는 빼고).</span>
         </div>
       )}
 
