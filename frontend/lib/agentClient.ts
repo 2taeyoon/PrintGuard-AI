@@ -4,9 +4,34 @@ import type { Analysis, Issue } from "./analyze";
 import type { Hit } from "./guide";
 import type { Risk } from "./risk";
 
-export const ORCH = process.env.NEXT_PUBLIC_PG_ORCHESTRATOR ?? "http://127.0.0.1:8700";
-/** 에이전트가 내 PC가 아니라 다른 서버에 있는가(공개 배포). 화면 문구와 기본 모드가 달라진다. */
-export const HOSTED = !/^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:|\/|$)/.test(ORCH);
+/** 빌드할 때 박히는 주소. 비워 두면 내 PC의 에이전트를 부른다. */
+export const ORCH_BUILT = process.env.NEXT_PUBLIC_PG_ORCHESTRATOR ?? "http://127.0.0.1:8700";
+const ORCH_KEY = "pg.orchestrator";
+let typed: string | null = null; // null = 아직 저장된 값을 읽지 않음, "" = 저장된 값 없음
+
+/** 지금 부를 에이전트 주소. 화면에서 넣어 둔 값이 있으면 그것, 없으면 빌드할 때 박힌 값.
+ *  터널 주소는 켤 때마다 바뀌는데 NEXT_PUBLIC_ 값은 빌드 때 박혀서, 화면에서 바꿀 길을 둔다. */
+export function orchUrl(): string {
+  if (typed === null) {
+    try { typed = typeof window === "undefined" ? "" : localStorage.getItem(ORCH_KEY) ?? ""; } catch { typed = ""; }
+  }
+  return trimUrl(typed || ORCH_BUILT);
+}
+/** 주소를 이 브라우저에만 저장한다(빈 값이면 지우고 빌드할 때 박힌 값으로 돌아간다). 주소 꼴이 아니면 false */
+export function setOrchUrl(v: string): boolean {
+  const s = trimUrl(v);
+  if (s && !/^https?:\/\/[^\s/?#]+$/.test(s)) return false;
+  typed = s;
+  try {
+    if (s) localStorage.setItem(ORCH_KEY, s);
+    else localStorage.removeItem(ORCH_KEY);
+  } catch { /* 저장을 막아 둔 브라우저 */ }
+  return true;
+}
+const trimUrl = (s: string) => s.trim().replace(/\/+$/, "");
+export const isLocalOrch = (u: string) => /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:|\/|$)/.test(u);
+/** 에이전트가 내 PC가 아니라 다른 서버에 있는가(공개 배포·터널). 화면 문구와 기본 모드가 달라진다. */
+export const hostedOrch = () => !isLocalOrch(orchUrl());
 
 export type Step = { agent: string; skill: string; key: string; status: string; outcome: string | null; ms: number; fallback: boolean };
 export type Question = { field: string; text: string; options: { value: string; label: string; hint?: string }[]; agent: string; skill: string; why?: string };
@@ -20,19 +45,19 @@ async function j<T>(r: Response): Promise<T> {
 }
 
 export async function orchestratorUp(): Promise<boolean> {
-  try { return (await fetch(`${ORCH}/health`, { signal: AbortSignal.timeout(1500) })).ok; } catch { return false; }
+  try { return (await fetch(`${orchUrl()}/health`, { signal: AbortSignal.timeout(1500) })).ok; } catch { return false; }
 }
-export const listAgents = async () => j<Record<string, AgentInfo>>(await fetch(`${ORCH}/agents`));
-export const listLogs = async (ctx?: string) => j<LogRow[]>(await fetch(`${ORCH}/logs${ctx ? `?context_id=${encodeURIComponent(ctx)}` : ""}`));
-export const getJob = async (ctx: string) => j<JobView>(await fetch(`${ORCH}/jobs/${ctx}`));
+export const listAgents = async () => j<Record<string, AgentInfo>>(await fetch(`${orchUrl()}/agents`));
+export const listLogs = async (ctx?: string) => j<LogRow[]>(await fetch(`${orchUrl()}/logs${ctx ? `?context_id=${encodeURIComponent(ctx)}` : ""}`));
+export const getJob = async (ctx: string) => j<JobView>(await fetch(`${orchUrl()}/jobs/${ctx}`));
 export const answerJob = async (ctx: string, value: string) =>
-  j<unknown>(await fetch(`${ORCH}/jobs/${ctx}/answer`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value }) }));
+  j<unknown>(await fetch(`${orchUrl()}/jobs/${ctx}/answer`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value }) }));
 
 export async function createJob(file: File, options: Record<string, unknown>): Promise<{ context_id: string; duplicate: boolean }> {
   const fd = new FormData();
   fd.append("file", file);
   fd.append("options", JSON.stringify(options));
-  return j(await fetch(`${ORCH}/jobs`, { method: "POST", body: fd }));
+  return j(await fetch(`${orchUrl()}/jobs`, { method: "POST", body: fd }));
 }
 
 /** 끝나거나(completed·failed) 질문이 생길 때까지 상태를 받아 온다. 진행 중에는 onStep으로 단계를 알린다. */
@@ -77,7 +102,7 @@ export function toScreen(v: JobView): { analysis: Analysis; risks: (Risk & { hit
   return { analysis, risks, hits, texts: pf.texts ?? [] };
 }
 export type JobRow = { context_id: string; status: string; filename: string; created: number };
-export const listJobs = async () => j<JobRow[]>(await fetch(`${ORCH}/jobs`));
+export const listJobs = async () => j<JobRow[]>(await fetch(`${orchUrl()}/jobs`));
 
 // ---- 6단계: 추적(공통 로그의 요청↔결과 짝으로 만든 구간·관문·사건). 로그에 있는 것만 담긴다 ----
 export type TraceSpan = { agent: string; skill: string | null; requester: string | null; start_ms: number; end_ms: number | null; ms: number | null;
@@ -87,17 +112,17 @@ export type TraceGate = { at_ms: number; kind: string; source: string; requester
 export type Trace = { context_id: string; t0: string | null; total_ms: number; spans: TraceSpan[]; gates: TraceGate[];
   events: { at_ms: number; kind: string; source: string; skill: string | null; status: string | null; outcome: string | null }[];
   agents: { agent: string; calls: number; ms: number; open: number }[]; lines: number };
-export const getTrace = async (ctx: string) => j<Trace>(await fetch(`${ORCH}/trace?context_id=${encodeURIComponent(ctx)}`));
+export const getTrace = async (ctx: string) => j<Trace>(await fetch(`${orchUrl()}/trace?context_id=${encodeURIComponent(ctx)}`));
 
 /** 에이전트 모드의 가이드 검색: guide 에이전트가 찾은 절을 앱 형식(Hit)으로 바꾼다 */
 export async function searchGuideViaAgent(q: string, k = 5): Promise<Hit[]> {
   const rows = await j<{ doc: string; title: string; text: string; child: string; score: number }[]>(
-    await fetch(`${ORCH}/guide?q=${encodeURIComponent(q)}&k=${k}`));
+    await fetch(`${orchUrl()}/guide?q=${encodeURIComponent(q)}&k=${k}`));
   return rows.map((h) => ({ section: { doc: h.doc, title: h.title, text: h.text }, score: h.score, child: h.child }));
 }
 
 // ---- 보고서(A 등급). 상태를 바꾸는 일은 safety 관문을 거친다 ----
 export type AgentReply = { status: string; outcome: string | null; output: Record<string, any>; question: Record<string, any> | null }; // eslint-disable-line @typescript-eslint/no-explicit-any
 const post = async <T,>(path: string, body?: unknown, headers: Record<string, string> = {}) =>
-  j<T>(await fetch(`${ORCH}${path}`, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body ?? {}) }));
+  j<T>(await fetch(`${orchUrl()}${path}`, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body ?? {}) }));
 export const compileReport = (ctx: string) => post<AgentReply>(`/jobs/${ctx}/report`);

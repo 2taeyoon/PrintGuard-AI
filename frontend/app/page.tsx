@@ -11,7 +11,7 @@ import { AgentProgress, QuestionCard } from "./agent-ui";
 import AgentsView, { AgentHealth } from "./agents-view";
 import { FINISHES, GROUPS, loadPapers, surface, type FinishId, type Paper, type PaperDb } from "@/lib/papers";
 import { assess, inputFrom, type Risk } from "@/lib/risk";
-import { answerJob, createJob, HOSTED, orchestratorUp, toScreen, waitJob, type JobView } from "@/lib/agentClient";
+import { answerJob, createJob, isLocalOrch, ORCH_BUILT, orchestratorUp, orchUrl, setOrchUrl, toScreen, waitJob, type JobView } from "@/lib/agentClient";
 
 const LEVEL_LABEL = { check: "확인 필요", none: "해당 없음", na: "판단 불가" } as const;
 
@@ -74,6 +74,15 @@ function Home() {
   // 주소의 ?mode=agent로 시작 모드를 기억한다(에이전트 모드로 열면 브라우저 임베딩 모델을 아예 불러오지 않는다)
   // 공개 배포(에이전트가 다른 서버에 있는 경우)에서는 에이전트 검사를 기본으로 둔다.
   // 그 서버에만 ICC 프로파일과 검색 모델이 있어서, 바로 검사는 사용자가 ICC를 올려야 색을 잴 수 있다.
+  // 에이전트 주소. 저장해 둔 값이 있으면 그것으로 시작한다(터널 주소는 켤 때마다 바뀌는데, 빌드 때 박힌 값은 재배포해야 바뀐다).
+  const [orch, setOrch] = useState(() => orchUrl());
+  const [orchIn, setOrchIn] = useState(orch);
+  const HOSTED = !isLocalOrch(orch);
+  const saveOrch = (v: string) => {
+    if (!setOrchUrl(v)) { setErr("에이전트 주소는 http://127.0.0.1:8700 처럼 넣어 주세요(뒤에 경로는 빼고)."); return; }
+    setErr(""); setAgentUp(null);
+    setOrch(orchUrl()); setOrchIn(orchUrl());
+  };
   const [mode, setModeState] = useState<"direct" | "agent">(
     sp.get("mode") === "agent" || (HOSTED && sp.get("mode") !== "direct") ? "agent" : "direct");
   const [showAgents, setShowAgents] = useState(true); // '에이전트 검사'를 고르면 에이전트 탭 내용을 이 자리에 펼친다
@@ -108,7 +117,7 @@ function Home() {
     check();
     const t = setInterval(check, 5000);
     return () => { alive = false; clearInterval(t); };
-  }, [mode]);
+  }, [mode, orch]);
 
   useEffect(() => {
     if (mode !== "direct") return; // 에이전트 모드에서는 가이드 검색을 guide 에이전트가 한다
@@ -266,9 +275,23 @@ function Home() {
             : agentUp ? (HOSTED
               ? "에이전트(사전 검사·색·종이·가이드…)가 나눠서 검사합니다. PDF는 에이전트 서버로 올라가고, 서버가 다시 뜨면 기록은 지워집니다. 아래에서 에이전트 상태와 소통 기록을 바로 볼 수 있습니다."
               : "로컬 에이전트(사전 검사·색·종이·가이드…)가 나눠서 검사합니다. 파일은 이 PC의 에이전트에만 보냅니다. 아래에서 에이전트 상태와 소통 기록을 바로 볼 수 있습니다.")
-            : <span className="sev-high">{HOSTED ? "에이전트 서버가 쉬고 있습니다. 잠깐 기다렸다가 다시 눌러 주세요(무료 서버라 한동안 요청이 없으면 잠듭니다)." : <>에이전트가 꺼져 있습니다. <code>agents</code> 폴더에서 <code>python run_agents.py</code>로 켜세요.</>}</span>}
+            : <span className="sev-high">{HOSTED ? "에이전트에 연결되지 않습니다. 아래 ‘에이전트 주소’가 맞는지 확인해 주세요(터널을 다시 켜면 주소가 바뀝니다)." : <>에이전트가 꺼져 있습니다. <code>agents</code> 폴더에서 <code>python run_agents.py</code>로 켜세요.</>}</span>}
         </span>
       </div>
+
+      {/* 에이전트 주소: 서버·터널 주소가 바뀌면 여기서 바꾼다(이 브라우저에만 저장하고, 서버로 보내지 않는다) */}
+      {mode === "agent" && (
+        <div className="orchbar panel">
+          <label>에이전트 주소
+            <input type="url" inputMode="url" spellCheck={false} placeholder={ORCH_BUILT} value={orchIn}
+              onChange={(e) => setOrchIn(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); saveOrch(orchIn); } }} />
+          </label>
+          <button type="button" className="small" onClick={() => saveOrch(orchIn)}>저장</button>
+          <button type="button" className="ghost small" onClick={() => saveOrch("")}>기본값</button>
+          <span className="note">지금 부르는 곳 <code>{orch}</code> — {orch === ORCH_BUILT ? "기본값입니다." : "이 브라우저에 저장한 주소입니다."} 오케스트레이터 주소만 넣으세요(뒤의 <code>/health</code> 같은 경로는 빼고).</span>
+        </div>
+      )}
 
       {/* 에이전트 검사를 고르면 '에이전트' 탭과 같은 내용(목록·의뢰 추적·소통 기록)을 이 자리에서 본다 */}
       {mode === "agent" && (
