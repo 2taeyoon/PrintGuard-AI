@@ -191,7 +191,7 @@ export default function AgentsView({ initialCtx = "", showWarn = true }: { initi
                   const ms = s.ms ?? total - s.start_ms;
                   return (
                     <li key={i}>
-                      <span className="wf_who"><b>{agentLabel(s.agent)}</b> {s.skill && <code>{skillLabel(s.skill)}</code>}{s.requester && <span className="note"> ← {agentLabel(s.requester)}</span>}</span>
+                      <span className="wf_who">{s.requester && <span className="note">{agentLabel(s.requester)} → </span>}<b>{agentLabel(s.agent)}</b> {s.skill && <code>{skillLabel(s.skill)}</code>}</span>
                       <span className="wf_track">
                         <span className={`wf_bar st-${s.status ?? "working"}${s.open ? " open" : ""}`}
                           style={{ left: `${(s.start_ms / total) * 100}%`, width: `${Math.max((ms / total) * 100, 0.8)}%` }}
@@ -229,7 +229,8 @@ export default function AgentsView({ initialCtx = "", showWarn = true }: { initi
               {logs.map((l) => (
                 <li key={l.id} className={`k-${l.kind} st-${l.status ?? ""}`}>
                   <span className="t">{when(l.at)}</span>
-                  <span className="who"><b>{agentLabel(l.source)}</b>{l.requester && l.kind === "request_received" ? <> ← {agentLabel(l.requester)}</> : null}</span>
+                  {/* 부탁한 쪽을 앞에 둬서 '총괄 → 교정'처럼 일이 흘러간 방향대로 읽히게 한다 */}
+                  <span className="who">{l.requester && l.kind === "request_received" ? <>{agentLabel(l.requester)} → </> : null}<b>{agentLabel(l.source)}</b></span>
                   <span className="what">{KIND[l.kind] ?? l.kind}{l.skill && <> · {skillLabel(l.skill)} <code>({l.skill})</code></>}{l.status && <> · {statusLabel(l.status)}</>}{l.outcome && <> · <b>{l.outcome}</b></>}{l.grade && l.grade !== "read" && <> · 등급 {l.grade}</>}</span>
                   {!ctx && <span className="note" title={l.context_id}>의뢰 {jobNo(l.context_id)}</span>}
                 </li>
