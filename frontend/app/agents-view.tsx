@@ -4,7 +4,7 @@
 // '인쇄 검수'에서 에이전트 검사 모드를 고르면 이 화면이 그 자리에 펼쳐진다(따로 된 탭은 없앴다).
 import { useEffect, useState } from "react";
 import { getTrace, listAgents, listJobs, listLogs, orchestratorUp, type AgentInfo, type JobRow, type LogRow, type Trace } from "@/lib/agentClient";
-import { agentLabel, skillLabel, SkillName } from "./agent-ui";
+import { agentLabel, jobNo, skillLabel, SkillName, statusLabel } from "./agent-ui";
 
 const KIND: Record<string, string> = {
   job_opened: "의뢰 접수", request_received: "요청 받음", result_sent: "결과 보냄", task_status: "호출 실패", input_required: "사용자에게 질문",
@@ -18,15 +18,28 @@ const secs = (ms: number) => `${(ms / 1000).toFixed(ms < 10000 ? 2 : 1)}초`;
 // 에이전트는 서버가 주는 차례가 호출 순서에 따라 달라지므로, 일하는 차례대로 고정해서 보여 준다
 const ORDER = ["orchestrator", "preflight", "color", "paper", "guide", "proofread", "shop", "report", "safety"];
 const rank = (n: string) => { const i = ORDER.indexOf(n.replace("(fake)", "")); return i < 0 ? ORDER.length : i; };
-// 공통 로그의 시각은 UTC로 남는다. 화면에는 한국 시간으로 '2026년 10월 27일 오후 3시 55분'처럼 적는다
+// 공통 로그의 시각은 UTC로 남는다. 화면에는 한국 시간으로 '2026년 10월 27일 오전 9시 30분 20초'처럼 적는다
 const KST = new Intl.DateTimeFormat("ko-KR", {
-  timeZone: "Asia/Seoul", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", hour12: true,
+  timeZone: "Asia/Seoul", year: "numeric", month: "numeric", day: "numeric",
+  hour: "numeric", minute: "numeric", second: "numeric", hour12: true,
 });
+const parts = (t: Date) => Object.fromEntries(KST.formatToParts(t).map((x) => [x.type, x.value]));
 const when = (iso: string) => {
   const t = new Date(iso);
   if (Number.isNaN(t.getTime())) return iso;
-  const p = Object.fromEntries(KST.formatToParts(t).map((x) => [x.type, x.value]));
-  return `${p.year}년 ${p.month}월 ${p.day}일 ${p.dayPeriod} ${p.hour}시 ${p.minute}분`;
+  const p = parts(t);
+  return `${p.year}년 ${p.month}월 ${p.day}일 ${p.dayPeriod} ${p.hour}시 ${p.minute}분 ${p.second}초`;
+};
+/** 의뢰 목록처럼 좁은 자리에는 시각만 적는다 — '오전 9시 30분' */
+const clock = (epochSec: number) => {
+  const t = new Date(epochSec * 1000);
+  if (Number.isNaN(t.getTime())) return "";
+  const p = parts(t);
+  return `${p.dayPeriod} ${p.hour}시 ${p.minute}분`;
+};
+const JOB_STATUS: Record<string, string> = {
+  working: "검사 중", "input-required": "답을 기다리는 중", completed: "검사 끝",
+  completed_partial: "일부만 끝남", failed: "실패",
 };
 
 /** 에이전트가 전부 살아 있는지 한눈에 보는 뱃지. 접어 둔 상태에서도 보이게 제목 옆에 붙인다 */
@@ -149,7 +162,11 @@ export default function AgentsView({ initialCtx = "", showWarn = true }: { initi
             <strong>의뢰</strong>
             <select value={ctx} onChange={(e) => setCtx(e.target.value)} aria-label="의뢰 고르기">
               <option value="">전체(최근 기록만)</option>
-              {jobs.map((j) => <option key={j.context_id} value={j.context_id}>{j.context_id} · {j.filename} · {j.status}</option>)}
+              {jobs.map((j) => (
+                <option key={j.context_id} value={j.context_id}>
+                  {j.filename} · {JOB_STATUS[j.status] ?? j.status} · {clock(j.created)}
+                </option>
+              ))}
             </select>
             <span className="note">2초마다 갱신</span>
           </div>
@@ -165,7 +182,7 @@ export default function AgentsView({ initialCtx = "", showWarn = true }: { initi
                   ))}
                   <span className="note">공통 로그 {trace.lines}줄 기준</span>
                 </>
-              ) : <span className="note">{ctx ? "이 의뢰에는 아직 구간이 없습니다." : "위에서 의뢰를 고르면 에이전트별 워터폴이 나옵니다."}</span>}
+              ) : <span className="note">{ctx ? "이 의뢰에는 아직 구간이 없습니다." : "위에서 의뢰를 고르면 에이전트별 구간 막대(워터폴)가 나옵니다."}</span>}
             </div>
             {trace && trace.spans.length > 0 && (
               <ol className="waterfall">
@@ -213,8 +230,8 @@ export default function AgentsView({ initialCtx = "", showWarn = true }: { initi
                 <li key={l.id} className={`k-${l.kind} st-${l.status ?? ""}`}>
                   <span className="t">{when(l.at)}</span>
                   <span className="who"><b>{agentLabel(l.source)}</b>{l.requester && l.kind === "request_received" ? <> ← {agentLabel(l.requester)}</> : null}</span>
-                  <span className="what">{KIND[l.kind] ?? l.kind}{l.skill && <> · {skillLabel(l.skill)} <code>({l.skill})</code></>}{l.status && <> · {l.status}</>}{l.outcome && <> · <b>{l.outcome}</b></>}{l.grade && l.grade !== "read" && <> · 등급 {l.grade}</>}</span>
-                  {!ctx && <span className="note">{l.context_id}</span>}
+                  <span className="what">{KIND[l.kind] ?? l.kind}{l.skill && <> · {skillLabel(l.skill)} <code>({l.skill})</code></>}{l.status && <> · {statusLabel(l.status)}</>}{l.outcome && <> · <b>{l.outcome}</b></>}{l.grade && l.grade !== "read" && <> · 등급 {l.grade}</>}</span>
+                  {!ctx && <span className="note" title={l.context_id}>의뢰 {jobNo(l.context_id)}</span>}
                 </li>
               ))}
               {logs.length === 0 && <li><span className="note">아직 기록이 없습니다. 위에서 에이전트 검사 모드로 PDF를 맡겨 보세요.</span></li>}

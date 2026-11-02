@@ -21,6 +21,10 @@ export function SkillName({ id }: { id: string }) {
   return ko ? <><b className="sk_ko">{ko}</b> <code>({id})</code></> : <code>{id}</code>;
 }
 const STATUS: Record<string, string> = { completed: "완료", "input-required": "질문", rejected: "거부", canceled: "취소", failed: "실패", working: "진행 중" };
+/** 코드용 상태값을 우리말로. 공통 로그에서도 같은 말을 쓴다 */
+export const statusLabel = (s: string) => STATUS[s] ?? s;
+/** 의뢰 번호는 'ctx_job_' 뒤의 짧은 부분만 보여 준다 */
+export const jobNo = (ctx: string) => ctx.replace(/^ctx_job_/, "");
 
 /** 에이전트 모드 진행 상황: 어떤 에이전트가 어떤 skill을 했는지, 걸린 시간 */
 export function AgentProgress({ job }: { job: JobView }) {
@@ -28,7 +32,7 @@ export function AgentProgress({ job }: { job: JobView }) {
     <div className="agent_progress panel" aria-live="polite">
       <div className="ap_head">
         <strong>에이전트 검사</strong>
-        <span className="chip">{job.context_id}</span>
+        <span className="chip" title={job.context_id}>{job.filename}</span>
         <span className={`chip st-${job.status}`}>{STATUS[job.status] ?? job.status}</span>
         {job.status === "working" && <span className="spinner" aria-hidden="true" />}
         <span className="note">자세한 기록은 위의 ‘에이전트 상태 · 의뢰 추적 · 소통 기록’에서 봅니다</span>

@@ -178,7 +178,7 @@ function Home() {
         icc = new Uint8Array(await iccFile.arrayBuffer());
       } else {
         const r = await fetch(`/icc/${profile.file}`);
-        if (!r.ok) throw new Error("이 사이트에는 ICC 프로파일이 들어 있지 않습니다(재배포가 허용되지 않습니다). "
+        if (!r.ok) throw new Error("이 사이트에는 ICC 프로파일이 없습니다(재배포가 허용되지 않습니다). "
           + "인쇄소에서 받은 ICC 파일을 위 ‘인쇄소 CMYK 프로파일(ICC)’에 올리거나, 에이전트 검사 모드를 쓰세요.");
         icc = new Uint8Array(await r.arrayBuffer());
       }
@@ -256,7 +256,7 @@ function Home() {
       <header className="page_head">
         <h1>인쇄 검수</h1>
         {mode === "direct" ? <GuideBadge ready={!!guide} status={guideStatus} /> : <span className="badge">가이드 검색은 guide 에이전트가 합니다</span>}
-        <p className="lead">폰트·도련·해상도·색·문구를 검사하고, 고른 종이로 인쇄 색 차이와 불량 위험을 예측합니다. 오탈자 등은 자동으로 고치지 않고 수정 제안만 보여 주니 원본 파일에서 직접 고치세요. {mode === "direct" ? "파일은 어디로도 보내지 않습니다." : HOSTED ? "에이전트 검사 모드에서는 PDF가 에이전트 서버로 올라갑니다." : "파일은 이 PC에서 도는 에이전트에만 보냅니다."}</p>
+        <p className="lead">폰트와 도련, 해상도, 색, 문구를 검사합니다. 고른 종이로 인쇄 색 차이와 불량 위험을 예측합니다. 오탈자 등은 수정 제안만 보여 줍니다. 자동으로 고치지는 않으니 원본 파일에서 직접 고치세요. {mode === "direct" ? "파일은 어디로도 보내지 않습니다." : HOSTED ? "에이전트 검사 모드에서는 PDF가 에이전트 서버로 올라갑니다." : "파일은 이 PC에서 도는 에이전트에만 보냅니다."}</p>
       </header>
 
       {/* 가이드 검색: 검수 전에 규격을 확인할 수 있게 맨 위에 둔다(기본은 접힘) */}
@@ -269,7 +269,7 @@ function Home() {
           에이전트 검사 <span className="count">에이전트 협업(A2A)</span></button>
         <span className="note">
           {mode === "direct" ? (HOSTED
-            ? "모든 계산을 이 브라우저 안에서 합니다. 파일은 어디로도 보내지 않습니다. 다만 이 사이트에는 ICC 프로파일이 없어, 색 차이를 재려면 인쇄소에서 받은 ICC 파일을 아래에 올려야 합니다."
+            ? "모든 계산을 이 브라우저 안에서 합니다. 파일은 어디로도 보내지 않습니다. 다만 이 사이트에는 ICC 프로파일이 없습니다. 색 차이를 재려면 인쇄소에서 받은 ICC 파일을 아래에 올려야 합니다."
             : "모든 계산을 이 브라우저 안에서 합니다. 파일은 어디로도 보내지 않습니다.")
             : agentUp === null ? "에이전트 연결 확인 중…"
             : agentUp ? (HOSTED
@@ -287,8 +287,8 @@ function Home() {
               onChange={(e) => setOrchIn(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); saveOrch(orchIn); } }} />
           </label>
-          <button type="button" className="small" onClick={() => saveOrch(orchIn)}>저장</button>
-          <button type="button" className="ghost small" onClick={() => saveOrch("")}>기본값</button>
+          <button type="button" onClick={() => saveOrch(orchIn)}>저장</button>
+          <button type="button" className="ghost" onClick={() => saveOrch("")}>기본값</button>
           <span className="note">지금 부르는 곳 <code>{orch}</code> — {orch === ORCH_BUILT ? "기본값입니다." : "이 브라우저에 저장한 주소입니다."} 오케스트레이터 주소만 넣으세요(뒤의 <code>/health</code> 같은 경로는 빼고).</span>
         </div>
       )}
@@ -371,7 +371,7 @@ function Home() {
           </select>
         </label>
         <label>총 잉크량 한도(%)<input type="number" value={tac} onChange={(e) => setTac(+e.target.value)} /></label>
-        <label title="분광측색기로 잰 종이 흰색을 넣으면, 프로파일이 가정한 종이 대신 이 종이 기준으로 인쇄 색을 옮겨 ΔE를 다시 잽니다. 비워 두면 보정하지 않습니다.">종이 흰색 측정값(Lab, 선택)
+        <label title="분광측색기로 잰 종이 흰색을 넣으면, 프로파일이 가정한 종이 대신 이 종이를 기준으로 삼습니다. 그 기준으로 인쇄 색을 옮겨 ΔE를 다시 잽니다. 비워 두면 보정하지 않습니다.">종이 흰색 측정값(Lab, 선택)
           <input type="text" inputMode="decimal" placeholder="예: 94.9, 2.0, -6.0" value={whiteIn} onChange={(e) => setWhiteIn(e.target.value)} disabled={!paperColor} /></label>
         <button disabled={!file || busy || (!profile && !(mode === "agent" && paperId === "unknown")) || (mode === "agent" && !agentUp)}>{busy ? "검사 중…" : mode === "agent" ? "에이전트에 맡기기" : "검사 시작"}</button>
         {res && <button type="button" className="ghost" onClick={() => window.print()}>보고서 인쇄/PDF 저장</button>}
@@ -440,7 +440,7 @@ function Home() {
                   </div>
                 ))}
               </div>
-              <span className="note">위험도를 점수로 매기지 않습니다. 공개 자료에서 확인한 불량 원인이 이 파일·이 종이에 해당하는지만 보고, 해당하면 근거와 함께 ‘확인 필요’로 적습니다. 확률이 아니라 사람이 확인할 거리입니다. 후가공(접지·제본·박·형압)은 PDF에 정보가 없어 자동으로 검사하지 못하며 고른 값만 씁니다.</span>
+              <span className="note">위험도를 점수로 매기지 않습니다. 공개 자료에서 확인한 불량 원인이 이 파일과 이 종이에 해당하는지만 봅니다. 해당하면 근거와 함께 ‘확인 필요’로 적습니다. 확률이 아니라 사람이 확인할 거리입니다. 후가공(접지·제본·박·형압)은 PDF에 정보가 없습니다. 자동으로 검사하지 못하고 고른 값만 씁니다.</span>
             </div>
           )}
           <div className="ws">
@@ -492,7 +492,7 @@ function Home() {
           </div>
         </>
       )}
-      <div className="disclaimer">이 검수 결과는 인쇄소의 최종 승인과 사람의 교정을 대체하지 않으며, 색상은 실제 인쇄 결과를 보장하지 않는 위험 예측입니다. 색 공간은 PDF 안의 정보를 읽은 값이고 이미지 매칭은 가로·세로 픽셀 수로 하므로 같은 크기의 이미지가 여러 개면 틀릴 수 있습니다.</div>
+      <div className="disclaimer">이 검수 결과는 인쇄소의 최종 승인과 사람의 교정을 대체하지 않습니다. 색상은 실제 인쇄 결과를 보장하지 않는 위험 예측입니다. 색 공간은 PDF 안의 정보를 읽은 값입니다. 이미지 매칭은 가로·세로 픽셀 수로 합니다. 그래서 같은 크기의 이미지가 여러 개면 틀릴 수 있습니다.</div>
     </div>
   );
 }

@@ -34,7 +34,7 @@ export default function GuideSearch({ guide, mode, ready }: { guide: Guide | nul
     <section className="gsearch panel open">
       <div className="gs_head">
         <b>인쇄 가이드 찾아보기</b>
-        <span className="note">판형·색·파일·종이·불량에 관한 가이드에서 질문과 가까운 항목을 찾습니다. 답을 지어내지 않고 원문을 보여 줍니다.</span>
+        <span className="note">판형과 색, 파일, 종이, 불량에 관한 가이드에서 질문과 가까운 항목을 찾습니다. 답을 지어내지 않고 원문을 보여 줍니다.</span>
       </div>
       <div className="gs_body">
           <form
@@ -56,7 +56,7 @@ export default function GuideSearch({ guide, mode, ready }: { guide: Guide | nul
               <p className="note">‘{asked}’와 가까운 항목 {hits.length}개 — 위쪽일수록 가깝습니다.{" "}
                 <span className="mk-chunk">연한 배경</span>은 검색에 걸린 구간, <mark className="mk-term">진한 표시</mark>는 질문에 나온 단어입니다.</p>
               <ol className="gresults">{hits.map((h, i) => <GuideResult key={`${h.section.title}-${i}`} h={h} rank={i + 1} query={asked} />)}</ol>
-              <p className="note">가이드는 일반적인 인쇄 상식과 공개 자료를 정리한 것이라 인쇄소마다 규격이 다를 수 있습니다. 최종 기준은 인쇄소에 확인하세요.</p>
+              <p className="note">가이드는 일반적인 인쇄 상식과 공개 자료를 정리한 것입니다. 규격은 인쇄소마다 다릅니다. 최종 기준은 인쇄소에 확인하세요.</p>
             </>
           )}
         </div>
