@@ -7,6 +7,12 @@ export type Hit = { section: Section; score: number; child: string };
 const DENSE_WEIGHT = 0.5; // 개발용 질문에서 MRR이 가장 높았던 dense 비중
 const MODEL = "Xenova/multilingual-e5-small";
 
+/* 화면에 적는 용량은 전부 여기서 가져온다. 손으로 적어 두면 진행률 표시와 어긋난다
+   (실제로 안내문은 118MB, 진행률은 121MB를 보여 주고 있었다).
+   Hugging Face 저장소의 실제 파일 크기이며, 단위는 진행률 표시와 같은 10진 MB다. */
+export const MODEL_FILE_MB = 118;      // onnx/model_quantized.onnx 하나 — 118,308,185 B
+export const MODEL_DOWNLOAD_MB = 135;  // 위 + tokenizer.json(17,082,730 B) + 설정 파일들
+
 type Child = { text: string; parent: number };
 
 function parse(md: string): Section[] {
@@ -91,10 +97,10 @@ export async function loadGuide(onStatus: (s: string) => void,
   const children: Child[] = [];
   sections.forEach((s, i) => fixed(s.text).forEach((c) => children.push({ text: c, parent: i })));
 
-  onStatus("임베딩 모델 불러오는 중 (최초 1회, 약 118MB)");
+  onStatus(`임베딩 모델 불러오는 중 (최초 1회, 약 ${MODEL_DOWNLOAD_MB}MB)`);
   const tf = await import("@huggingface/transformers");
   // 모델 파일이 이 앱 안에 있으면 그것을 쓰고(로컬 실행), 없으면 Hugging Face에서 받는다(공개 배포).
-  // 저장소에는 118MB짜리 모델을 넣지 않기 때문에, 배포본에서는 remote가 유일한 경로다.
+  // 저장소에는 모델 파일(118MB)을 넣지 않기 때문에, 배포본에서는 remote가 유일한 경로다.
   const local = opts.localModelPath ?? "/models/";
   const haveLocal = await fetch(`${local}${MODEL}/tokenizer.json`, { method: "HEAD" }).then((r) => r.ok).catch(() => false);
   tf.env.allowLocalModels = haveLocal;
@@ -106,15 +112,20 @@ export async function loadGuide(onStatus: (s: string) => void,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if (haveOrt) (tf.env.backends.onnx as any).wasm.wasmPaths = ortPath;   // 없으면 transformers.js 기본 CDN을 쓴다
   }
-  if (!haveLocal) onStatus("임베딩 모델 불러오는 중 (최초 1회, 약 118MB — Hugging Face)");
+  if (!haveLocal) onStatus(`임베딩 모델 불러오는 중 (최초 1회, 약 ${MODEL_DOWNLOAD_MB}MB — Hugging Face)`);
   // 파일별 다운로드 진행률을 모아 하나의 %로 보여 준다(캐시돼 있으면 바로 끝난다)
   const prog = new Map<string, { loaded: number; total: number }>();
   const onProgress = (p: { status: string; file?: string; loaded?: number; total?: number }) => {
     if (p.status !== "progress" || !p.file || !p.total) return;
     prog.set(p.file, { loaded: p.loaded ?? 0, total: p.total });
-    let a = 0, b = 0;
-    for (const v of prog.values()) { a += v.loaded; b += v.total; }
-    onStatus(`임베딩 모델 불러오는 중 ${Math.round((a / b) * 100)}% (${(a / 1048576).toFixed(0)}/${(b / 1048576).toFixed(0)}MB)`);
+    let a = 0;
+    for (const v of prog.values()) a += v.loaded;
+    // 총량을 그때그때 등록된 파일의 합으로 잡으면, 파일이 하나씩 붙을 때마다 표시가 커져 널뛴다.
+    // 받아야 할 양은 미리 아는 값이므로 고정한다(마지막에 조금 넘쳐도 100%에서 멈춘다).
+    // 받은 양도 같이 묶어 둔다. 라이브러리가 파일을 하나 더 받는 날이 와도
+    // '140/135MB' 같은 앞뒤 안 맞는 표시가 나오지 않는다.
+    const got = Math.min(a / 1e6, MODEL_DOWNLOAD_MB);
+    onStatus(`임베딩 모델 불러오는 중 ${Math.round((got / MODEL_DOWNLOAD_MB) * 100)}% (${got.toFixed(0)}/${MODEL_DOWNLOAD_MB}MB)`);
   };
   const extractor = (await tf.pipeline("feature-extraction", MODEL,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

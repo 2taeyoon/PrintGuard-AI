@@ -1,4 +1,5 @@
 "use client";
+import { MODEL_FILE_MB } from "@/lib/guide";
 
 // 평가 — 이 앱이 고른 설정이 왜 그 설정인지 수치로 보여 준다. 도움말 탭 아래쪽에 이어 붙는다.
 // 숫자는 전부 eval 산출물에서 만든 public/data/eval_summary.json·proofread_eval.json을 그대로 읽는다(화면에서 계산하지 않는다).
@@ -108,7 +109,7 @@ export default function EvalReport() {
                 {" "}({pct(topDense.v.hit1_ci[0], 0)}~{pct(topDense.v.hit1_ci[1], 0)} 대 {pct(pickDense.hit1_ci[0], 0)}~{pct(pickDense.hit1_ci[1], 0)}) 겹쳐 차이라고 읽을 수 없고,
                 파일이 {s.models[topDense.m]?.MB.toLocaleString()}MB라 브라우저에 올릴 수 없습니다.</>
             )}
-            {" "}고른 모델은 {s.models[PICKED_MODEL]?.MB.toLocaleString()}MB이고 int8로 줄이면 약 118MB라 브라우저에서 그대로 돕니다
+            {" "}고른 모델은 {s.models[PICKED_MODEL]?.MB.toLocaleString()}MB이고 int8로 줄이면 약 {MODEL_FILE_MB}MB라 브라우저에서 그대로 돕니다
             {d.browser && <> — 실제 Chrome에서 Hit@1 {pct(d.browser.hit1)}, 질문당 {num(d.browser.query_ms, 1)}ms</>}.
           </Pick>
           <h3>자르기 × 임베딩 모델 (임베딩만 썼을 때 Hit@1)</h3>
@@ -144,7 +145,7 @@ export default function EvalReport() {
               </tbody>
             </table>
           </div>
-          <p className="note">파일 크기는 fp32 기준입니다. 앱은 이 중 multilingual-e5-small의 int8 ONNX(약 118MB)를 씁니다 — 바로 검사는 브라우저에서, 에이전트 검사는 서버에서 같은 파일을 돌립니다
+          <p className="note">파일 크기는 fp32 기준입니다. 앱은 이 중 multilingual-e5-small의 int8 ONNX(약 {MODEL_FILE_MB}MB)를 씁니다 — 바로 검사는 브라우저에서, 에이전트 검사는 서버에서 같은 파일을 돌립니다
             {d.browser && <> — 실제 Chrome에서 같은 질문 {d.browser.n}개를 쟀을 때 Hit@1 {pct(d.browser.hit1)}, MRR {num(d.browser.mrr, 3)},
               모델 로딩 {(d.browser.load_ms / 1000).toFixed(1)}초, 질문당 {num(d.browser.query_ms, 1)}ms</>}.</p>
 
