@@ -49,6 +49,11 @@ app.add_middleware(CORSMiddleware, allow_origin_regex=CORS_ORIGIN_REGEX, allow_m
 JOBS: dict[str, Job] = {}
 BY_KEY: dict[str, str] = {}
 FAKE = os.environ.get("PG_FAKE_AGENTS") == "1"
+# 공개 주소로 열려 있으므로 모르는 사람도 PDF를 올릴 수 있다. 제한이 없으면 디스크와 메모리를
+# 채워 이 PC를 멈출 수 있다. 숫자는 쓰는 사람이 환경변수로 조절한다.
+MAX_UPLOAD = max(1, int(os.environ.get("PG_MAX_UPLOAD_MB", "25"))) * 1024 * 1024
+MAX_JOBS = max(10, int(os.environ.get("PG_MAX_JOBS", "200")))          # 넘으면 끝난 의뢰부터 버린다
+MAX_ACTIVE = max(1, int(os.environ.get("PG_MAX_ACTIVE_PER_CLIENT", "3")))  # 한 브라우저가 동시에 돌릴 수 있는 수
 
 
 async def registry() -> dict[str, dict[str, Any]]:
@@ -131,7 +136,14 @@ async def trace(context_id: str, limit: int = 2000, x_pg_client: str | None = Cl
 @app.post("/jobs")
 async def create_job(file: UploadFile = File(...), options: str = Form("{}"), x_pg_client: str | None = Client) -> dict[str, Any]:
     set_agent_name(NAME)
-    data = await file.read()
+    # 통째로 읽고 나서 크기를 재면 이미 메모리에 들어온 뒤다. 한도를 넘는 순간 끊는다
+    buf, size = [], 0
+    while blk := await file.read(1 << 20):
+        size += len(blk)
+        if size > MAX_UPLOAD:
+            raise HTTPException(413, f"PDF가 너무 큽니다(최대 {MAX_UPLOAD // (1024 * 1024)}MB)")
+        buf.append(blk)
+    data = b"".join(buf)
     if not data.startswith(b"%PDF"):
         raise HTTPException(400, "PDF 파일이 아닙니다")
     opts = json.loads(options or "{}")
@@ -146,6 +158,10 @@ async def create_job(file: UploadFile = File(...), options: str = Form("{}"), x_
         j = JOBS[BY_KEY[key]]
         log_event(j.context_id, "duplicate_job", source=NAME, payload={"idempotency_key": key})
         return {"data": {"context_id": j.context_id, "status": j.status, "duplicate": True}, "meta": {}}
+    active = sum(1 for j in JOBS.values() if j.client == who and j.status in ("working", "input-required"))
+    if who and active >= MAX_ACTIVE:
+        raise HTTPException(429, f"이미 진행 중인 검사가 {active}건입니다. 끝난 뒤에 다시 맡겨 주세요")
+    _evict()
     ctx = f"ctx_job_{secrets.token_hex(4)}"
     job = Job(context_id=ctx, idempotency_key=key, options=opts, pdf_ref=sha, filename=file.filename or "upload.pdf", client=who)
     JOBS[ctx], BY_KEY[key] = job, ctx
@@ -157,6 +173,18 @@ async def create_job(file: UploadFile = File(...), options: str = Form("{}"), x_
     app.state.engines[ctx] = engine
     asyncio.create_task(_run(engine, job))
     return {"data": {"context_id": ctx, "status": job.status, "duplicate": False}, "meta": {}}
+
+
+def _evict() -> None:
+    """의뢰는 메모리에 쌓이기만 한다. 한도를 넘으면 끝난 것부터, 그래도 넘으면 가장 오래된 것부터 버린다."""
+    if len(JOBS) < MAX_JOBS:
+        return
+    done = sorted((j for j in JOBS.values() if j.status not in ("working", "input-required")), key=lambda j: j.created)
+    for j in (done or sorted(JOBS.values(), key=lambda j: j.created))[: len(JOBS) - MAX_JOBS + 1]:
+        JOBS.pop(j.context_id, None)
+        BY_KEY.pop(j.idempotency_key, None)
+        app.state.engines = getattr(app.state, "engines", {})
+        app.state.engines.pop(j.context_id, None)
 
 
 async def _run(engine: Engine, job: Job) -> None:
@@ -202,19 +230,39 @@ async def shops(q: str = "", sido: str = "", limit: int = 20) -> dict[str, Any]:
     return {"data": await _ask("shop", "find_shops", "ctx_shop_search", {"q": q, "sido": sido, "limit": limit}), "meta": {}}
 
 
+async def _reviews_of(contexts: set[str]) -> list[dict[str, Any]]:
+    """내 의뢰에 딸린 승인 요청만 모은다. safety에 '전부 달라'고 물으면 남의 주문까지 돌아온다
+    (금액·부수·승인한 사람 이름이 들어 있다)."""
+    if not contexts:
+        return []
+    async with httpx.AsyncClient(timeout=5) as c:
+        rs = await asyncio.gather(*(c.get(f"{agent_url('safety')}/reviews", params={"context_id": x}) for x in sorted(contexts)),
+                                  return_exceptions=True)
+    out: list[dict[str, Any]] = []
+    for r in rs:
+        if not isinstance(r, Exception) and r.status_code == 200:
+            out += r.json().get("data", [])
+    return sorted(out, key=lambda v: str(v.get("at") or ""), reverse=True)[:50]
+
+
 @app.get("/reviews")
 async def reviews(context_id: str | None = None, x_pg_client: str | None = Client) -> dict[str, Any]:
+    who = _who(x_pg_client)
     if context_id:
-        _owned(context_id, _who(x_pg_client))
-    # 의뢰를 지정하지 않으면 safety가 가진 검토 목록을 그대로 돌려준다(사람 승인용 화면, 파일명은 담기지 않는다)
-    async with httpx.AsyncClient(timeout=5) as c:
-        r = await c.get(f"{agent_url('safety')}/reviews", params={"context_id": context_id} if context_id else None)
-    return r.json()
+        _owned(context_id, who)
+        return {"data": await _reviews_of({context_id}), "meta": {}}
+    return {"data": await _reviews_of(_mine(who)), "meta": {}}
 
 
 @app.post("/reviews/{review_id}/decide")
-async def decide_review(review_id: str, body: dict[str, Any], authorization: str | None = Header(None)) -> dict[str, Any]:
-    """사람 토큰을 그대로 safety에 넘긴다(오케스트레이터는 대신 승인하지 않는다)."""
+async def decide_review(review_id: str, body: dict[str, Any], authorization: str | None = Header(None),
+                        x_pg_client: str | None = Client) -> dict[str, Any]:
+    """사람 토큰을 그대로 safety에 넘긴다(오케스트레이터는 대신 승인하지 않는다).
+    넘기기 전에 그 승인 요청이 이 브라우저의 의뢰에 딸린 것인지부터 본다 — 아니면 남의 주문을
+    승인·거절할 수 있게 된다."""
+    mine = {v["review_id"] for v in await _reviews_of(_mine(_who(x_pg_client)))}
+    if review_id not in mine:
+        raise HTTPException(404, "없는 승인 요청")
     async with httpx.AsyncClient(timeout=5) as c:
         r = await c.post(f"{agent_url('safety')}/reviews/{review_id}/decide", json=body, headers={"Authorization": authorization or ""})
     if r.status_code != 200:
