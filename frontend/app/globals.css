@@ -14,14 +14,16 @@ h1, h2, h3, h4 { margin: 0; }
 .RouteApp { min-height: 100vh; }
 .topbar { position: sticky; top: 0; z-index: 900; background: var(--white); border-bottom: 1px solid var(--borderSubtle); }
 .topbar_inner { display: flex; align-items: center; gap: 32px; padding: 0 64px; }
-.brand { font-size: 2.0rem; font-weight: 700; color: var(--black); white-space: nowrap; }
+/* 로고와 오른쪽 빈 칸이 같은 몫을 가져가야 가운데 메뉴가 화면 정중앙에 선다.
+   오른쪽에 있던 설명 문구를 지우면서 균형이 깨져, 그 자리를 빈 칸(::after)으로 대신한다 */
+.brand { flex: 1; font-size: 2.0rem; font-weight: 700; color: var(--black); white-space: nowrap; }
+.topbar_inner::after { content: ""; flex: 1; }
 /* 메뉴는 헤더 가운데에. 양옆 margin auto가 남는 자리를 똑같이 나눠 가진다 */
 .topmenu { display: flex; align-items: center; margin: 0 auto; }
 /* 메뉴 칸이 헤더 높이를 그대로 채운다. 호버 칸과 선택된 칸은 같은 상자(72px, 모서리 각짐) */
 .topmenu a { display: inline-flex; align-items: center; justify-content: center; height: 72px; padding: 0 20px; border-radius: 0;
   font-size: 1.6rem; font-weight: 600; line-height: 1; color: var(--blackmute); white-space: nowrap; transition: background 0.2s ease, color 0.2s ease; }
 .topmenu a.on { background: var(--thema); color: var(--white); }   /* 선택된 칸도 호버와 같은 모양 */
-.topbar_desc { font-size: 1.4rem; color: var(--blackmute); white-space: nowrap; }
 .icon_btn { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 0;
   border-radius: 4px; background: transparent; color: var(--blackmute); font-size: 1.8rem; cursor: pointer; transition: 0.3s ease; }
 .menu_btn { display: none; min-width: 40px; min-height: 40px; }
