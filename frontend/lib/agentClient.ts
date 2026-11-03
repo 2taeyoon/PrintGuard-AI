@@ -29,6 +29,27 @@ export function setOrchUrl(v: string): boolean {
   return true;
 }
 const trimUrl = (s: string) => s.trim().replace(/\/+$/, "");
+
+/* ---------- 이 브라우저를 가리키는 열쇠 ----------
+   에이전트는 PC 한 대인데 공개 주소로 누구나 들어온다. 그래서 오케스트레이터는 이 값이 붙은
+   요청에만 그 브라우저가 넣은 의뢰를 돌려준다. 로그인이 아니라 열쇠라서, 지우면 지난 의뢰는
+   다시 못 본다(남이 볼 일도 없다). 서버로 가는 것은 이 임의의 값뿐이고 누구인지는 담기지 않는다. */
+const CLIENT_KEY = "pg.client";
+let cid: string | null = null;
+const rand = () => (globalThis.crypto?.randomUUID?.() ?? `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`);
+
+export function clientId(): string {
+  if (cid === null) {
+    if (typeof window === "undefined") return "";   // 서버 렌더에서는 열쇠가 없다
+    try {
+      cid = localStorage.getItem(CLIENT_KEY) ?? "";
+      if (!cid) { cid = rand(); localStorage.setItem(CLIENT_KEY, cid); }
+    } catch { cid = rand(); }                       // 저장을 막아 둔 브라우저 — 이 탭에서만 쓰는 값
+  }
+  return cid;
+}
+/** 모든 오케스트레이터 요청에 붙인다. 빠뜨리면 그 요청은 아무 의뢰도 못 본다. */
+const H = (extra: Record<string, string> = {}): Record<string, string> => ({ "X-PG-Client": clientId(), ...extra });
 export const isLocalOrch = (u: string) => /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:|\/|$)/.test(u);
 /** 에이전트가 내 PC가 아니라 다른 서버에 있는가(공개 배포·터널). 화면 문구와 기본 모드가 달라진다. */
 export const hostedOrch = () => !isLocalOrch(orchUrl());
@@ -48,16 +69,16 @@ export async function orchestratorUp(): Promise<boolean> {
   try { return (await fetch(`${orchUrl()}/health`, { signal: AbortSignal.timeout(1500) })).ok; } catch { return false; }
 }
 export const listAgents = async () => j<Record<string, AgentInfo>>(await fetch(`${orchUrl()}/agents`));
-export const listLogs = async (ctx?: string) => j<LogRow[]>(await fetch(`${orchUrl()}/logs${ctx ? `?context_id=${encodeURIComponent(ctx)}` : ""}`));
-export const getJob = async (ctx: string) => j<JobView>(await fetch(`${orchUrl()}/jobs/${ctx}`));
+export const listLogs = async (ctx?: string) => j<LogRow[]>(await fetch(`${orchUrl()}/logs${ctx ? `?context_id=${encodeURIComponent(ctx)}` : ""}`, { headers: H() }));
+export const getJob = async (ctx: string) => j<JobView>(await fetch(`${orchUrl()}/jobs/${ctx}`, { headers: H() }));
 export const answerJob = async (ctx: string, value: string) =>
-  j<unknown>(await fetch(`${orchUrl()}/jobs/${ctx}/answer`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value }) }));
+  j<unknown>(await fetch(`${orchUrl()}/jobs/${ctx}/answer`, { method: "POST", headers: H({ "Content-Type": "application/json" }), body: JSON.stringify({ value }) }));
 
 export async function createJob(file: File, options: Record<string, unknown>): Promise<{ context_id: string; duplicate: boolean }> {
   const fd = new FormData();
   fd.append("file", file);
   fd.append("options", JSON.stringify(options));
-  return j(await fetch(`${orchUrl()}/jobs`, { method: "POST", body: fd }));
+  return j(await fetch(`${orchUrl()}/jobs`, { method: "POST", headers: H(), body: fd }));
 }
 
 /** 끝나거나(completed·failed) 질문이 생길 때까지 상태를 받아 온다. 진행 중에는 onStep으로 단계를 알린다. */
@@ -102,7 +123,7 @@ export function toScreen(v: JobView): { analysis: Analysis; risks: (Risk & { hit
   return { analysis, risks, hits, texts: pf.texts ?? [] };
 }
 export type JobRow = { context_id: string; status: string; filename: string; created: number };
-export const listJobs = async () => j<JobRow[]>(await fetch(`${orchUrl()}/jobs`));
+export const listJobs = async () => j<JobRow[]>(await fetch(`${orchUrl()}/jobs`, { headers: H() }));
 
 // ---- 6단계: 추적(공통 로그의 요청↔결과 짝으로 만든 구간·관문·사건). 로그에 있는 것만 담긴다 ----
 export type TraceSpan = { agent: string; skill: string | null; requester: string | null; start_ms: number; end_ms: number | null; ms: number | null;
@@ -112,7 +133,7 @@ export type TraceGate = { at_ms: number; kind: string; source: string; requester
 export type Trace = { context_id: string; t0: string | null; total_ms: number; spans: TraceSpan[]; gates: TraceGate[];
   events: { at_ms: number; kind: string; source: string; skill: string | null; status: string | null; outcome: string | null }[];
   agents: { agent: string; calls: number; ms: number; open: number }[]; lines: number };
-export const getTrace = async (ctx: string) => j<Trace>(await fetch(`${orchUrl()}/trace?context_id=${encodeURIComponent(ctx)}`));
+export const getTrace = async (ctx: string) => j<Trace>(await fetch(`${orchUrl()}/trace?context_id=${encodeURIComponent(ctx)}`, { headers: H() }));
 
 /** 에이전트 모드의 가이드 검색: guide 에이전트가 찾은 절을 앱 형식(Hit)으로 바꾼다 */
 export async function searchGuideViaAgent(q: string, k = 5): Promise<Hit[]> {
@@ -124,5 +145,5 @@ export async function searchGuideViaAgent(q: string, k = 5): Promise<Hit[]> {
 // ---- 보고서(A 등급). 상태를 바꾸는 일은 safety 관문을 거친다 ----
 export type AgentReply = { status: string; outcome: string | null; output: Record<string, any>; question: Record<string, any> | null }; // eslint-disable-line @typescript-eslint/no-explicit-any
 const post = async <T,>(path: string, body?: unknown, headers: Record<string, string> = {}) =>
-  j<T>(await fetch(`${orchUrl()}${path}`, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body ?? {}) }));
+  j<T>(await fetch(`${orchUrl()}${path}`, { method: "POST", headers: H({ "Content-Type": "application/json", ...headers }), body: JSON.stringify(body ?? {}) }));
 export const compileReport = (ctx: string) => post<AgentReply>(`/jobs/${ctx}/report`);

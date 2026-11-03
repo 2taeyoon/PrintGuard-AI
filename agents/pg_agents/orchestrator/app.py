@@ -67,6 +67,31 @@ async def registry() -> dict[str, dict[str, Any]]:
     return out
 
 
+# ---------- 의뢰의 주인 ----------
+# 에이전트는 이 PC 한 대인데 공개 주소로 누구나 들어온다. 주인을 가리지 않으면 남의 파일명과
+# 소통 기록이 그대로 보이고, 남의 질문에 대신 답까지 할 수 있다. 그래서 브라우저가 들고 오는
+# 임의의 값(X-PG-Client)을 의뢰에 적어 두고, 그 값이 맞는 요청에만 돌려준다.
+# 로그인이 아니라 열쇠다. 열쇠를 잃으면 그 브라우저의 지난 의뢰는 다시 못 본다.
+Client = Header(None, alias="X-PG-Client")
+
+
+def _who(raw: str | None) -> str:
+    return (raw or "").strip()[:64]
+
+
+def _mine(client: str) -> set[str]:
+    """이 브라우저가 넣은 의뢰 번호. 주인이 없는 옛 의뢰는 아무에게도 보이지 않는다."""
+    return {c for c, j in JOBS.items() if j.client and j.client == client} if client else set()
+
+
+def _owned(ctx: str, client: str) -> Job:
+    """남의 의뢰인지 아예 없는 의뢰인지 알려 주지 않으려고 둘 다 404로 답한다."""
+    j = JOBS.get(ctx)
+    if not j or not client or j.client != client:
+        raise HTTPException(404, "없는 의뢰")
+    return j
+
+
 @app.get("/")
 async def root() -> dict[str, Any]:
     """포트를 열어 본 사람에게 여기가 화면이 아니라는 것만 알려 준다(주소·내부 구조는 적지 않는다)."""
@@ -79,8 +104,9 @@ async def health() -> dict[str, Any]:
 
 
 @app.get("/jobs")
-async def list_jobs() -> dict[str, Any]:
-    rows = sorted(JOBS.values(), key=lambda j: -j.created)[:30]
+async def list_jobs(x_pg_client: str | None = Client) -> dict[str, Any]:
+    mine = _mine(_who(x_pg_client))
+    rows = sorted((j for j in JOBS.values() if j.context_id in mine), key=lambda j: -j.created)[:30]
     return {"data": [{"context_id": j.context_id, "status": j.status, "filename": j.filename, "created": j.created} for j in rows], "meta": {}}
 
 
@@ -90,18 +116,20 @@ async def agents() -> dict[str, Any]:
 
 
 @app.get("/logs")
-async def logs(context_id: str | None = None, limit: int = 300) -> dict[str, Any]:
-    return {"data": query(context_id, limit), "meta": {}}
+async def logs(context_id: str | None = None, limit: int = 300, x_pg_client: str | None = Client) -> dict[str, Any]:
+    mine = _mine(_who(x_pg_client))
+    return {"data": query(limit=limit, contexts=mine & {context_id} if context_id else mine), "meta": {}}
 
 
 @app.get("/trace")
-async def trace(context_id: str, limit: int = 2000) -> dict[str, Any]:
+async def trace(context_id: str, limit: int = 2000, x_pg_client: str | None = Client) -> dict[str, Any]:
     """공통 로그로 만든 의뢰별 추적(에이전트 탭 워터폴). 로그에 있는 것만 담는다."""
+    _owned(context_id, _who(x_pg_client))
     return {"data": build_trace(context_id, limit), "meta": {}}
 
 
 @app.post("/jobs")
-async def create_job(file: UploadFile = File(...), options: str = Form("{}")) -> dict[str, Any]:
+async def create_job(file: UploadFile = File(...), options: str = Form("{}"), x_pg_client: str | None = Client) -> dict[str, Any]:
     set_agent_name(NAME)
     data = await file.read()
     if not data.startswith(b"%PDF"):
@@ -109,14 +137,17 @@ async def create_job(file: UploadFile = File(...), options: str = Form("{}")) ->
     opts = json.loads(options or "{}")
     sha = hashlib.sha256(data).hexdigest()
     (STORE / f"{sha}.pdf").write_bytes(data)
-    key = hashlib.sha256((sha + json.dumps(opts, sort_keys=True)).encode()).hexdigest()[:24]
+    who = _who(x_pg_client)
+    # 주인을 키에 섞는다. 안 그러면 같은 PDF를 올린 다른 사람에게 남의 의뢰가 돌아간다
+    # 멱등성 키를 세 값의 배열로 묶어서 만든다. 이어 붙이면 경계가 모호해져 다른 조합이 같은 키가 될 수 있다
+    key = hashlib.sha256(json.dumps([sha, opts, who], sort_keys=True).encode()).hexdigest()[:24]
     # 같은 PDF·같은 옵션은 이전 의뢰를 돌려준다(멱등성). 단, 실패가 섞인 의뢰(completed_partial·failed)는 다시 실행한다
     if key in BY_KEY and JOBS[BY_KEY[key]].status in ("completed", "working", "input-required"):
         j = JOBS[BY_KEY[key]]
         log_event(j.context_id, "duplicate_job", source=NAME, payload={"idempotency_key": key})
         return {"data": {"context_id": j.context_id, "status": j.status, "duplicate": True}, "meta": {}}
     ctx = f"ctx_job_{secrets.token_hex(4)}"
-    job = Job(context_id=ctx, idempotency_key=key, options=opts, pdf_ref=sha, filename=file.filename or "upload.pdf")
+    job = Job(context_id=ctx, idempotency_key=key, options=opts, pdf_ref=sha, filename=file.filename or "upload.pdf", client=who)
     JOBS[ctx], BY_KEY[key] = job, ctx
     reg = await registry()
     available = {d for d, v in reg.items() if v["status"] in ("on", "fake")}
@@ -138,16 +169,14 @@ async def _run(engine: Engine, job: Job) -> None:
 
 
 @app.get("/jobs/{ctx}")
-async def get_job(ctx: str) -> dict[str, Any]:
-    if ctx not in JOBS:
-        raise HTTPException(404, "없는 의뢰")
-    return {"data": JOBS[ctx].public(), "meta": {}}
+async def get_job(ctx: str, x_pg_client: str | None = Client) -> dict[str, Any]:
+    return {"data": _owned(ctx, _who(x_pg_client)).public(), "meta": {}}
 
 
 @app.post("/jobs/{ctx}/answer")
-async def answer(ctx: str, body: dict[str, Any]) -> dict[str, Any]:
-    job = JOBS.get(ctx)
-    if not job or job.status != "input-required":
+async def answer(ctx: str, body: dict[str, Any], x_pg_client: str | None = Client) -> dict[str, Any]:
+    job = _owned(ctx, _who(x_pg_client))
+    if job.status != "input-required":
         raise HTTPException(409, "답을 기다리는 의뢰가 아닙니다")
     set_agent_name(NAME)
     asyncio.create_task(app.state.engines[ctx].answer(job, body.get("value")))
@@ -159,12 +188,6 @@ async def _ask(agent: str, skill: str, ctx: str, inp: dict[str, Any]) -> dict[st
     set_agent_name(NAME)
     r = await call_agent(agent, AgentRequest(meta=new_meta(ctx, seconds=60), skill=skill, input=inp))
     return r.model_dump(mode="json", exclude={"meta"})
-
-
-def _job(ctx: str) -> Job:
-    if ctx not in JOBS:
-        raise HTTPException(404, "없는 의뢰")
-    return JOBS[ctx]
 
 
 @app.get("/guide")
@@ -180,7 +203,10 @@ async def shops(q: str = "", sido: str = "", limit: int = 20) -> dict[str, Any]:
 
 
 @app.get("/reviews")
-async def reviews(context_id: str | None = None) -> dict[str, Any]:
+async def reviews(context_id: str | None = None, x_pg_client: str | None = Client) -> dict[str, Any]:
+    if context_id:
+        _owned(context_id, _who(x_pg_client))
+    # 의뢰를 지정하지 않으면 safety가 가진 검토 목록을 그대로 돌려준다(사람 승인용 화면, 파일명은 담기지 않는다)
     async with httpx.AsyncClient(timeout=5) as c:
         r = await c.get(f"{agent_url('safety')}/reviews", params={"context_id": context_id} if context_id else None)
     return r.json()
@@ -197,8 +223,8 @@ async def decide_review(review_id: str, body: dict[str, Any], authorization: str
 
 
 @app.post("/jobs/{ctx}/report")
-async def report(ctx: str) -> dict[str, Any]:
-    j = _job(ctx)
+async def report(ctx: str, x_pg_client: str | None = Client) -> dict[str, Any]:
+    j = _owned(ctx, _who(x_pg_client))
     r = await _ask("report", "compile_report", ctx, report_input(j))
     if r["status"] == "completed":
         j.results["report"] = {k: r["output"][k] for k in ("markdown", "path", "verified")}

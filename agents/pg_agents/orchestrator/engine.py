@@ -43,6 +43,7 @@ class Job:
     pending: tuple[int, Call] | None = None  # 질문을 기다리는 단계와 호출
     answers: dict[str, Any] = field(default_factory=dict)
     created: float = field(default_factory=time.time)
+    client: str = ""  # 이 의뢰를 넣은 브라우저. 빈 값이면 아무에게도 보이지 않는다
 
     def public(self) -> dict[str, Any]:
         return {"context_id": self.context_id, "status": self.status, "filename": self.filename, "options": self.options,

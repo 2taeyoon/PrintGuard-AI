@@ -38,10 +38,18 @@ def log_event(context_id: str, kind: str, *, source: str, requester: str | None 
         pass
 
 
-def query(context_id: str | None = None, limit: int = 300) -> list[dict[str, Any]]:
+def query(context_id: str | None = None, limit: int = 300, contexts: set[str] | None = None) -> list[dict[str, Any]]:
+    """contexts를 주면 그 의뢰들의 줄만 돌려준다. 빈 집합이면 아무것도 돌려주지 않는다
+    (호출한 쪽이 '보여 줄 의뢰가 없다'고 판단한 것이므로, 전체를 보여 주면 안 된다)."""
     with _conn() as c:
         c.row_factory = sqlite3.Row
-        if context_id:
+        if contexts is not None:
+            if not contexts:
+                return []
+            ph = ",".join("?" * len(contexts))
+            rows = c.execute(f"SELECT * FROM common_log WHERE context_id IN ({ph}) ORDER BY id DESC LIMIT ?",  # noqa: S608 - ph는 물음표만
+                             (*sorted(contexts), limit)).fetchall()
+        elif context_id:
             rows = c.execute("SELECT * FROM common_log WHERE context_id=? ORDER BY id DESC LIMIT ?", (context_id, limit)).fetchall()
         else:
             rows = c.execute("SELECT * FROM common_log ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
