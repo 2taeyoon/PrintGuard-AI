@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { FormEvent, Suspense, useEffect, useRef, useState } from "react";
+import { FormEvent, Suspense, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Analysis, Issue, Sev } from "@/lib/analyze";
 import type { IntentName } from "@/lib/color";
 import type { Guide, Hit } from "@/lib/guide";
@@ -13,7 +13,7 @@ import { AgentProgress, QuestionCard } from "./agent-ui";
 import AgentsView, { AgentHealth } from "./agents-view";
 import { FINISHES, GROUPS, loadPapers, surface, type FinishId, type Paper, type PaperDb } from "@/lib/papers";
 import { assess, inputFrom, type Risk } from "@/lib/risk";
-import { answerJob, createJob, isLocalOrch, ORCH_BUILT, orchestratorUp, orchUrl, setOrchUrl, toScreen, waitJob, type JobView } from "@/lib/agentClient";
+import { answerJob, createJob, isLocalOrch, ORCH_BUILT, orchBuiltSnapshot, orchestratorUp, orchUrl, setOrchUrl, subscribeOrch, toScreen, waitJob, type JobView } from "@/lib/agentClient";
 
 const LEVEL_LABEL = { check: "확인 필요", none: "해당 없음", na: "판단 불가" } as const;
 
@@ -76,14 +76,15 @@ function Home() {
   // 주소의 ?mode=agent로 시작 모드를 기억한다(에이전트 모드로 열면 브라우저 임베딩 모델을 아예 불러오지 않는다)
   // 공개 배포(에이전트가 다른 서버에 있는 경우)에서는 에이전트 검사를 기본으로 둔다.
   // 그 서버에만 ICC 프로파일과 검색 모델이 있어서, 바로 검사는 사용자가 ICC를 올려야 색을 잴 수 있다.
-  // 에이전트 주소. 저장해 둔 값이 있으면 그것으로 시작한다(터널 주소는 켤 때마다 바뀌는데, 빌드 때 박힌 값은 재배포해야 바뀐다).
-  const [orch, setOrch] = useState(() => orchUrl());
-  const [orchIn, setOrchIn] = useState(orch);
+  // 에이전트 주소. 저장해 둔 값이 있으면 그것을 쓴다(터널 주소는 켤 때마다 바뀌는데, 빌드 때 박힌 값은 재배포해야 바뀐다).
+  // 저장된 값은 첫 그림을 그린 뒤에 읽는다. 처음부터 읽으면 서버가 그린 화면(저장소가 없으니 빌드 값)과
+  // 브라우저가 그린 화면(저장된 값)이 달라져 hydration이 깨진다 — 주소를 한 번이라도 저장한 사람에게만 나던 오류다.
+  const orch = useSyncExternalStore(subscribeOrch, orchUrl, orchBuiltSnapshot);
+  const orchIn = useRef<HTMLInputElement>(null);
   const HOSTED = !isLocalOrch(orch);
   const saveOrch = (v: string) => {
     if (!setOrchUrl(v)) { setErr("에이전트 주소는 http://127.0.0.1:8700 처럼 넣어 주세요(뒤에 경로는 빼고)."); return; }
-    setErr(""); setAgentUp(null);
-    setOrch(orchUrl()); setOrchIn(orchUrl());
+    setErr(""); setAgentUp(null);   // 주소가 바뀌면 orch가 따라 바뀌고 건강 검사가 다시 돈다
   };
   const [mode, setModeState] = useState<"direct" | "agent">(
     sp.get("mode") === "agent" || (HOSTED && sp.get("mode") !== "direct") ? "agent" : "direct");
@@ -112,10 +113,18 @@ function Home() {
     loadPapers().then(setDb).catch((e) => setErr(String(e)));
   }, []);
 
+  // 한 번 실패했다고 꺼진 것으로 보지 않는다. 터널은 가끔 느려질 뿐인데
+  // 그때마다 안내 문구가 뒤집히고 '에이전트에 맡기기' 버튼까지 잠겼다.
+  const downs = useRef(0);
   useEffect(() => {
     if (mode !== "agent") return;
     let alive = true;
-    const check = () => orchestratorUp().then((ok) => alive && setAgentUp(ok));
+    downs.current = 0;
+    const check = () => orchestratorUp().then((ok) => {
+      if (!alive) return;
+      downs.current = ok ? 0 : downs.current + 1;
+      if (ok || downs.current >= 2) setAgentUp(ok);   // 두 번 연속 실패해야 꺼진 것으로 본다
+    });
     check();
     const t = setInterval(check, 5000);
     return () => { alive = false; clearInterval(t); };
@@ -286,11 +295,11 @@ function Home() {
       {mode === "agent" && agentUp === false && (
         <div className="orchbar panel">
           <label>에이전트 주소
-            <input type="url" inputMode="url" spellCheck={false} placeholder={ORCH_BUILT} value={orchIn}
-              onChange={(e) => setOrchIn(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); saveOrch(orchIn); } }} />
+            {/* key에 현재 주소를 걸어 두면 주소가 바뀔 때 칸이 그 값으로 다시 채워진다 */}
+            <input key={orch} ref={orchIn} type="url" inputMode="url" spellCheck={false} placeholder={ORCH_BUILT} defaultValue={orch}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); saveOrch(e.currentTarget.value); } }} />
           </label>
-          <button type="button" onClick={() => saveOrch(orchIn)}>저장</button>
+          <button type="button" onClick={() => saveOrch(orchIn.current?.value ?? "")}>저장</button>
           <button type="button" className="ghost" onClick={() => saveOrch("")}>기본값</button>
           <span className="note">지금 부르는 곳 <code>{orch}</code> — {orch === ORCH_BUILT ? "기본값입니다." : "이 브라우저에 저장한 주소입니다."} 다른 곳의 에이전트를 부를 때만 고치세요. 오케스트레이터 주소만 넣습니다(뒤의 <code>/health</code> 같은 경로는 빼고).</span>
         </div>

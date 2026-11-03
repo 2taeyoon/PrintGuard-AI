@@ -26,8 +26,20 @@ export function setOrchUrl(v: string): boolean {
     if (s) localStorage.setItem(ORCH_KEY, s);
     else localStorage.removeItem(ORCH_KEY);
   } catch { /* 저장을 막아 둔 브라우저 */ }
+  subs.forEach((f) => f());
   return true;
 }
+
+/* 주소를 React의 useSyncExternalStore로 읽게 해 둔다. 저장된 값을 첫 그림에서 바로 읽으면
+   서버가 그린 화면(저장소가 없으니 빌드 값)과 브라우저가 그린 화면(저장된 값)이 어긋나
+   hydration이 깨진다 — 주소를 한 번이라도 저장한 사람에게만 나던 오류다.
+   서버 쪽 스냅샷으로 빌드 값을 주면 첫 그림이 양쪽 같아지고, 저장된 값은 그 직후에 반영된다. */
+const subs = new Set<() => void>();
+export function subscribeOrch(fn: () => void): () => void {
+  subs.add(fn);
+  return () => { subs.delete(fn); };
+}
+export const orchBuiltSnapshot = () => ORCH_BUILT;
 const trimUrl = (s: string) => s.trim().replace(/\/+$/, "");
 
 /* ---------- 이 브라우저를 가리키는 열쇠 ----------
@@ -65,8 +77,12 @@ async function j<T>(r: Response): Promise<T> {
   return (await r.json()).data as T;
 }
 
+/** 살아 있는지 확인한다. 기다려 주는 시간은 에이전트가 어디 있느냐에 따라 다르다.
+ *  내 PC면 1~2ms에 돌아오지만, 터널 너머면 실측 0.5초가 기본이고 연결을 새로 맺을 때는 1.3초,
+ *  느릴 때는 4초까지 갔다. 1.5초로 재면 터널이 멀쩡한데도 꺼진 것으로 읽힌다. */
 export async function orchestratorUp(): Promise<boolean> {
-  try { return (await fetch(`${orchUrl()}/health`, { signal: AbortSignal.timeout(1500) })).ok; } catch { return false; }
+  const ms = isLocalOrch(orchUrl()) ? 2000 : 8000;
+  try { return (await fetch(`${orchUrl()}/health`, { signal: AbortSignal.timeout(ms) })).ok; } catch { return false; }
 }
 export const listAgents = async () => j<Record<string, AgentInfo>>(await fetch(`${orchUrl()}/agents`));
 export const listLogs = async (ctx?: string) => j<LogRow[]>(await fetch(`${orchUrl()}/logs${ctx ? `?context_id=${encodeURIComponent(ctx)}` : ""}`, { headers: H() }));
