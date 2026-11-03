@@ -31,7 +31,6 @@ export default function Shell({ children }: { children: ReactNode }) {
               <Link key={t.href} href={t.href} className={path === t.href ? "on" : ""} onClick={() => setOpen(false)}>{t.label}</Link>
             ))}
           </nav>
-          <span className="topbar_desc">서버 없이 이 브라우저 안에서만 처리</span>
           <button type="button" className="icon_btn menu_btn" aria-label={open ? "메뉴 닫기" : "메뉴 열기"} aria-expanded={open}
             onClick={() => setOpen((o) => !o)}>{open ? "✕" : "☰"}</button>
         </div>

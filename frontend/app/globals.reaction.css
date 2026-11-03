@@ -20,7 +20,6 @@
 @media (max-width: 1024px) {
   .common_wrap { padding: 32px 32px 64px; }
   .topbar_inner { padding: 0 32px; gap: 16px; }
-  .topbar_desc { display: none; }
   .topmenu a { padding: 0 12px; font-size: 1.5rem; }
   .ws { grid-template-columns: 1fr; height: auto; }
   .pages { flex-direction: row; flex-wrap: wrap; }
@@ -34,6 +33,7 @@
   .topbar_inner { height: 56px; padding: 0 16px; gap: 12px; }
   .brand { font-size: 1.8rem; }
   .menu_btn { display: inline-flex; margin-left: auto; }
+  .topbar_inner::after { display: none; }   /* 좁은 화면에선 메뉴가 접히므로 가운데 맞출 빈 칸이 필요 없다 */
   /* 메뉴는 헤더 아래로 펼쳐지는 목록이 된다(칸 높이는 손가락에 맞춰 48px) */
   .topmenu { display: none; position: absolute; top: 56px; left: 0; right: 0; flex-direction: column; align-items: stretch;
     padding: 8px 8px 16px; background: var(--white); border-bottom: 1px solid var(--borderSubtle); box-shadow: 0 0 20px 0 var(--borderStrong); }
