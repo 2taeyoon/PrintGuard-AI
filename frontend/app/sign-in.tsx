@@ -28,7 +28,7 @@ function GoogleButton() {
 /** 헤더 오른쪽. 로그인 전에는 구글 단추, 로그인한 뒤에는 계정과 로그아웃.
  *  화면이 열릴 때 조용한 로그인도 여기서 한 번 시도한다(앱 어디에 있든 한 번만 돈다). */
 export default function SignIn() {
-  const { account, busy, error, ready, moved } = useSession();
+  const { account, busy, error, ready, moved, tied } = useSession();
   useEffect(() => { void silentSignIn(); }, []);
   // 옮겨 온 의뢰 알림은 한 번만 보여 주고 스스로 사라진다
   useEffect(() => {
@@ -45,11 +45,14 @@ export default function SignIn() {
       </span>
     );
   }
+  // 로그인했다 = 프로필 사진과 이름. 단추는 사라진다.
   return (
     <span className="acct" title={account.email}>
       {moved > 0 && <span className="acct_moved">검수 {moved}건을 이 계정으로 옮겼습니다</span>}
+      {/* 구글 로그인은 됐는데 에이전트가 꺼져 있으면 의뢰를 계정에 묶지 못한다. 그 사실만 조용히 알린다 */}
+      {!tied && <span className="acct_off" title={error || "에이전트가 꺼져 있어 의뢰를 계정에 묶지 못합니다"}>에이전트 꺼짐</span>}
       {account.picture
-        ? <Image src={account.picture} alt="" width={24} height={24} unoptimized />
+        ? <Image className="acct_pic" src={account.picture} alt="" width={28} height={28} unoptimized />
         : <span className="acct_no" aria-hidden>{(account.name || account.email || "?").slice(0, 1)}</span>}
       <b>{account.name || account.email}</b>
       <button type="button" className="ghost small" onClick={signOut}>로그아웃</button>

@@ -88,8 +88,10 @@ button.ghost { background: var(--white); color: var(--thema); }
 form.upload { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
 form.upload label { display: flex; flex-direction: column; gap: 4px; font-size: 1.4rem; color: var(--blacklight); }
 form.upload label.chk { flex-direction: row; align-items: center; gap: 8px; min-height: 40px; }
-/* 파일 칸은 '파일에서 읽음' 한 줄을 아래에 달고 있어서 한 줄을 통째로 쓴다 */
-form.upload label.wide { flex-basis: 100%; }
+/* 파일 칸은 '파일에서 읽음' 한 줄을 아래에 달고 있어서 한 줄을 통째로 쓴다.
+   다만 칸 자체까지 늘리면 '파일 선택' 단추 옆이 허옇게 비어서, 입력만 글 길이에 맞춰 줄인다 */
+form.upload label.wide { flex-basis: 100%; align-items: flex-start; }
+form.upload label.wide input[type="file"] { width: auto; max-width: 320px; }
 .read_hint { font-size: 1.4rem; line-height: 160%; color: var(--blacklight); }
 .read_hint b { color: var(--thema); margin-right: 4px; }
 form.ask label { flex: 1; min-width: 240px; }
@@ -234,12 +236,6 @@ mark.mk-term { background: var(--themaPoint); color: var(--black); font-weight: 
 @keyframes slide { from { left: -30%; } to { left: 100%; } }
 @media (prefers-reduced-motion: reduce) { .progress.indeterminate span { animation-duration: 3.6s; } }
 /* 검사 방식 전환과 에이전트 진행 */
-/* 에이전트 주소 바꾸는 줄(에이전트 검사 모드에서만 보인다) */
-.orchbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; }
-.orchbar label { display: flex; flex-direction: column; gap: 4px; font-size: 1.4rem; color: var(--blacklight); flex: 1; min-width: 260px; }
-/* 입력칸과 옆 버튼의 높이를 맞춘다 */
-.orchbar input, .orchbar button { height: 42px; padding-top: 0; padding-bottom: 0; font-size: 1.6rem; }
-.orchbar .note { flex-basis: 100%; }
 .modebar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 16px; }
 .modebar .note { flex: 1; min-width: 240px; }
 .modebar a { color: var(--thema); }
@@ -601,7 +597,8 @@ input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, 
 .doc ul { margin: 0 0 10px; padding-left: 20px; max-width: 90ch; }
 .doc li { margin-bottom: 6px; line-height: 180%; }
 .doc a { color: var(--thema); }
-.acct img { display: block; width: 24px; height: 24px; object-fit: cover; }
+.acct img { display: block; width: 28px; height: 28px; object-fit: cover; }
+.acct_off { padding: 2px 8px; background: var(--redLight); color: var(--redBright); font-weight: 600; white-space: nowrap; }
 .acct_no { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px;
   background: var(--themaLight); color: var(--thema); font-weight: 700; }
 .acct b { color: var(--black); max-width: 18ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
