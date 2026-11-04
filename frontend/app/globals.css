@@ -631,3 +631,23 @@ input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, 
 .dc_log .arrow { color: var(--blackmute); }
 .dc_log .why { color: var(--redBright); font-size: 1.4rem; }
 .dc_log .note { margin-left: auto; }
+
+/* 연결 안내 — 읽고 따라 치는 것이 아니라 복사해서 붙여넣는 것이어야 한다 */
+.dc_setup { margin: 8px 0 4px; }
+.dc_steps { margin: 12px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 14px; font-size: 1.5rem; }
+.dc_steps li { padding: 10px 12px; border-radius: 4px; border: 1px solid var(--borderLight); background: var(--bgSurface); }
+.dc_steps li.on { border-color: var(--thema); background: var(--themaLight); }   /* 지금 해야 할 단계 */
+.dc_steps .note { display: block; margin-top: 6px; }
+.cmd { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 0; }
+.cmd code { flex: 1 1 320px; padding: 8px 12px; border-radius: 4px; background: var(--black); color: var(--textOnDark);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1.4rem; overflow-wrap: anywhere; }
+.cmd .note { flex-basis: 100%; margin: 0; }
+
+/* 형식 표 — 무엇을 올리고 무엇을 돌려받는지는 고르기 전에 알아야 한다 */
+.dc_formats { width: 100%; border-collapse: collapse; margin: 8px 0 12px; font-size: 1.5rem; }
+.dc_formats th, .dc_formats td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--borderSubtle); }
+.dc_formats th { font-size: 1.4rem; color: var(--blacklight); font-weight: 600; }
+.dc_formats td:nth-child(2) { width: 56px; text-align: center; font-weight: 600; }
+.dc_formats tr.no td { color: var(--blackmute); }
+.dc_formats code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1.4rem;
+  background: var(--bgMuted); padding: 2px 6px; border-radius: 3px; }

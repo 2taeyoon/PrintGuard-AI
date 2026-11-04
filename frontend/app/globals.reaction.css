@@ -50,6 +50,11 @@
   .gs_head, .gs_body { padding-left: 16px; padding-right: 16px; }
   .cm_md { font-size: 1.4rem; }
   .copyfix_row { grid-template-columns: 1fr; }
+  .dc_formats, .dc_formats tbody, .dc_formats tr, .dc_formats td { display: block; }
+  .dc_formats thead { display: none; }
+  .dc_formats tr { padding: 8px 0; border-bottom: 1px solid var(--borderSubtle); }
+  .dc_formats td { border: 0; padding: 2px 0; }
+  .dc_formats td:nth-child(2) { width: auto; text-align: left; }
   .dc_issues li { grid-template-columns: 1fr; gap: 2px; }
   .dc_compare { grid-template-columns: 1fr; }
   .dc_log .note { margin-left: 0; flex-basis: 100%; }
