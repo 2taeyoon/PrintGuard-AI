@@ -40,7 +40,7 @@ async function run(i: Record<string, unknown>) {
   const eng = await ColorEngine.create(new Uint8Array(readFileSync(resolve(ROOT, "frontend/public/icc", prof.file))),
     { intent: (i.intent as IntentName) ?? "relative", tacLimit: tac, paperColor: i.paper_color !== false,
       substrateWhite: substrateWhite(i.substrate_white) });
-  const r = await analyze(loadPdf(i.pdf_ref), pdfjs, { widthMm: Number(i.width_mm ?? 148), heightMm: Number(i.height_mm ?? 210), bleedMm: Number(i.bleed_mm ?? 0), color: eng });
+  const r = await analyze(loadPdf(i.pdf_ref), pdfjs, { widthMm: Number(i.width_mm ?? 148), heightMm: Number(i.height_mm ?? 210), bleedMm: Number(i.bleed_mm ?? 0), color: eng, misuse: false });
   return { r, prof, key, tac, paper, eng };
 }
 
