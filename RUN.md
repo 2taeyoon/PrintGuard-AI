@@ -39,10 +39,14 @@ ModuleNotFoundError: No module named 'uvicorn'
 
 **이미 떠 있으면 다시 띄우지 마세요.** 둘째 cloudflared는 같은 터널에 중복으로 붙어 요청이 두 프로세스로 갈립니다.
 
+에이전트와 달리 **폴더는 상관없습니다.** cloudflared는 현재 폴더를 보지 않고 터널 설정을 `%USERPROFILE%\.cloudflared\config.yml`에서 읽습니다.
+
 ```bash
 tasklist | findstr cloudflared          # 있으면 그걸로 끝. 아무것도 안 나오면 아래
 cloudflared tunnel run printguard
 ```
+
+매번 켜기 번거로우면 Windows 서비스로 등록해 두면 PC 켤 때 알아서 뜹니다 — [README의 터널을 서비스로 등록해 두기](README.md#터널을-서비스로-등록해-두기)에 명령이 있습니다.
 
 ## 지금 떠 있나 (한 줄씩)
 

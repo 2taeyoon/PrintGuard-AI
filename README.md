@@ -90,11 +90,30 @@ cd frontend && npm run dev -- -H 127.0.0.1 -p 8752
 
 ### 공개 사이트에 내 에이전트를 붙여 쓸 때
 
-[공개 배포](#공개-배포) 구성으로 쓰는 경우, **에이전트와 터널은 한 쌍입니다.** 둘 중 하나만 켜면 공개 사이트에서 에이전트가 안 보입니다. 터미널 두 개에 각각 띄웁니다.
+[공개 배포](#공개-배포) 구성으로 쓰는 경우, **에이전트와 터널은 한 쌍입니다.** 둘 중 하나만 켜면 공개 사이트에서 에이전트가 안 보입니다. 둘은 각자 창을 붙잡고 있어서 한 창에서 같이 켤 수 없으므로 **터미널 두 개**에 각각 띄웁니다.
+
+**켜는 폴더가 둘이 다릅니다.**
+
+| | 폴더 | 왜 |
+|---|---|---|
+| 에이전트 | **저장소 루트** — 이 README가 있는 폴더 | `agents/run_agents.py`는 상대 경로다. 다른 데서 치면 `can't open file`이 난다 |
+| 터널 | **아무 폴더에서나** | cloudflared는 현재 폴더를 보지 않는다. 터널 설정을 `%USERPROFILE%\.cloudflared\config.yml`에서 읽으므로 어디서 쳐도 같다 |
 
 ```bash
-conda activate dev && python agents/run_agents.py   # 터미널 1
-cloudflared tunnel run printguard                   # 터미널 2
+# 터미널 1 — 저장소 루트로 가서
+cd <저장소를 클론한 폴더>        # 예: cd ~/Documents/PrintGuard-AI
+conda activate dev
+python agents/run_agents.py
+
+# 터미널 2 — 폴더는 상관없습니다
+cloudflared tunnel run printguard
+```
+
+`cloudflared: command not found`가 나면 PATH에 없는 것입니다. **설치 폴더로 옮겨 가서 치거나**(Windows 기본값 `C:\Program Files (x86)\cloudflared`) 실행 파일을 전체 경로로 부릅니다.
+
+```bash
+cd "/c/Program Files (x86)/cloudflared"      # Git Bash
+./cloudflared tunnel run printguard
 ```
 
 증상으로 어느 쪽이 꺼졌는지 가릅니다.
@@ -106,11 +125,28 @@ cloudflared tunnel run printguard                   # 터미널 2
 | 로컬도 응답이 없고 `https://pg.2taeyoon.com`이 **502** | 에이전트 — 터널은 PC까지 닿았는데 8700이 대답을 안 한다 |
 | 로컬도 터널도 되는데 화면만 안 붙음 | CORS(`agents/.env`의 `PG_CORS_ORIGIN_REGEX`) 확인 |
 
-터널을 매번 켜기 번거로우면 Windows 서비스로 등록해 둡니다. PC를 켤 때 알아서 뜨고, 그 뒤로는 에이전트만 신경 쓰면 됩니다.
+#### 터널을 서비스로 등록해 두기
 
-```bash
-cloudflared service install          # 관리자 권한 필요
+터널은 에이전트와 달리 수명을 길게 둘 수 있습니다. Windows 서비스로 등록하면 **PC를 켤 때 알아서 뜨고, 창을 닫아도 안 죽습니다.** 그 뒤로 손으로 켤 것은 에이전트 하나로 줄어듭니다 — 대개 꺼져 있는 쪽이 에이전트인 이유입니다.
+
+**관리자 권한 터미널**에서 한 번만 합니다. 폴더는 상관없습니다.
+
+```powershell
+cloudflared service install
 ```
+
+터널 이름을 따로 줄 필요는 없습니다. 서비스가 `%USERPROFILE%\.cloudflared\config.yml`을 그대로 읽어 돕니다. 그래서 **그 파일을 고쳤으면 서비스를 다시 시작해야 반영됩니다.**
+
+확인과 멈춤·되살리기는 서비스로 다룹니다(멈춤·되살리기·해제는 관리자 권한).
+
+```powershell
+sc query cloudflared              # RUNNING인지. 이름을 못 찾으면 sc query state= all | findstr -i cloudflared
+net stop cloudflared              # 멈춤
+net start cloudflared             # 되살리기
+cloudflared service uninstall     # 등록 해제
+```
+
+**서비스가 돌고 있으면 `cloudflared tunnel run`을 따로 치지 마세요.** 같은 터널에 두 프로세스가 붙어 요청이 둘로 갈립니다. 긴가민가하면 `tasklist | findstr cloudflared`로 먼저 셉니다.
 
 테스트: `python -m pytest agents -q` (65개)
 타입·린트·빌드: `cd frontend && npx tsc --noEmit && npx eslint app lib && npm run build`
