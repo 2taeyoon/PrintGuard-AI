@@ -59,6 +59,26 @@ function useBlob(ctx: string | null, name: string | null) {
   return got && got.key === key ? got.url : null;
 }
 
+/** 한 쪽의 전후 비교. 1쪽만 그리면 여러 쪽짜리에서 정작 바뀐 쪽을 못 본다. */
+function Compare({ ctx, shot }: { ctx: string; shot: { page: number; before: string; after: string } }) {
+  const before = useBlob(ctx, shot.before);
+  const after = useBlob(ctx, shot.after);
+  return (
+    <div className="dc_compare">
+      <figure>
+        <figcaption>{shot.page}쪽 · 수정 전</figcaption>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        {before ? <img src={before} alt={`수정 전 ${shot.page}쪽`} /> : <div className="empty">불러오는 중…</div>}
+      </figure>
+      <figure>
+        <figcaption>{shot.page}쪽 · 수정 후</figcaption>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        {after ? <img src={after} alt={`수정 후 ${shot.page}쪽`} /> : <div className="empty">불러오는 중…</div>}
+      </figure>
+    </div>
+  );
+}
+
 export default function FixPage() {
   // 저장된 주소는 localStorage에 있다. 처음 그릴 때 그대로 읽으면 서버가 그린 화면과 달라져
   // 하이드레이션이 어긋난다 — 그래서 빌드 기본값으로 먼저 그리고 구독으로 따라간다.
@@ -81,8 +101,6 @@ export default function FixPage() {
 
   const parsed = useMemo(() => parseFixText(paste), [paste]);
   const ctx = src?.context_id ?? null;
-  const beforeUrl = useBlob(ctx, result?.before_png ?? null);
-  const afterUrl = useBlob(ctx, result?.after_png ?? null);
   const previewUrl = useBlob(ctx, result ? null : (src?.png ?? null));
 
   // 상태를 효과 안에서 바로 바꾸지 않는다(연쇄 렌더). 전부 약속이 끝난 뒤에 바꾼다.
@@ -272,18 +290,11 @@ export default function FixPage() {
               )}
             </div>
 
-            <div className="dc_compare">
-              <figure>
-                <figcaption>수정 전</figcaption>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                {beforeUrl ? <img src={beforeUrl} alt="수정 전 1쪽" /> : <div className="empty">불러오는 중…</div>}
-              </figure>
-              <figure>
-                <figcaption>수정 후</figcaption>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                {afterUrl ? <img src={afterUrl} alt="수정 후 1쪽" /> : <div className="empty">불러오는 중…</div>}
-              </figure>
-            </div>
+            {result.shots.map((s) => <Compare key={s.page} ctx={ctx!} shot={s} />)}
+            {result.shots_total > result.shots.length && (
+              <p className="note">바뀐 쪽이 {result.shots_total}쪽인데 앞의 {result.shots.length}쪽만 그렸습니다.
+                나머지는 내려받은 PDF에서 보세요.</p>
+            )}
 
             <h3 className="dc_sub">반영된 항목 {result.applied.length}건</h3>
             {result.applied.length === 0 ? <div className="empty">반영된 항목이 없습니다.</div> : (

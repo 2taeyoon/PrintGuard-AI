@@ -141,7 +141,9 @@ def test_apply_fixes_engine_refinds_after_each_edit(tmp_path):
     assert [a["key"] for a in res["applied"]] == ["1", "2"]
     assert [f["key"] for f in res["failed"]] == ["3"]
     assert "찾지 못했" in res["failed"][0]["reason"]
-    assert (out / res["before_png"]).exists() and (out / res["after_png"]).exists()
+    assert [s["page"] for s in res["shots"]] == [1]
+    for s in res["shots"]:
+        assert (out / s["before"]).exists() and (out / s["after"]).exists()
     assert Path(res["pdf_path"]).exists()
 
 
@@ -164,3 +166,27 @@ def test_apply_fixes_refuses_ambiguous_and_wrong_page(tmp_path):
     why = {f["key"]: f["reason"] for f in res["failed"]}
     assert "2군데" in why["dup"]
     assert "9쪽에는 없습니다" in why["pg"]
+    # 문서에 없는 9쪽을 그리려 들면 export_png가 오류를 내며 교정 전체가 날아간다 — 버려야 한다
+    assert [s["page"] for s in res["shots"]] == [1]
+
+
+@needs_cli
+def test_shots_follow_the_pages_that_change(tmp_path):
+    """전후 그림은 **바뀐 쪽**을 찍어야 한다. 늘 1쪽만 찍으면 여러 쪽짜리에서 정작 고친 자리를 못 본다."""
+    src = tmp_path / "multi.designcraft"
+    with Mcp(read_roots=[tmp_path], write_roots=[tmp_path]) as m:
+        # facingPages를 끄면 스프레드 하나에 쪽 하나라 번호가 그대로 맞는다
+        # (맞쪽이면 3쪽 문서의 스프레드가 2개다 — 0쪽 / 1·2쪽)
+        m.tool("new_document", {"preset": "A4", "margins": 36, "pages": 3, "facingPages": False})
+        for page, word in enumerate(("하나", "둘", "셋")):
+            r = m.ex("frame.create", spread=page, rect=[36, 36, 520, 200], content="text", text="x")
+            m.tool("set_story_text", {"story": r["story"], "text": f"{word}쪽 본문입니다"})
+        m.ex("file.saveAs", path=str(src))
+    out = tmp_path / "out"
+    out.mkdir()
+    # 3쪽에 있는 글만 고친다 → 3쪽 그림만 나와야 한다
+    res = dc._apply_blocking(src, ".designcraft", out, [{"key": "a", "original": "셋쪽", "suggestion": "세번째쪽"}])
+    assert [s["page"] for s in res["shots"]] == [3], res["shots"]
+    assert res["shots_total"] == 1
+    for s in res["shots"]:
+        assert (out / s["before"]).exists() and (out / s["after"]).exists()

@@ -1,6 +1,7 @@
 // 브라우저(또는 Node)에서 PDF를 직접 분석하는 규칙 기반 프리플라이트. 서버 없이 동작한다.
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream, PDFStream } from "pdf-lib";
 import { heatRGBA, type ColorEngine, type ColorStats } from "./color";
+import MISUSE_JSON from "@/public/data/korean-misuse.json";
 
 export type Sev = "high" | "medium" | "low";
 export type Issue = {
@@ -334,8 +335,32 @@ export async function analyze(
 
 const HG = "가-힣";
 
-export function checkText(pages: string[]): Issue[] {
+// 흔한 오용·외래어 표기. 파이썬 교정 에이전트(pg_agents/proofread/detectors.py)와 **같은 파일**을 본다.
+// 한쪽에만 낱말을 더하면 바로 검사와 에이전트 검사의 결과가 갈린다.
+// JSON에서 읽은 배열은 길이를 모르므로([string, string]이 아니라 string[]) 여기서 한 번 확인하고 좁힌다.
+const MISUSE: [string, string, string][] = Object.entries(MISUSE_JSON.entries)
+  .flatMap(([bad, v]) => (Array.isArray(v) && v.length >= 2 ? [[bad, v[0], v[1]] as [string, string, string]] : []));
+
+/** 사전에 있는 오용을 찾아 '원래 내용 → 수정할 내용' 짝까지 만든다.
+ *  짝이 있어야 인디자인 원본 수정 화면이 그 글자를 찾아 고칠 수 있다(제목 문자열만으로는 못 한다). */
+function checkMisuse(pages: string[]): Issue[] {
   const out: Issue[] = [];
+  pages.forEach((text, i) => {
+    for (const [bad, good, why] of MISUSE) {
+      if (!text.includes(bad)) continue;
+      const n = text.split(bad).length - 1;
+      const it = mk("typo", "medium", i + 1, `맞춤법·표준어: '${bad}' → '${good}'`,
+        `${why}${n > 1 ? ` (이 쪽에 ${n}번)` : ""}`,
+        "원본 편집 파일에서 고치세요. 자동으로 고치지 않습니다.", null, "proofread");
+      it.edit = { original: bad, suggestion: good };
+      out.push(it);
+    }
+  });
+  return out;
+}
+
+export function checkText(pages: string[]): Issue[] {
+  const out: Issue[] = checkMisuse(pages);
   const full = pages.join("\n");
   const cnt = new Map<string, number>();
   for (const m of full.matchAll(new RegExp(`(?<![${HG}])[${HG}]{2,}`, "g"))) cnt.set(m[0], (cnt.get(m[0]) ?? 0) + 1);
