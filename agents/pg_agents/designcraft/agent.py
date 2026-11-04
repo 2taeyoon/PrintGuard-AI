@@ -6,8 +6,13 @@
 | 포맷 | 열기 | 내보내기 |
 |---|---|---|
 | `.idml` | O | O |
-| `.indd` / `.indt` | O (indd-utils가 IDML로 변환) | **X** — INDD로는 되돌려 주지 못한다 |
 | `.designcraft` | O | O |
+| `.indd` / `.indt` | **받지 않는다** | — |
+
+INDD는 엔진이 읽을 수는 있다(indd-utils가 IDML로 바꿔 준다). 그래도 받지 않기로 했다. **INDD로는
+되돌려 주지 못하기 때문**이다 — 고친 결과를 PDF와 IDML로만 줄 수 있어서, 올린 사람은 자기 작업
+파일을 못 돌려받는다. 반쪽만 되는 것을 되는 것처럼 두면 올려 보고 나서야 알게 된다.
+InDesign에서 **IDML로 내보내서(파일 → 다른 이름으로 저장 → InDesign Markup) 올리면** 된다.
 
 skill
 - mcp_status     : MCP가 연결되는지, 도구가 몇 개인지 (read)
@@ -34,8 +39,15 @@ from .mcp_client import Mcp, McpError, probe
 
 NAME = "designcraft"
 # 열 수 있는 원본. PDF는 일부러 뺐다 — 열려도 글자를 못 고치므로 받아 두면 거짓 기대만 준다.
-OPENABLE = {".idml": "file.openIdml", ".indd": "file.open", ".indt": "file.open", ".designcraft": "file.open"}
-ROUNDTRIP = {".idml", ".designcraft"}  # 같은 형식으로 돌려줄 수 있는 것
+OPENABLE = {".idml": "file.openIdml", ".designcraft": "file.open"}
+# 받지는 않지만 왜 안 받는지는 말해 줘야 한다. 그냥 "열 수 없는 형식"이라고만 하면 IDML로 바꾸면
+# 된다는 것을 모른다.
+REFUSED = {
+    ".indd": "INDD는 받지 않습니다 — 고친 결과를 INDD로 돌려드릴 수 없어서입니다. "
+             "InDesign에서 파일 → 다른 이름으로 저장 → InDesign Markup(IDML)으로 내보내 올려 주세요.",
+    ".indt": "INDT는 받지 않습니다 — 고친 결과를 INDT로 돌려드릴 수 없어서입니다. IDML로 내보내 올려 주세요.",
+    ".pdf": "PDF는 고칠 수 없습니다 — DesignCraft에서 PDF는 배치만 되고 글자를 집을 수 없습니다.",
+}
 
 CARD = AgentCard.model_validate({
     "name": NAME,
@@ -49,12 +61,12 @@ CARD = AgentCard.model_validate({
          "allowed_requesters": ["orchestrator", "report", "mcp"],
          "input_schema": {"src_ref": "sha256", "filename": "string"},
          "output_schema": {"pages": "number", "stories": "[]", "preflight": "Issue[]", "missing_fonts": "string[]",
-                           "pdf_ref": "sha256", "roundtrip": "boolean"}},
+                           "pdf_ref": "sha256"}},
         {"id": "apply_fixes", "description": "교정 목록을 원본에 반영하고 PDF로 내보낸다(파일 쓰기는 safety를 거친다)", "grade": "A",
          "allowed_requesters": ["orchestrator"],
          "input_schema": {"src_ref": "sha256", "filename": "string",
                           "fixes": "[{page?: number(1부터), original: string, suggestion: string, key?: string}]"},
-         "output_schema": {"applied": "[]", "failed": "[]", "pdf_ref": "sha256", "source_out": "string?",
+         "output_schema": {"applied": "[]", "failed": "[]", "pdf_ref": "sha256", "source_out": "고친 편집 파일 이름",
                            "shots": "[{page, before, after}] 바뀐 쪽의 전후 그림"}},
     ],
 })
@@ -64,6 +76,8 @@ CARD = AgentCard.model_validate({
 def _src_path(src_ref: str, filename: str) -> tuple[Path, str]:
     """저장해 둔 원본의 경로와 확장자. 확장자가 중요하다 — DesignCraft가 이걸로 가져오기 방식을 고른다."""
     ext = Path(filename or "").suffix.lower()
+    if ext in REFUSED:
+        raise ValueError(REFUSED[ext])
     if ext not in OPENABLE:
         raise ValueError(f"열 수 없는 형식입니다: {ext or '(확장자 없음)'} — {', '.join(sorted(OPENABLE))}만 됩니다")
     p = SRC / f"{src_ref}{ext}"
@@ -158,7 +172,7 @@ def _inspect_blocking(src: Path, ext: str, out: Path) -> dict[str, Any]:
         "open_warnings": (warn.get("warnings") or [])[:20],
         "paragraph_styles": len(doc.get("paragraphStyles", [])),
         "swatches": len(doc.get("swatches", [])),
-        "pdf_path": str(pdf), "png": png.name, "roundtrip": ext in ROUNDTRIP,
+        "pdf_path": str(pdf), "png": png.name,
     }
 
 
@@ -273,15 +287,10 @@ def _apply_blocking(src: Path, ext: str, out: Path, fixes: list[dict[str, Any]])
         shot_pages = [p for p in shot_pages if _shot(m, p, out / f"after_p{p}.png")]
         pdf = out / "fixed.pdf"
         m.ex("file.exportPdf", path=str(pdf))
-        source_out = None
-        if ext in ROUNDTRIP:  # INDD로는 못 돌려준다. IDML로 내보내 준다
-            s = out / ("fixed.idml" if ext == ".idml" else "fixed.designcraft")
-            m.ex("file.exportIdml" if ext == ".idml" else "file.saveAs", path=str(s))
-            source_out = s.name
-        elif ext in (".indd", ".indt"):
-            s = out / "fixed.idml"
-            m.ex("file.exportIdml", path=str(s))
-            source_out = s.name
+        # 받는 형식은 둘 다 같은 형식으로 돌려준다
+        s = out / ("fixed.idml" if ext == ".idml" else "fixed.designcraft")
+        m.ex("file.exportIdml" if ext == ".idml" else "file.saveAs", path=str(s))
+        source_out = s.name
         # 고친 뒤 남은 문제도 알려 준다(교정이 넘침을 새로 만들었을 수 있다)
         pf = m.ex("preflight.run", minPpi=150) or {}
     return {"applied": applied, "failed": failed, "pdf_path": str(pdf), "source_out": source_out,
@@ -313,7 +322,6 @@ async def apply_fixes(req: AgentRequest) -> dict[str, Any]:
     out = _job_dir(req.meta.context_id)
     r = await asyncio.to_thread(_apply_blocking, src, ext, out, fixes)
     r["pdf_ref"] = await asyncio.to_thread(_store_pdf, Path(r.pop("pdf_path")))
-    r["roundtrip"] = ext in ROUNDTRIP
     r["decision"] = d
     n, bad = len(r["applied"]), len(r["failed"])
     return {"status": "completed" if not bad else "completed", "outcome": "partial" if bad else None, "output": r,

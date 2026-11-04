@@ -60,10 +60,16 @@ def test_story_pages_survives_missing_bounds_and_pages():
 
 
 # ---------- 입력 검증 ----------
-@pytest.mark.parametrize("name", ["a.pdf", "a.docx", "noext", ""])
-def test_rejects_formats_it_cannot_edit(name):
-    """PDF는 일부러 막는다 — 열려도 글자를 못 고치므로 받아 두면 거짓 기대만 준다."""
+@pytest.mark.parametrize("name", ["a.docx", "noext", ""])
+def test_rejects_unknown_formats(name):
     with pytest.raises(ValueError, match="열 수 없는 형식"):
+        dc._src_path("a" * 64, name)
+
+
+@pytest.mark.parametrize(("name", "why"), [("a.pdf", "글자를 집을 수 없"), ("a.indd", "IDML"), ("a.indt", "IDML")])
+def test_refused_formats_say_what_to_do_instead(name, why):
+    """'열 수 없는 형식'이라고만 하면 IDML로 바꾸면 된다는 것을 모른다. 이유와 다음 할 일을 같이 말한다."""
+    with pytest.raises(ValueError, match=why):
         dc._src_path("a" * 64, name)
 
 
@@ -78,11 +84,12 @@ def test_apply_fixes_rejects_empty_list():
     assert r["status"] == "rejected" and r["outcome"] == "INVALID_INPUT"
 
 
-def test_roundtrip_only_for_formats_that_export_back():
-    """INDD는 읽기만 된다 — 같은 형식으로 돌려줄 수 없다는 것을 카드와 코드가 같이 알고 있어야 한다."""
-    assert ".idml" in dc.ROUNDTRIP and ".designcraft" in dc.ROUNDTRIP
-    assert ".indd" not in dc.ROUNDTRIP and ".indt" not in dc.ROUNDTRIP
-    assert ".indd" in dc.OPENABLE and ".pdf" not in dc.OPENABLE
+def test_only_formats_we_can_hand_back_are_accepted():
+    """받는 것은 **같은 형식으로 돌려줄 수 있는 것**뿐이다. INDD는 엔진이 읽을 수는 있지만
+    INDD로 못 돌려주므로 받지 않는다 — 반쪽만 되는 것을 되는 것처럼 두지 않는다."""
+    assert set(dc.OPENABLE) == {".idml", ".designcraft"}
+    assert set(dc.REFUSED) == {".indd", ".indt", ".pdf"}
+    assert not set(dc.OPENABLE) & set(dc.REFUSED)
 
 
 def test_card_grades():

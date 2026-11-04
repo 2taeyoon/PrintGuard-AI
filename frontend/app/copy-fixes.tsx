@@ -74,7 +74,7 @@ export default function CopyFixes({ issues, filename, pages, mode }:
           <Link className="pill" href="/fix">원본 수정 →</Link>
           <span className="note">
             {editable > 0
-              ? <>인디자인 원본(IDML·INDD)에서 그 글자를 찾아 고칩니다. <b>PDF는 고칠 수 없습니다.</b></>
+              ? <>편집 파일(IDML)에서 그 글자를 찾아 고칩니다. <b>PDF와 INDD는 고칠 수 없습니다.</b></>
               : "이번 검수에는 기계가 그대로 반영할 교정이 없습니다(여백·수치처럼 사람이 판단할 항목뿐)."}
           </span>
         </div>
