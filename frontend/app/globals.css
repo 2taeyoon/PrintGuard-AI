@@ -598,7 +598,13 @@ input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, 
 .doc li { margin-bottom: 6px; line-height: 180%; }
 .doc a { color: var(--thema); }
 .acct img { display: block; width: 28px; height: 28px; object-fit: cover; }
-.acct_off { padding: 2px 8px; background: var(--redLight); color: var(--redBright); font-weight: 600; white-space: nowrap; }
+/* 헤더 상태 뱃지(에이전트 검사·DesignCraft MCP). 원본 수정 화면의 연결 뱃지와 같은 색을 쓴다 */
+.hstat { padding: 2px 8px; font-weight: 600; white-space: nowrap; font-size: 1.4rem; }
+.hstat.on { background: var(--themaLight); color: var(--thema); }
+.hstat.off { background: var(--redLight); color: var(--redBright); }
+.hstat.wait { background: var(--bgMuted); color: var(--blackmute); }
+/* 좁은 화면에서는 이름과 함께 뱃지도 접는다 — 헤더가 두 줄로 넘어가면 메뉴가 밀린다 */
+@media (max-width: 1280px) { .hstat { display: none; } }
 .acct_no { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px;
   background: var(--themaLight); color: var(--thema); font-weight: 700; }
 .acct b { color: var(--black); max-width: 18ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
