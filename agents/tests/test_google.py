@@ -27,6 +27,7 @@ from pg_agents.auth import verify  # noqa: E402
 from pg_agents.orchestrator.app import app  # noqa: E402
 
 AUD = "test-client.apps.googleusercontent.com"
+PDF = b"%PDF-1.4" + bytes([10]) + b"% fake" + bytes([10])
 _b64 = lambda b: base64.urlsafe_b64encode(b).decode().rstrip("=")  # noqa: E731
 KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 OTHER = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -182,6 +183,64 @@ def test_bad_credential_is_401():
 def test_config_tells_the_browser_which_client_id():
     with TestClient(app) as c:
         assert c.get("/auth/config").json()["data"]["google_client_id"] == AUD
+
+
+def test_login_is_optional_jobs_work_without_it():
+    """로그인하지 않아도 검사는 다 된다. 익명 토큰 하나면 자기 의뢰가 보인다."""
+    with TestClient(app) as c:
+        t = c.post("/auth/session").json()["data"]["token"]
+        claims = verify(t)
+        assert claims and claims.kind == "browser" and claims.label == "anon"
+        h = {"Authorization": f"Bearer {t}"}
+        job = c.post("/jobs", files={"file": ("a.pdf", PDF, "application/pdf")}, data={"options": "{}"}, headers=h)
+        assert job.status_code == 200
+        assert len(c.get("/jobs", headers=h).json()["data"]) == 1
+
+
+def test_anonymous_sessions_do_not_see_each_other():
+    with TestClient(app) as c:
+        a = c.post("/auth/session").json()["data"]["token"]
+        b = c.post("/auth/session").json()["data"]["token"]
+        ctx = c.post("/jobs", files={"file": ("a.pdf", PDF, "application/pdf")}, data={"options": "{}"},
+                     headers={"Authorization": f"Bearer {a}"}).json()["data"]["context_id"]
+        assert c.get(f"/jobs/{ctx}", headers={"Authorization": f"Bearer {b}"}).status_code == 404
+
+
+def test_login_moves_what_you_did_before_logging_in():
+    """이 테스트가 /auth/claim의 이유다. 옮기지 않으면 로그인한 순간 하던 일이 사라진 것처럼 보인다."""
+    with TestClient(app) as c:
+        anon = c.post("/auth/session").json()["data"]["token"]
+        ctx = c.post("/jobs", files={"file": ("b.pdf", PDF, "application/pdf")}, data={"options": "{}"},
+                     headers={"Authorization": f"Bearer {anon}"}).json()["data"]["context_id"]
+        me = c.post("/auth/google", json={"credential": tok()}).json()["data"]["token"]
+        mine = {"Authorization": f"Bearer {me}"}
+        assert c.get(f"/jobs/{ctx}", headers=mine).status_code == 404       # 옮기기 전에는 안 보이고
+        r = c.post("/auth/claim", json={"token": anon}, headers=mine)
+        assert r.status_code == 200 and r.json()["data"]["moved"] == 1
+        assert c.get(f"/jobs/{ctx}", headers=mine).status_code == 200       # 옮긴 뒤에는 보인다
+        # 옮겨 간 뒤에는 옛 토큰으로 더 이상 보이지 않는다
+        assert c.get(f"/jobs/{ctx}", headers={"Authorization": f"Bearer {anon}"}).status_code == 404
+
+
+def test_claim_needs_the_token_itself_not_just_a_job_number():
+    """번호만 알면 남의 것을 가져갈 수 있어서는 안 된다. 옮겨 올 토큰을 그대로 내밀어야 한다."""
+    with TestClient(app) as c:
+        victim = c.post("/auth/session").json()["data"]["token"]
+        ctx = c.post("/jobs", files={"file": ("c.pdf", PDF, "application/pdf")}, data={"options": "{}"},
+                     headers={"Authorization": f"Bearer {victim}"}).json()["data"]["context_id"]
+        me = c.post("/auth/google", json={"credential": tok()}).json()["data"]["token"]
+        mine = {"Authorization": f"Bearer {me}"}
+        assert c.post("/auth/claim", json={"token": "pg1.deadbeef.cafe"}, headers=mine).status_code == 401
+        assert c.post("/auth/claim", json={}, headers=mine).status_code == 401
+        assert c.post("/auth/claim", json={"token": victim}).status_code == 401     # 로그인 없이
+        assert c.get(f"/jobs/{ctx}", headers=mine).status_code == 404               # 그대로 남의 것
+
+
+def test_claiming_twice_moves_nothing_the_second_time():
+    with TestClient(app) as c:
+        me = c.post("/auth/google", json={"credential": tok()}).json()["data"]["token"]
+        mine = {"Authorization": f"Bearer {me}"}
+        assert c.post("/auth/claim", json={"token": me}, headers=mine).json()["data"]["moved"] == 0
 
 
 def test_no_client_id_is_503_not_401():

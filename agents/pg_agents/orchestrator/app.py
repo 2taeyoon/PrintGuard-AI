@@ -84,14 +84,18 @@ async def registry() -> dict[str, dict[str, Any]]:
 # 소통 기록이 그대로 보이고, 남의 질문에 대신 답까지 할 수 있다. 그래서 요청마다 **서버가 발급해
 # 서명한** 토큰을 받고, 그 안의 subject가 맞는 의뢰만 돌려준다(`pg_agents.auth` 참조).
 #
-# 주인이 누구인지는 **구글 로그인**으로 정한다. 토큰을 두 겹으로 쓰는 이유는 `pg_agents.google`에
-# 적어 두었다 — 요약하면 구글 토큰은 로그인하는 순간 한 번만 보고, 그 뒤로는 이 앱이 서명한
-# 토큰 하나로 브라우저와 MCP를 같은 길에서 검사한다.
+# 주인은 두 가지로 생긴다. **로그인은 하지 않아도 된다.**
+#
+# - 로그인 전: `POST /auth/session`이 익명 토큰을 내준다. 주인 이름은 그때그때 만든 난수라
+#   누구인지는 담기지 않는다. 브라우저가 이 값을 들고 있는 동안만 그 의뢰가 보인다.
+# - 로그인 뒤: `POST /auth/google`이 구글 계정에 묶인 토큰을 내준다. 주인 이름은 구글 계정
+#   번호를 비밀로 해시한 값이라, 다른 기기에서 다시 로그인해도 같은 주인으로 돌아온다.
+# - 그 사이를 잇는 것이 `POST /auth/claim`이다. 로그인 전에 넣어 둔 의뢰를 계정으로 옮긴다.
+#   옮기지 않으면 "로그인했더니 하던 일이 사라졌다"가 된다.
 #
 # 여기까지 온 과정: ① 브라우저가 스스로 만든 값(X-PG-Client)을 믿었다 → 기한도 회수도 없었다.
-# ② 서버가 익명 세션을 발급했다(`POST /auth/session`) → 기한은 생겼지만 '누구'는 여전히 없어서
-# 탭을 닫으면 지난 의뢰를 본인도 못 찾았다. ③ 지금은 구글 계정이 주인이라, 다시 로그인하면
-# 같은 사람으로 돌아온다. 그래서 브라우저가 토큰을 어디에도 저장할 필요가 없다.
+# ② 서버가 익명 세션을 발급했다 → 기한은 생겼지만 '누구'가 없어 탭을 닫으면 본인도 못 찾았다.
+# ③ 지금은 익명으로 먼저 쓰고, 로그인하면 그때까지 한 일을 계정으로 옮긴다.
 Auth = Header(None, alias="Authorization")
 SESSION_HOURS = max(0.1, float(os.environ.get("PG_SESSION_HOURS", "12")))
 # 로그인을 무한정 시도할 수 있으면 구글 공개키 확인을 그만큼 돌리게 된다. 발급 자체를 IP로 막는다.
@@ -139,6 +143,43 @@ def _too_often(request: Request) -> None:
     if len(_minted) > 4096:  # 오래된 IP는 버린다(메모리가 쌓이기만 하는 것을 막는다)
         for k in [k for k, v in _minted.items() if not v or now - max(v) > SESSION_WINDOW]:
             _minted.pop(k, None)
+
+
+@app.post("/auth/session")
+async def auth_session(request: Request) -> dict[str, Any]:
+    """로그인하지 않은 브라우저에 익명 토큰을 내준다. **로그인은 선택이다** — 검사는 이 토큰만으로 다 된다.
+
+    누구인지는 묻지도 담지도 않는다. 하는 일은 "이 브라우저가 넣은 의뢰만 이 브라우저에 보인다"뿐이다.
+    브라우저는 이 값을 로컬에 두고, 나중에 로그인하면 `/auth/claim`으로 계정에 옮긴 뒤 지운다.
+    """
+    _too_often(request)
+    return {"data": {"token": mint("browser", hours=SESSION_HOURS, label="anon"),
+                     "expires_in": int(SESSION_HOURS * 3600)}, "meta": {}}
+
+
+@app.post("/auth/claim")
+async def auth_claim(body: dict[str, Any], authorization: str | None = Auth) -> dict[str, Any]:
+    """로그인 전에 넣어 둔 의뢰를 로그인한 계정으로 옮긴다.
+
+    **무엇으로 권리를 증명하나** — 옮겨 갈 의뢰의 주인인 익명 토큰을 그대로 내민다. 그 토큰을 들고
+    있다는 것이 곧 그 의뢰의 주인이라는 뜻이다(번호만 알면 남의 것을 가져갈 수 있어서는 안 된다).
+    """
+    me = _claims(authorization)
+    if not me:
+        raise HTTPException(401, "로그인한 토큰이 필요합니다")
+    old = verify(str(body.get("token") or ""))
+    if old is None or old.kind != "browser":
+        raise HTTPException(401, "옮겨 올 토큰을 확인하지 못했습니다")
+    if old.subject == me.subject:
+        return {"data": {"moved": 0}, "meta": {}}
+    moved = [c for c, j in JOBS.items() if j.client and j.client == old.subject]
+    for c in moved:
+        JOBS[c].client = me.subject
+    # 멱등성 키에 주인이 섞여 있다. 주인이 바뀐 의뢰의 키는 더 이상 맞지 않으므로 버린다
+    for k, c in list(BY_KEY.items()):
+        if c in moved:
+            BY_KEY.pop(k, None)
+    return {"data": {"moved": len(moved)}, "meta": {}}
 
 
 @app.get("/auth/config")
