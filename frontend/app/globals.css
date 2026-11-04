@@ -41,9 +41,11 @@ h1, h2, h3, h4 { margin: 0; }
 .badge { margin-left: auto; font-size: 1.4rem; font-weight: 600; padding: 4px 8px; border-radius: 999px; background: var(--themaLight); color: var(--thema); }
 .panel { background: var(--white); border: 1px solid var(--borderLight); border-radius: 4px; padding: 16px 24px; margin-bottom: 16px;
   box-shadow: 0 0 20px 0 var(--borderSubtle); }
-/* select·input·file은 저마다 기본 높이가 달라서 나란히 두면 들쭉날쭉하다. 한 값으로 묶는다. */
+/* select·input·file은 저마다 기본 높이가 달라서 나란히 두면 들쭉날쭉하다. 한 값으로 묶는다.
+   세로 패딩은 주지 않는다 — 높이를 고정한 채 패딩까지 주면 내용 상자가 22px로 줄어 한글
+   받침이 잘린다. 높이만 주면 브라우저가 글을 가운데 맞춘다. */
 input, select { font: inherit; font-size: 1.6rem; height: var(--field); box-sizing: border-box;
-  padding: 8px 12px; border: 1px solid var(--borderLight); border-radius: 4px;
+  padding: 0 12px; border: 1px solid var(--borderLight); border-radius: 4px;
   background: var(--white); color: var(--black); outline: none; }
 /* 파일 입력은 안에 네이티브 단추가 들어 있어 패딩만으로는 가운데에 오지 않는다 */
 input[type="file"] { padding: 0 12px; line-height: calc(var(--field) - 2px); }
@@ -135,7 +137,7 @@ details.guide summary { cursor: pointer; font-size: 1.4rem; color: var(--thema);
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 16px; }
 .toolbar .search { position: relative; flex: 1; min-width: 240px; }
 .toolbar .search input { width: 100%; padding: 12px 16px; }
-.toolbar select { padding: 12px 16px; }
+.toolbar select { padding: 0 16px; }
 .toolbar label { display: inline-flex; align-items: center; gap: 8px; font-size: 1.6rem; color: var(--blacklight); min-height: 28px; cursor: pointer; }
 .mapwrap { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; }
 .map { height: 640px; border: 1px solid var(--borderLight); border-radius: 4px; }
@@ -356,7 +358,7 @@ mark.mk-term { background: var(--themaPoint); color: var(--black); font-weight: 
 .skills .note { font-size: 1.4rem; }
 .agent_main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .job_pick { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 0; padding: 12px 16px; }
-.job_pick select { padding: 8px 12px; max-width: 100%; }
+.job_pick select { padding: 0 12px; max-width: 100%; }
 .agent_main .panel { margin: 0; }
 .agent_main .timeline { max-height: 420px; }
 .agent_main .timeline li { grid-template-columns: 92px 150px 1fr auto; }

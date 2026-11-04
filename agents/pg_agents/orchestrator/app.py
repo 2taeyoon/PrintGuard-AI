@@ -228,11 +228,6 @@ async def guide(q: str, k: int = 5) -> dict[str, Any]:
     return {"data": (r.get("output") or {}).get("hits", {}).get("q", []) if r.get("status") == "completed" else [], "meta": {"status": r.get("status")}}
 
 
-@app.get("/shops")
-async def shops(q: str = "", sido: str = "", limit: int = 20) -> dict[str, Any]:
-    return {"data": await _ask("shop", "find_shops", "ctx_shop_search", {"q": q, "sido": sido, "limit": limit}), "meta": {}}
-
-
 async def _reviews_of(contexts: set[str]) -> list[dict[str, Any]]:
     """내 의뢰에 딸린 승인 요청만 모은다. safety에 '전부 달라'고 물으면 남의 주문까지 돌아온다
     (금액·부수·승인한 사람 이름이 들어 있다)."""

@@ -1,7 +1,7 @@
 import type { JobView, Question } from "@/lib/agentClient";
 
 const AGENT_LABEL: Record<string, string> = {
-  orchestrator: "총괄", preflight: "사전 검사", color: "색", paper: "종이·위험도", guide: "인쇄 가이드", proofread: "교정", shop: "인쇄소", report: "보고서", safety: "안전 관문",
+  orchestrator: "총괄", preflight: "사전 검사", color: "색", paper: "종이·위험도", guide: "인쇄 가이드", proofread: "교정", report: "보고서", safety: "안전 관문",
   designcraft: "원본 수정",
 };
 export const agentLabel = (n: string) => AGENT_LABEL[n.replace("(fake)", "")] ?? n;

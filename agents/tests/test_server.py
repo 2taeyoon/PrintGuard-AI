@@ -52,7 +52,7 @@ def test_loop_and_hop_limit():
 
 
 def test_forbidden_requester():
-    assert post(req(token="mock:shop"))["outcome"] == "FORBIDDEN_SKILL"
+    assert post(req(token="mock:stranger"))["outcome"] == "FORBIDDEN_SKILL"
 
 
 def test_deadline_passed():

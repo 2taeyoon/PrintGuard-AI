@@ -15,7 +15,7 @@ MAX_PATH_LENGTH = 3
 
 PORTS: dict[str, int] = {
     "orchestrator": 8700, "safety": 8701, "preflight": 8702, "color": 8703, "guide": 8704,
-    "paper": 8705, "proofread": 8706, "shop": 8707, "report": 8708, "designcraft": 8709,
+    "paper": 8705, "proofread": 8706, "report": 8708, "designcraft": 8709,
 }
 
 # 배포용 설정. 기본값은 로컬 그대로이고, 컨테이너에서는 환경변수로 바꾼다.

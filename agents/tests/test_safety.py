@@ -15,7 +15,6 @@ os.environ.setdefault("PG_DATA_DIR", tempfile.mkdtemp())
 from pg_agents.contracts import AgentCard, AgentResult, RequestMeta, TaskStatus, now_utc  # noqa: E402
 from pg_agents.report import agent as ra  # noqa: E402
 from pg_agents.safety import agent as sa  # noqa: E402
-from pg_agents.shop import agent as sh  # noqa: E402
 
 SPEC = {"pages": 8, "copies": 100, "width_mm": 148, "height_mm": 210, "bleed_mm": 3, "paper_id": "art"}
 PRICE = 68200  # 테스트 전용 금액 계산식(아래 AMOUNT)이 내는 값
@@ -33,7 +32,7 @@ DEMO = AgentCard.model_validate({
          "input_schema": {}, "output_schema": {}},
     ],
 })
-CARDS = {"demo": DEMO, "shop": sh.CARD, "report": ra.CARD}
+CARDS = {"demo": DEMO, "report": ra.CARD}
 
 
 @pytest.fixture(autouse=True)
@@ -152,21 +151,3 @@ def test_daily_limit_counts_pending(monkeypatch):
 def test_report_is_grade_a():
     assert execute("report.compile_report", {"context_id": "ctx_job_s"}, key="a1", requester="report")["decision"] == "executed"
 
-
-# ---- shop 에이전트: 찾기만 한다(관문을 거치는 행동이 없다) ----
-def shop_req(skill, inp):
-    from pg_agents.contracts import AgentRequest
-    meta = RequestMeta(context_id="ctx_job_s", token="mock:orchestrator", requester="orchestrator", deadline=now_utc() + timedelta(seconds=30))
-    return AgentRequest(meta=meta, skill=skill, input=inp)
-
-
-def test_shop_card_has_no_state_changing_skill():
-    assert [s.id for s in sh.CARD.skills] == ["find_shops"]
-    assert all(s.grade == "read" for s in sh.CARD.skills)
-
-
-async def test_find_shops_reads_public_data():
-    r = await sh.find_shops(shop_req("find_shops", {"sido": "서울특별시", "limit": 3}))
-    assert r["status"] == "completed" and len(r["output"]["shops"]) == 3
-    assert all(s["sido"] == "서울특별시" for s in r["output"]["shops"])
-    assert "partners" not in r["output"]
