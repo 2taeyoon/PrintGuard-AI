@@ -84,6 +84,9 @@ const GROUPS: Group[] = [
       { name: "BAAI/bge-m3", use: "검색 모델 비교에만 사용", url: "https://huggingface.co/BAAI/bge-m3" },
       { name: "nlpai-lab/KURE-v1", use: "검색 모델 비교에만 사용", url: "https://huggingface.co/nlpai-lab/KURE-v1" },
       { name: "Kiwi (kiwipiepy)", use: "오탈자·띄어쓰기 제안의 형태소 분석", url: "https://github.com/bab2min/kiwipiepy" },
+      { name: "국립국어원 표준국어대사전", use: "맞춤법 교정 사전(frontend/public/data/korean-misuse.json)에 넣은 대표적 오용의 판단 기준", url: "https://stdict.korean.go.kr" },
+      { name: "국립국어원 「외래어 표기법」 (어문 규범)", use: "같은 사전의 외래어 표기(콘텐츠·메시지·컬러 등) 판단 기준", url: "https://www.korean.go.kr/kornorms/", note: "링크는 어문 규범 목록입니다. 규정별 주소가 자주 바뀌어 목록으로 걸었습니다" },
+      { name: "국립국어원 「한글 맞춤법」 제11항·제42항 (어문 규범)", use: "율/률 표기(제11항 붙임1)와 의존명사 띄어쓰기(제42항) — 교정 에이전트의 규칙 탐지기", url: "https://www.korean.go.kr/kornorms/", note: "링크는 어문 규범 목록입니다" },
       { name: "Google Gemini API (gemini-3.5-flash-lite)", use: "선택 기능인 LLM 교정 제안 — 사용자가 키를 직접 넣을 때만 켜집니다(기본 꺼짐)", url: "https://aistudio.google.com/apikey" },
       { name: "Okapi BM25", use: "단어 검색 점수(2-gram 토큰). 임베딩 점수와 z-정규화해 0.5:0.5로 섞습니다", url: "https://en.wikipedia.org/wiki/Okapi_BM25" },
     ],
@@ -102,7 +105,9 @@ const GROUPS: Group[] = [
       { name: "FastAPI · Uvicorn · httpx · Pydantic", use: "로컬 에이전트 서버와 에이전트 간 호출 계약", url: "https://fastapi.tiangolo.com" },
       { name: "PyMuPDF", use: "교정 에이전트의 쪽별 글과 위치 추출", url: "https://pymupdf.readthedocs.io" },
       { name: "onnxruntime · tokenizers · NumPy", use: "가이드 에이전트의 임베딩·점수 계산. 브라우저와 같은 int8 ONNX 모델을 서버에서도 그대로 돌립니다", url: "https://onnxruntime.ai" },
-      { name: "Model Context Protocol (MCP)", use: "외부 LLM 도구가 이 앱의 조회·요청 기능을 쓰게 하는 서버", url: "https://modelcontextprotocol.io" },
+      { name: "Model Context Protocol (MCP)", use: "외부 LLM 도구가 이 앱의 조회·요청 기능을 쓰게 하는 서버, 그리고 DesignCraft를 부르는 통로", url: "https://modelcontextprotocol.io" },
+      { name: "DesignCraft (storytold/designcraft)", use: "‘원본 수정’ 화면이 쓰는 편집 엔진. designcraft-cli의 MCP 서버를 자식 프로세스로 띄워 IDML을 열고, 글자를 찾아 바꾸고, PDF로 내보냅니다. 재배포하지 않고 쓰는 사람이 직접 설치합니다", url: "https://github.com/storytold/designcraft" },
+      { name: "krilla · hayro · usvg (DesignCraft 안)", use: "위 엔진이 PDF를 쓰고 읽는 데 쓰는 라이브러리 — 내보낸 PDF의 글자·색 처리는 이쪽이 합니다", url: "https://github.com/storytold/designcraft" },
       { name: "LangSmith", use: "선택 기능인 추적 내보내기 — 사용자가 키를 직접 넣을 때만 켜집니다", url: "https://smith.langchain.com" },
       { name: "SQLite", use: "공통 로그와 안전 관문 기록 저장", url: "https://www.sqlite.org" },
     ],
@@ -117,6 +122,9 @@ const GROUPS: Group[] = [
       { name: "교정 평가셋 (문서 60개·오류 360개)", use: "규칙·Kiwi·LLM 비교. 오류를 규칙으로 넣고 규칙으로 찾는 부분은 순환이라 실력과 무관합니다" },
       { name: "종이 흰색 보정식 (lib/substrate.ts)", use: "규격을 보고 옮긴 식이 아닙니다. 실제로 측정해 만든 공개 프로파일 12쌍(종이 흰색이 서로 다른 같은 등급 쌍)으로 보정 없음·비례·선형을 비교해 골랐습니다. 12쌍 중 9쌍에서 선형이 가장 가까웠고 보정 없음보다 나빠진 쌍은 없었습니다. 비교표는 평가 측정표에 있습니다. 실물 인쇄를 측색해 검증한 것은 아닙니다" },
       { name: "인쇄 불량 점검 규칙 (lib/risk.ts)", use: "위험 점수를 매기지 않습니다. 1번 자료에서 확인한 불량 원인이 이 파일·이 종이에 해당하는지만 봅니다. 해당하면 근거와 함께 ‘확인 필요’로 적습니다. 실제 불량 사례로 맞춰 본 적이 없어 확률이나 등급은 내지 않습니다" },
+      { name: "맞춤법 교정 사전 (public/data/korean-misuse.json, 32낱말)", use: "흔한 오용과 외래어 표기를 모은 목록입니다. 판단 기준은 위 국립국어원 자료이고, 어떤 낱말을 넣을지는 개발자가 골랐습니다. 브라우저의 ‘바로 검사’와 교정 에이전트가 같은 파일을 읽습니다" },
+      { name: "교정 목록 형식 (lib/fixlist.ts)", use: "‘쪽 | 원래 내용 | 수정할 내용’ 한 줄 형식. 검수 화면이 만들고 원본 수정 화면이 읽습니다. 규격을 따른 것이 아니라 두 화면이 어긋나지 않게 개발자가 정했습니다" },
+      { name: "10쪽 시험용 잡지 (IDML)", use: "원본 수정 기능을 끝까지 돌려 보려고 만든 자료. 쪽마다 오탈자를 심고 저해상 사진을 하나 섞었습니다. 저장소에는 넣지 않습니다" },
       { name: "측정 산출물 (public/data/eval_summary.json, proofread_eval.json)", use: "평가 측정표 화면이 그대로 읽는 수치" },
     ],
   },
@@ -127,7 +135,7 @@ export default function SourcesPage() {
     <main className="common_wrap">
       <header className="page_head">
         <h1>출처</h1>
-        <p className="lead">이 앱이 쓴 자료를 전부 적었습니다 — 가이드의 근거 문헌, 색 프로파일과 계산 규격, 종이·인쇄소 데이터, 모델, 라이브러리, 개발자가 만든 것까지. 원문을 확인하지 못한 것은 그렇게 표시했습니다.<b> 이 앱은 모델을 직접 학습시키지 않았습니다.</b>공개 모델을 그대로 쓰고 무엇을 쓸지는 재서 골랐습니다(<a href="/help#eval">평가 측정표</a>).</p>
+        <p className="lead">이 앱이 쓴 자료를 전부 적었습니다 — 가이드의 근거 문헌, 색 프로파일과 계산 규격, 종이·인쇄소 데이터, 모델, 라이브러리, 원본 수정에 쓰는 편집 엔진, 개발자가 만든 것까지. 원문을 확인하지 못한 것은 그렇게 표시했습니다.<b> 이 앱은 모델을 직접 학습시키지 않았습니다.</b>공개 모델을 그대로 쓰고 무엇을 쓸지는 재서 골랐습니다(<a href="/help#eval">평가 측정표</a>).</p>
       </header>
 
       <Toc items={GROUPS.map((g) => ({ id: g.id, label: g.title.replace(/^\d+\.\s*/, "") }))} />
