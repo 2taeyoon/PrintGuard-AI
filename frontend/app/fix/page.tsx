@@ -152,7 +152,7 @@ function DirectConnect() {
         (한글은 한 자가 3바이트라, 한 번 바꾸면 뒤쪽 위치가 모두 밀립니다. 그래서 건마다 다시 찾습니다.)
       </p>
       <p className="note">
-        한두 건이면 직접 붙이는 편이 빠릅니다. 검수 결과를 그대로 반영할 때는 아래 2·3·4가 안전합니다.
+        한두 건이면 직접 붙이는 편이 빠릅니다. 인쇄 검수 결과를 그대로 반영할 때는 아래 2·3·4가 적합합니다.
       </p>
     </details>
   );
@@ -271,7 +271,6 @@ export default function FixPage() {
             'PrintGuard가 파일을 고친다'고 읽히는데, 고치는 것은 DesignCraft다. */}
         <p className="note">
           이 1번은 <b>DesignCraft가 제공하는 기능</b>입니다 — <code>designcraft-cli mcp</code>를 띄워 상태를 읽습니다.
-          아래 <b>2·3·4는 그 위에 PrintGuard가 올린 화면</b>이고, 글자를 실제로 고치고 내보내는 일은 어느 쪽이든 DesignCraft가 합니다.
         </p>
         {mcp?.available === false && <SetupGuide reason={mcp.reason ?? ""} />}
         <DirectConnect />
