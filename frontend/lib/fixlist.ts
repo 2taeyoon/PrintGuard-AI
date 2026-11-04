@@ -56,6 +56,35 @@ export function buildFixText(issues: Issue[], opts: { filename?: string; mode?: 
   return L.join("\n") + "\n";
 }
 
+const SEV_KO: Record<string, string> = { high: "인쇄 위험", medium: "수정 권장", low: "확인 필요" };
+const SRC_KO: Record<string, string> = { rule: "규칙", heuristic: "휴리스틱", proofread: "교정" };
+
+/** 검수 카드를 사람이 읽을 글로. 메일이나 메모에 그대로 붙여 쓰라고 만든다.
+ *  기계용 교정 목록(buildFixText)과 쓰임이 다르다 — 이쪽은 설명과 수정 제안까지 다 담는다. */
+export function buildReportText(
+  issues: Issue[],
+  opts: { filename?: string; pages?: number; mode?: string } = {},
+): string {
+  const when = new Date().toLocaleString("ko-KR", { dateStyle: "medium", timeStyle: "short" });
+  const n = (s: string) => issues.filter((i) => i.severity === s).length;
+  const L = [
+    `[PrintGuard 인쇄 검수] ${opts.filename ?? "(파일명 없음)"}${opts.pages ? ` · ${opts.pages}쪽` : ""}`,
+    `${when}${opts.mode ? ` · ${opts.mode}` : ""}`,
+    `인쇄 위험 ${n("high")} · 수정 권장 ${n("medium")} · 확인 필요 ${n("low")} (모두 ${issues.length}건)`,
+    "",
+  ];
+  if (!issues.length) L.push("발견된 항목이 없습니다.");
+  issues.forEach((i, k) => {
+    L.push(`${k + 1}. [${SEV_KO[i.severity] ?? i.severity}] ${i.page ? `${i.page}쪽 · ` : ""}${i.title}`
+      + (i.source ? `  (${SRC_KO[i.source] ?? i.source})` : ""));
+    if (i.detail) L.push(`   ${i.detail}`);
+    if (i.fix) L.push(`   → ${i.fix}`);
+    L.push("");
+  });
+  L.push("이 결과는 인쇄소의 최종 승인과 사람의 교정을 대체하지 않습니다.");
+  return L.join("\n") + "\n";
+}
+
 /** 붙여넣은 글 → 교정 목록. 설명 줄은 버리고, 칸이 안 맞는 줄은 이유와 함께 돌려준다. */
 export function parseFixText(text: string): { fixes: Fix[]; skipped: { line: number; text: string; why: string }[] } {
   const fixes: Fix[] = [];

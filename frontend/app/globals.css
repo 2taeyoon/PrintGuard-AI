@@ -151,8 +151,9 @@ details.guide summary { cursor: pointer; font-size: 1.4rem; color: var(--thema);
 .leaflet-popup-content { font-size: 1.4rem; line-height: 150%; }
 .leaflet-popup-content a { color: var(--thema); font-weight: 600; }
 
+/* 화면의 '인쇄' 버튼은 없앴지만 브라우저 Ctrl+P는 남는다 — 그때 결과만 깔끔히 나오게 둔다 */
 @media print {
-  .topbar, form.upload, form.ask, .pages, .badge, button { display: none !important; }
+  .topbar, form.upload, form.ask, .pages, .badge, button, .copyfix { display: none !important; }
   .common_wrap { padding: 0; }
   .ws { display: block; height: auto; }
 }
@@ -568,6 +569,18 @@ input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, 
 .copyfix { margin: 12px 0; }
 .copyfix_head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .copyfix_head strong { font-size: 1.7rem; margin-right: 4px; }
+/* 쓰임이 다른 두 복사를 나란히 둔다. 한 줄에 버튼만 늘어놓으면 어느 것이 무엇인지 모른다 */
+.copyfix_row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+.copyfix_one { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px;
+  border: 1px solid var(--borderLight); border-radius: 4px; background: var(--bgSurface); }
+.copyfix_one .note { flex-basis: 100%; margin: 0; }
+.copyfix_one .pill.on[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+/* 에이전트 목록: 이 검수에 참여하는 것과 다른 화면 것을 갈라 둔다 */
+.side_head2 { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--borderLight); }
+.side_note { margin: 0 0 8px; }
+.aitem.aside_of_plan { background: var(--bgMuted); }
+.aitem_why { margin: 0; padding: 0 12px 10px 28px; }
 .copyfix_text { width: 100%; margin-top: 12px; padding: 12px; border: 1px solid var(--borderLight); border-radius: 4px;
   background: var(--bgMuted); color: var(--black); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 1.4rem; line-height: 1.7; resize: vertical; }
