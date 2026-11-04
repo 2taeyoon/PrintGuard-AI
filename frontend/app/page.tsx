@@ -275,10 +275,10 @@ function Home() {
       <GuideSearch guide={guide} mode={mode} ready={!!agentUp} />
 
       <div className="modebar" role="tablist" aria-label="검사 방식">
-        <button type="button" role="tab" aria-selected={mode === "direct"} className={`pill${mode === "direct" ? " on" : ""}`} onClick={() => setMode("direct")}>
-          바로 검사 <span className="count">브라우저 안</span></button>
         <button type="button" role="tab" aria-selected={mode === "agent"} className={`pill${mode === "agent" ? " on" : ""}`} onClick={() => setMode("agent")}>
           에이전트 검사 <span className="count">에이전트 협업(A2A)</span></button>
+        <button type="button" role="tab" aria-selected={mode === "direct"} className={`pill${mode === "direct" ? " on" : ""}`} onClick={() => setMode("direct")}>
+          바로 검사 <span className="count">브라우저 안</span></button>
         <span className="note">
           {mode === "direct" ? (HOSTED
             ? "모든 계산을 이 브라우저 안에서 합니다. 파일은 어디로도 보내지 않습니다. 다만 이 사이트에는 ICC 프로파일이 없습니다. 색 차이를 재려면 인쇄소에서 받은 ICC 파일을 아래에 올려야 합니다."

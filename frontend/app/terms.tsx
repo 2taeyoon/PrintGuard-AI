@@ -47,7 +47,6 @@ export function TermsPanel() {
         <b>인쇄 용어 풀이</b>
         <span className="note">
           변환 방식 · 총 잉크량 한도 · 종이 흰색 측정값처럼 아래 옵션에 나오는 말 {TERMS.length}개를 한자리에 풀었습니다.
-          몰라도 기본값 그대로 검사할 수 있습니다.
         </span>
         <GsMark open={open} />
       </button>
