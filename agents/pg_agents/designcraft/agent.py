@@ -51,13 +51,13 @@ REFUSED = {
 
 CARD = AgentCard.model_validate({
     "name": NAME,
-    "description": "DesignCraft MCP로 인디자인 원본(IDML/INDD)을 열어 검수 교정을 반영하고 PDF로 내보낸다. PDF 자체는 편집하지 않는다.",
+    "description": "DesignCraft MCP로 편집 파일(IDML)을 열어 검수 교정을 반영하고 PDF로 내보낸다. PDF와 INDD는 받지 않는다.",
     "url": "http://127.0.0.1:8709",
     "skills": [
         {"id": "mcp_status", "description": "DesignCraft MCP 연결 상태와 사용 가능한 도구 목록", "grade": "read",
          "allowed_requesters": ["orchestrator", "mcp"],
          "input_schema": {}, "output_schema": {"available": "boolean", "version": "string?", "tools": "string[]"}},
-        {"id": "inspect_source", "description": "원본(IDML/INDD)을 열어 쪽·스토리·preflight를 보고 검수용 PDF를 뽑는다", "grade": "read",
+        {"id": "inspect_source", "description": "편집 파일(IDML)을 열어 쪽·스토리·preflight를 보고 검수용 PDF를 뽑는다", "grade": "read",
          "allowed_requesters": ["orchestrator", "report", "mcp"],
          "input_schema": {"src_ref": "sha256", "filename": "string"},
          "output_schema": {"pages": "number", "stories": "[]", "preflight": "Issue[]", "missing_fonts": "string[]",
