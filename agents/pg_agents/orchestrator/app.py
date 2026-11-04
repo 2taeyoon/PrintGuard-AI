@@ -319,44 +319,93 @@ async def dc_status() -> dict[str, Any]:
             "meta": {"status": r.get("status")}}
 
 
+MAX_SOURCE_FILES = max(1, int(os.environ.get("PG_MAX_SOURCE_FILES", "400")))
+
+
+def _safe_rel(raw: str) -> str:
+    """올린 폴더 안의 상대 경로를 믿지 않는다. 브라우저가 주는 값이라 손댈 수 있다.
+
+    `..`·절대 경로·드라이브 문자·빈 조각을 걷어내고, 남은 이름만 다시 잇는다. 이게 뚫리면
+    업로드 하나로 이 PC의 아무 자리에나 파일을 쓸 수 있다.
+    """
+    parts = []
+    for seg in raw.replace("\\", "/").split("/"):
+        seg = seg.strip()
+        if not seg or seg in (".", "..") or ":" in seg:
+            continue
+        parts.append(seg[:120])
+    return "/".join(parts[-8:])  # 너무 깊은 구조는 자른다
+
+
 @app.post("/designcraft/source")
-async def dc_source(file: UploadFile = File(...), x_pg_client: str | None = Client) -> dict[str, Any]:
-    """원본(IDML/INDD)을 올리고 바로 들여다본다. 검수용 PDF도 여기서 뽑아 둔다."""
+async def dc_source(files: list[UploadFile] = File(...), paths: str = Form("[]"),
+                    x_pg_client: str | None = Client) -> dict[str, Any]:
+    """편집 파일을 올린다. **파일 하나도 되고 폴더째도 된다.**
+
+    IDML은 사진을 링크로만 들고 있어서 파일 하나만 올리면 인쇄용 사진이 빠진다. 폴더로 주면
+    DesignCraft가 IDML 옆이나 `Links/`에서 사진을 찾고, `Document fonts/`가 있으면 글꼴도 읽는다.
+    그래서 올라온 것을 **폴더 하나로 풀어** 두고 그 안에서 문서를 찾는다(하나만 올려도 같다).
+    """
     set_agent_name(NAME)
     who = _who(x_pg_client)
     if not who:
         raise HTTPException(400, "브라우저 열쇠가 없습니다")
-    name = file.filename or "source"
-    ext = ("." + name.rsplit(".", 1)[-1].lower()) if "." in name else ""
-    if ext in DC_REFUSED:
-        raise HTTPException(400, DC_REFUSED[ext])
-    if ext not in DC_EXT:
-        raise HTTPException(400, f"열 수 없는 형식입니다({ext or '확장자 없음'}). {', '.join(sorted(DC_EXT))}만 됩니다")
-    buf, size = [], 0
-    while blk := await file.read(1 << 20):
-        size += len(blk)
-        if size > MAX_SOURCE:
-            raise HTTPException(413, f"원본이 너무 큽니다(최대 {MAX_SOURCE // (1024 * 1024)}MB)")
-        buf.append(blk)
-    data = b"".join(buf)
-    if not data:
-        raise HTTPException(400, "빈 파일입니다")
+    if len(files) > MAX_SOURCE_FILES:
+        raise HTTPException(413, f"파일이 너무 많습니다(최대 {MAX_SOURCE_FILES}개)")
+    try:
+        rel = json.loads(paths) if paths else []
+    except json.JSONDecodeError:
+        rel = []
+
     ensure_dirs()
-    sha = hashlib.sha256(data).hexdigest()
-    (SRC / f"{sha}{ext}").write_bytes(data)
+    token = secrets.token_hex(8)
+    root = SRC / token
+    root.mkdir(parents=True, exist_ok=True)
+    total, docs, saved = 0, [], 0
+    for n, f in enumerate(files):
+        name = (rel[n] if n < len(rel) and rel[n] else (f.filename or f"file{n}"))
+        safe = _safe_rel(name)
+        if not safe:
+            continue
+        ext = ("." + safe.rsplit(".", 1)[-1].lower()) if "." in safe.rsplit("/", 1)[-1] else ""
+        if ext in DC_REFUSED and len(files) == 1:
+            raise HTTPException(400, DC_REFUSED[ext])
+        dest = root / safe
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with dest.open("wb") as out:
+            while blk := await f.read(1 << 20):
+                total += len(blk)
+                if total > MAX_SOURCE:
+                    raise HTTPException(413, f"올린 것이 너무 큽니다(최대 {MAX_SOURCE // (1024 * 1024)}MB)")
+                out.write(blk)
+        saved += 1
+        if ext in DC_EXT:
+            docs.append(safe)
+
+    if not saved:
+        raise HTTPException(400, "빈 업로드입니다")
+    if not docs:
+        raise HTTPException(400, f"안에 편집 파일이 없습니다. {', '.join(sorted(DC_EXT))} 중 하나가 있어야 합니다. "
+                                 "InDesign에서 파일 → 다른 이름으로 저장 → InDesign Markup(IDML)으로 내보내 주세요")
+    if len(docs) > 1:
+        raise HTTPException(400, f"편집 파일이 {len(docs)}개입니다({', '.join(docs[:4])}). 하나만 두고 다시 올려 주세요")
+
     active = sum(1 for j in DCJOBS.values() if j.get("client") == who)
     if active >= MAX_ACTIVE * 3:
         raise HTTPException(429, "올린 원본이 너무 많습니다. 잠시 뒤에 다시 해 주세요")
     ctx = f"ctx_dc_{secrets.token_hex(4)}"
-    DCJOBS[ctx] = {"client": who, "src_ref": sha, "filename": name, "ext": ext, "created": time.time(), "result": None}
-    while len(DCJOBS) > MAX_JOBS:  # 쌓이기만 하므로 오래된 것부터 버린다
+    doc = docs[0]
+    DCJOBS[ctx] = {"client": who, "src_ref": token, "filename": doc.rsplit("/", 1)[-1], "doc": doc,
+                   "files": saved, "created": time.time(), "result": None}
+    while len(DCJOBS) > MAX_JOBS:
         DCJOBS.pop(min(DCJOBS, key=lambda k: DCJOBS[k]["created"]), None)
-    log_event(ctx, "dc_source_opened", source=NAME, payload={"ext": ext, "src_ref": sha[:12]})
-    r = await _ask("designcraft", "inspect_source", ctx, {"src_ref": sha, "filename": name})
+    log_event(ctx, "dc_source_opened", source=NAME, payload={"files": saved, "doc": doc})
+    r = await _ask("designcraft", "inspect_source", ctx, {"src_ref": token, "filename": doc})
     if r.get("status") != "completed":
         raise HTTPException(502, ((r.get("output") or {}).get("message") or "원본을 열지 못했습니다")[:300])
     DCJOBS[ctx]["inspect"] = r.get("output")
-    return {"data": {"context_id": ctx, "filename": name, **(r.get("output") or {})}, "meta": {}}
+    return {"data": {"context_id": ctx, "filename": doc.rsplit("/", 1)[-1], "uploaded_files": saved,
+                     **(r.get("output") or {})}, "meta": {}}
 
 
 @app.post("/designcraft/{ctx}/apply")
@@ -369,7 +418,7 @@ async def dc_apply(ctx: str, body: dict[str, Any], x_pg_client: str | None = Cli
     if len(fixes) > MAX_FIXES:
         raise HTTPException(413, f"교정이 너무 많습니다(최대 {MAX_FIXES}건)")
     r = await _ask("designcraft", "apply_fixes", ctx,
-                   {"src_ref": j["src_ref"], "filename": j["filename"], "fixes": fixes})
+                   {"src_ref": j["src_ref"], "filename": j.get("doc") or j["filename"], "fixes": fixes})
     if r.get("status") == "completed":
         j["result"] = r.get("output")
     return {"data": r, "meta": {}}

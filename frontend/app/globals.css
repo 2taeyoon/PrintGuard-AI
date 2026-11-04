@@ -669,3 +669,17 @@ input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, 
   font-size: 1.6rem; color: var(--blacklight); line-height: 1.7; }
 .nobadge { flex: none; padding: 3px 10px; background: var(--redLight); color: var(--redBright);
   font-size: 1.4rem; font-weight: 700; }
+
+/* 올리는 방법 두 가지 — 폴더 쪽이 왜 나은지 먼저 말한다 */
+.pick_why { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin: 0 0 12px;
+  font-size: 1.5rem; color: var(--blacklight); line-height: 1.7; }
+.okbadge { flex: none; padding: 3px 10px; background: var(--themaLight); color: var(--thema);
+  font-size: 1.4rem; font-weight: 700; }
+.pick_why code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1.4rem;
+  background: var(--bgMuted); padding: 2px 6px; }
+.dc_pick { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.pick { display: flex; flex-direction: column; gap: 4px; padding: 12px; border: 1px solid var(--borderLight);
+  background: var(--bgSurface); font-size: 1.5rem; }
+.pick b { font-size: 1.6rem; }
+.pick .note { margin: 0; }
+.pick input[type="file"] { margin-top: 4px; }

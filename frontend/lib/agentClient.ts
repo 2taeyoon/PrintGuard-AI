@@ -179,13 +179,19 @@ export type SourceView = {
   context_id: string; filename: string; pages: number; pdf_ref: string;
   stories: { id: number; length: number; overset: boolean; pages: number[]; preview: string }[];
   preflight: PreflightIssue[]; missing_fonts: string[]; open_warnings: string[];
-  paragraph_styles: number; swatches: number; png: string;
+  paragraph_styles: number; swatches: number; png: string; uploaded_files?: number;
 };
 
-/** 원본을 올리고 바로 들여다본다(쪽·스토리·preflight + 검수용 PDF). */
-export async function uploadSource(file: File): Promise<SourceView> {
+/** 편집 파일을 올리고 바로 들여다본다(쪽·스토리·preflight + 검수용 PDF).
+ *  파일 하나도 되고 **폴더째**도 된다 — 폴더로 주면 IDML 옆의 `Links/` 사진과 `Document fonts/`
+ *  글꼴까지 같이 올라가, 끊긴 링크와 대체 글꼴 문제가 사라진다. 서버는 둘을 같은 방식으로 다룬다. */
+export async function uploadSource(files: File[] | FileList): Promise<SourceView> {
+  const list = Array.from(files);
   const fd = new FormData();
-  fd.append("file", file);
+  // 폴더로 고르면 webkitRelativePath에 폴더 안 경로가 담긴다. 서버가 그 구조 그대로 풀어야
+  // DesignCraft가 Links/에서 사진을 찾는다.
+  for (const f of list) fd.append("files", f);
+  fd.append("paths", JSON.stringify(list.map((f) => f.webkitRelativePath || f.name)));
   return j<SourceView>(await fetch(`${orchUrl()}/designcraft/source`, { method: "POST", headers: H(), body: fd }));
 }
 
