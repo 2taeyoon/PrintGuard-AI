@@ -23,7 +23,9 @@ const rank = (n: string) => { const i = ORDER.indexOf(n.replace("(fake)", "")); 
 // 한 목록에 섞어 두면 "이 검사가 쟤도 쓰는구나"로 읽힌다 — 인쇄소·원본 수정은 다른 화면의 기능이다.
 const IN_PLAN = new Set(["orchestrator", "preflight", "color", "paper", "guide", "proofread", "report", "safety"]);
 const ELSEWHERE: Record<string, string> = {
-  shop: "인쇄소 지도 탭에서 씁니다",
+  // 인쇄소 지도 화면은 이 에이전트를 쓰지 않는다 — 브라우저가 /data/shops.json을 바로 읽는다.
+  // 이 에이전트를 부르는 것은 밖의 LLM(MCP)뿐이다. '지도 탭에서 씁니다'는 틀린 말이었다.
+  shop: "화면에서는 쓰지 않습니다. 인쇄소 지도는 브라우저가 데이터 파일을 바로 읽습니다 — 이 에이전트는 밖의 LLM이 MCP로 부를 때만 씁니다",
   designcraft: "원본 수정 탭에서 씁니다. PDF는 고칠 수 없어 이 검수에는 참여하지 않습니다",
 };
 // 공통 로그의 시각은 UTC로 남는다. 화면에는 한국 시간으로 '2026년 10월 27일 오전 9시 30분 20초'처럼 적는다
@@ -174,9 +176,9 @@ export default function AgentsView({ initialCtx = "", showWarn = true }: { initi
           {other.length > 0 && (
             <>
               <div className="side_head side_head2">
-                <strong>다른 화면에서 쓰는 에이전트</strong>
+                <strong>이 검수에 참여하지 않는 에이전트</strong>
               </div>
-              <p className="note side_note">켜져 있어도 <b>이 검수에서는 한 번도 불리지 않습니다.</b> 같은 A2A 계약으로 돌지만 하는 일이 다릅니다.</p>
+              <p className="note side_note">켜져 있어도 <b>이 검수에서는 한 번도 불리지 않습니다.</b> 같은 A2A 계약으로 돌지만 부르는 쪽이 다릅니다.</p>
               <ul className="agent_list">
                 {other.map(([name, a]) => (
                   <AgentRow key={name} name={name} a={a} open={opened.includes(name)} toggle={toggle}
@@ -213,8 +215,13 @@ export default function AgentsView({ initialCtx = "", showWarn = true }: { initi
                   ))}
                   <span className="note">공통 로그 {trace.lines}줄 기준</span>
                 </>
-              ) : <span className="note">{ctx ? "이 의뢰에는 아직 구간이 없습니다." : "위에서 의뢰를 고르면 에이전트별 구간 막대(워터폴)가 나옵니다."}</span>}
+              ) : null}
             </div>
+            {!(trace && trace.spans.length > 0) && (
+              <ol className="timeline">
+                <li className="empty_row">{ctx ? "이 의뢰에는 아직 구간이 없습니다." : "위에서 의뢰를 고르면 에이전트별 구간 막대(워터폴)가 나옵니다."}</li>
+              </ol>
+            )}
             {trace && trace.spans.length > 0 && (
               <ol className="waterfall">
                 {trace.spans.map((s, i) => {
@@ -266,7 +273,7 @@ export default function AgentsView({ initialCtx = "", showWarn = true }: { initi
                   {!ctx && <span className="note" title={l.context_id}>의뢰 {jobNo(l.context_id)}</span>}
                 </li>
               ))}
-              {logs.length === 0 && <li><span className="note">아직 기록이 없습니다. 위에서 에이전트 검사 모드로 PDF를 맡겨 보세요.</span></li>}
+              {logs.length === 0 && <li className="empty_row">아직 기록이 없습니다. 위에서 에이전트 검사 모드로 맡겨 보세요.</li>}
             </ol>
           </section>
         </div>

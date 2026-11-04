@@ -31,7 +31,7 @@ export const surface = (p: Paper) => (p.coated === true ? "코팅" : p.coated ==
 
 // 후가공은 PDF 안에 정보가 없어 자동으로 알 수 없다. 사용자가 고르지 않으면(unknown) 눌림 위험은 '판단 불가'로 둔다.
 export const FINISHES = [
-  { id: "unknown", name: "모름 (선택 안 함)" },
+  { id: "unknown", name: "선택 안 함" },
   { id: "none", name: "후가공 없음" },
   { id: "fold", name: "접지·오시(접는 선)" },
   { id: "bind", name: "중철·무선 제본" },

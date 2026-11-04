@@ -22,6 +22,7 @@
   --purpleBright: #af52de;
 
   --font: "Pretendard", "Malgun Gothic", sans-serif;
+  --field: 40px;   /* select·input·file 공통 높이 — 나란히 두면 높이가 어긋나 보인다 */
   --sidebar: 260px;
   --sidebarHead: 72px;
 }
