@@ -195,12 +195,6 @@ async def get_trace(context_id: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-async def find_shops(q: str = "", sido: str = "", limit: int = 20) -> dict[str, Any]:
-    """인쇄소를 찾는다(행정안전부 인허가 데이터 조회). 찾기만 하고 어디에도 연락하지 않는다."""
-    return await _call("shop", "find_shops", {"q": q, "sido": sido, "limit": limit}, context_id="ctx_mcp_shops")
-
-
-@mcp.tool()
 async def list_reviews(context_id: str | None = None) -> dict[str, Any]:
     """사람 승인 대기열(C 등급)을 본다. 승인·거절은 사람이 웹 화면에서 한다 — MCP에는 승인 도구가 없다."""
     rows = await _orch("GET", "/reviews", params={"context_id": context_id} if context_id else None)

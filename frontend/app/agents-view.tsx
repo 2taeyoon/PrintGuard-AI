@@ -16,16 +16,13 @@ const DECISION: Record<string, string> = { executed: "실행", pending_review: "
 const STATUS: Record<string, string> = { on: "켜짐", fake: "가짜", off: "꺼짐" };
 const secs = (ms: number) => `${(ms / 1000).toFixed(ms < 10000 ? 2 : 1)}초`;
 // 에이전트는 서버가 주는 차례가 호출 순서에 따라 달라지므로, 일하는 차례대로 고정해서 보여 준다
-const ORDER = ["orchestrator", "preflight", "color", "paper", "guide", "proofread", "report", "safety", "shop", "designcraft"];
+const ORDER = ["orchestrator", "preflight", "color", "paper", "guide", "proofread", "report", "safety", "designcraft"];
 const rank = (n: string) => { const i = ORDER.indexOf(n.replace("(fake)", "")); return i < 0 ? ORDER.length : i; };
 
 // 이 PDF 검수에 **실제로 참여하는** 에이전트. 나머지는 켜져 있어도 이 검사에서는 한 번도 불리지 않는다.
 // 한 목록에 섞어 두면 "이 검사가 쟤도 쓰는구나"로 읽힌다 — 인쇄소·원본 수정은 다른 화면의 기능이다.
 const IN_PLAN = new Set(["orchestrator", "preflight", "color", "paper", "guide", "proofread", "report", "safety"]);
 const ELSEWHERE: Record<string, string> = {
-  // 인쇄소 지도 화면은 이 에이전트를 쓰지 않는다 — 브라우저가 /data/shops.json을 바로 읽는다.
-  // 이 에이전트를 부르는 것은 밖의 LLM(MCP)뿐이다. '지도 탭에서 씁니다'는 틀린 말이었다.
-  shop: "화면에서는 쓰지 않습니다. 인쇄소 지도는 브라우저가 데이터 파일을 바로 읽습니다 — 이 에이전트는 밖의 LLM이 MCP로 부를 때만 씁니다",
   designcraft: "원본 수정 탭에서 씁니다. PDF는 고칠 수 없어 이 검수에는 참여하지 않습니다",
 };
 // 공통 로그의 시각은 UTC로 남는다. 화면에는 한국 시간으로 '2026년 10월 27일 오전 9시 30분 20초'처럼 적는다

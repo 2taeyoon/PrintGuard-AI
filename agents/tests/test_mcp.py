@@ -11,9 +11,8 @@ from pg_agents.contracts import AgentResult, TaskStatus  # noqa: E402
 from pg_agents.guide import agent as ga  # noqa: E402
 from pg_agents.report import agent as ra  # noqa: E402
 from pg_agents.safety import agent as sa  # noqa: E402
-from pg_agents.shop import agent as sh  # noqa: E402
 
-READ_TOOLS = {"check_pdf", "get_job", "answer_question", "list_agents", "get_trace", "find_shops", "list_reviews", "search_guide"}
+READ_TOOLS = {"check_pdf", "get_job", "answer_question", "list_agents", "get_trace", "list_reviews", "search_guide"}
 WRITE_TOOLS = {"compile_report"}
 
 
@@ -37,7 +36,7 @@ def job_public(**kw):
 def orch(monkeypatch):
     """오케스트레이터 HTTP 대신 쓰는 가짜 응답. 보낸 요청을 기록한다."""
     sent = []
-    data = {"/jobs/ctx_job_mcp1": job_public(), "/agents": {"shop": {"status": "on", "card": sh.CARD.model_dump(mode="json")}},
+    data = {"/jobs/ctx_job_mcp1": job_public(), "/agents": {"guide": {"status": "on", "card": ga.CARD.model_dump(mode="json")}},
             "/reviews": [{"review_id": "rv_1", "status": "pending", "amount": 0, "action": "demo.act_c"}]}
 
     async def _orch(method, path, **kw):
@@ -82,7 +81,7 @@ async def test_no_approval_tool():
 
 def test_cards_allow_mcp():
     """직접 부르는 skill은 Agent Card에서 mcp에게 열려 있어야 한다(카드가 바뀌면 이 테스트가 먼저 깨진다)."""
-    for card, skill in [(sh.CARD, "find_shops"), (ra.CARD, "compile_report"), (ga.CARD, "search_guide")]:
+    for card, skill in [(ra.CARD, "compile_report"), (ga.CARD, "search_guide")]:
         s = next(x for x in card.skills if x.id == skill)
         assert m.NAME in s.allowed_requesters, f"{card.name}.{skill}"
     assert m.NAME in next(s for s in sa.CARD.skills if s.id == "execute").allowed_requesters
@@ -175,7 +174,7 @@ async def test_answer_question_only_when_asked(orch):
 async def test_list_agents_marks_mcp_callable(orch):
     out = await m.list_agents()
     skills = {s["id"]: s for s in out["agents"][0]["skills"]}
-    assert skills["find_shops"]["callable_by_mcp"] is True and skills["find_shops"]["grade"] == "read"
+    assert skills["search_guide"]["callable_by_mcp"] is True and skills["search_guide"]["grade"] == "read"
 
 
 async def test_list_reviews_says_only_humans_approve(orch):
