@@ -267,12 +267,13 @@ function Home() {
       {mode === "direct" && !guide && !guideStatus.startsWith("가이드 검색 사용 불가") && <ModelLoadingScreen status={guideStatus} />}
       <header className="page_head">
         <h1>인쇄 검수</h1>
-        {mode === "direct" ? <GuideBadge ready={!!guide} status={guideStatus} /> : <span className="badge">가이드 검색은 guide 에이전트가 합니다</span>}
         <p className="lead">폰트와 도련, 해상도, 색, 문구를 검사합니다. 고른 종이로 인쇄 색 차이와 불량 위험을 예측합니다. 오탈자 등은 수정 제안만 보여 줍니다. 자동으로 고치지는 않으니 원본 파일에서 직접 고치세요. {mode === "direct" ? "파일은 어디로도 보내지 않습니다." : HOSTED ? "에이전트 검사 모드에서는 PDF가 에이전트 서버로 올라갑니다." : "파일은 이 PC에서 도는 에이전트에만 보냅니다."}</p>
       </header>
 
       {/* 가이드 검색: 검수 전에 규격을 확인할 수 있게 맨 위에 둔다(기본은 접힘) */}
-      <GuideSearch guide={guide} mode={mode} ready={!!agentUp} />
+      <GuideSearch guide={guide} mode={mode} ready={!!agentUp}
+        badge={mode === "direct" ? <GuideBadge ready={!!guide} status={guideStatus} />
+          : <span className="badge">guide 에이전트가 찾습니다</span>} />
 
       <div className="modebar" role="tablist" aria-label="검사 방식">
         <button type="button" role="tab" aria-selected={mode === "agent"} className={`pill${mode === "agent" ? " on" : ""}`} onClick={() => setMode("agent")}>
@@ -285,8 +286,8 @@ function Home() {
             : "모든 계산을 이 브라우저 안에서 합니다. 파일은 어디로도 보내지 않습니다.")
             : agentUp === null ? "에이전트 연결 확인 중…"
             : agentUp ? (HOSTED
-              ? "에이전트(사전 검사·색·종이·가이드…)가 나눠서 검사합니다. PDF는 에이전트 서버로 올라가고, 서버가 다시 뜨면 기록은 지워집니다. 아래에서 에이전트 상태와 소통 기록을 바로 볼 수 있습니다."
-              : "로컬 에이전트(사전 검사·색·종이·가이드…)가 나눠서 검사합니다. 파일은 이 PC의 에이전트에만 보냅니다. 아래에서 에이전트 상태와 소통 기록을 바로 볼 수 있습니다.")
+              ? "에이전트가 나눠서 검사합니다. 파일은 에이전트 서버로 올라가고, 서버가 다시 뜨면 기록은 지워집니다. 아래에서 에이전트 상태와 소통 기록을 바로 볼 수 있습니다."
+              : "에이전트가 나눠서 검사합니다. 파일은 이 PC의 에이전트에만 보냅니다. 아래에서 에이전트 상태와 소통 기록을 바로 볼 수 있습니다.")
             : <span className="sev-high">{HOSTED ? "에이전트가 꺼져 있습니다. 에이전트를 돌리는 PC에서 켜야 이 모드를 쓸 수 있습니다. 그동안에는 ‘바로 검사’로 검사하세요." : <>에이전트가 꺼져 있습니다. <code>agents</code> 폴더에서 <code>python run_agents.py</code>로 켜세요.</>}</span>}
         </span>
       </div>
@@ -322,7 +323,7 @@ function Home() {
       <TermsPanel />
 
       <form className="upload panel" onSubmit={submit}>
-        <label>PDF 파일
+        <label>검수할 PDF
           <input type="file" accept="application/pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
         </label>
         <label>완성 크기
@@ -411,9 +412,9 @@ function Home() {
       {err && <div className="err">{err}</div>}
       {!res && !busy && !err && !agentJob && (
         <div className="empty">{mode === "direct"
-          ? "PDF를 선택하고 ‘검사 시작’을 누르세요. 파일은 서버로 보내지 않습니다."
-          : HOSTED ? "PDF를 선택하고 ‘에이전트에 맡기기’를 누르세요. 파일은 위 주소의 에이전트로 올라갑니다."
-            : "PDF를 선택하고 ‘에이전트에 맡기기’를 누르세요. 파일은 이 PC의 에이전트에만 보냅니다."}</div>
+          ? "검수할 PDF를 고르고 ‘검사 시작’을 누르세요. 파일은 서버로 보내지 않습니다."
+          : HOSTED ? "검수할 PDF를 고르고 ‘에이전트에 맡기기’를 누르세요. 파일은 위 주소의 에이전트로 올라갑니다."
+            : "검수할 PDF를 고르고 ‘에이전트에 맡기기’를 누르세요. 파일은 이 PC의 에이전트에만 보냅니다."}</div>
       )}
 
       {res && (
