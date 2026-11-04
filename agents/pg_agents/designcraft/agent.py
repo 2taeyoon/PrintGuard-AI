@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import os
 import shutil
 from pathlib import Path
 from typing import Any
@@ -54,7 +55,7 @@ CARD = AgentCard.model_validate({
          "input_schema": {"src_ref": "sha256", "filename": "string",
                           "fixes": "[{page?: number(1부터), original: string, suggestion: string, key?: string}]"},
          "output_schema": {"applied": "[]", "failed": "[]", "pdf_ref": "sha256", "source_out": "string?",
-                           "before_png": "string", "after_png": "string"}},
+                           "shots": "[{page, before, after}] 바뀐 쪽의 전후 그림"}},
     ],
 })
 
@@ -183,14 +184,55 @@ def _store_pdf(p: Path) -> str:
     return sha
 
 
+MAX_SHOTS = max(1, int(os.environ.get("PG_DESIGNCRAFT_MAX_SHOTS", "4")))
+
+
+def _target_pages(m: Mcp, fixes: list[dict[str, Any]], pages: dict[int, set[int]], page_count: int) -> tuple[list[int], int]:
+    """교정이 닿을 쪽을 미리 가늠한다. '수정 전' 그림은 고치기 전에 찍어야 하는데, 어느 쪽이
+    바뀔지는 찾아봐야 알기 때문이다. 쪽 번호가 적힌 교정은 그대로 믿고, 없으면 한 번 찾아 본다.
+    100쪽짜리를 전부 찍을 수는 없으니 앞의 몇 쪽만 찍고 나머지는 수를 알려 준다.
+
+    **문서에 없는 쪽은 버린다.** 붙여넣은 목록의 쪽 번호는 사람이 손으로 고칠 수 있고 다른 판본에서
+    온 것일 수도 있다. 그대로 그리려 들면 없는 쪽이라고 오류가 나면서 교정 전체가 날아간다.
+    (그 교정 자체는 뒤에서 '그 쪽에는 없습니다'로 따로 걸러진다.)
+    """
+    want: set[int] = set()
+    for f in fixes:
+        p = f.get("page")
+        if isinstance(p, int) and 1 <= p <= page_count:
+            want.add(p)
+            continue
+        if isinstance(p, int):
+            continue  # 문서 밖 쪽 번호 — 그림은 건너뛴다
+        try:
+            ms = m.ex("find.find", find=str(f.get("original") or ""), caseSensitive=True)
+        except McpError:
+            continue
+        for hit in ms if isinstance(ms, list) else []:
+            want |= {x for x in pages.get(hit.get("story"), set()) if 1 <= x <= page_count}
+    ordered = sorted(want) or [1]
+    return ordered[:MAX_SHOTS], len(ordered)
+
+
+def _shot(m: Mcp, page: int, path: Path) -> bool:
+    """그림 한 장. 실패해도 교정 작업을 멈추지 않는다 — 비교 그림은 거들 뿐이고,
+    고친 결과(PDF)가 본체다."""
+    try:
+        m.tool("export_png", {"page": page - 1, "path": str(path), "scale": 1.0})
+        return True
+    except McpError:
+        return False
+
+
 def _apply_blocking(src: Path, ext: str, out: Path, fixes: list[dict[str, Any]]) -> dict[str, Any]:
     applied: list[dict[str, Any]] = []
     failed: list[dict[str, Any]] = []
     with Mcp(read_roots=[src.parent, out], write_roots=[out]) as m:
         _open(m, src, ext)
-        before = out / "before.png"
-        m.tool("export_png", {"page": 0, "path": str(before), "scale": 1.0})
-        pages = _story_pages(m.tool("inspect_document"))
+        doc = m.tool("inspect_document")
+        pages = _story_pages(doc)
+        shot_pages, want_total = _target_pages(m, fixes, pages, int(doc.get("pageCount") or 1))
+        shot_pages = [p for p in shot_pages if _shot(m, p, out / f"before_p{p}.png")]
 
         for f in fixes:
             orig, sug = str(f.get("original") or ""), str(f.get("suggestion") or "")
@@ -228,8 +270,7 @@ def _apply_blocking(src: Path, ext: str, out: Path, fixes: list[dict[str, Any]])
                 continue
             applied.append({**note, "story": hit["story"], "at": [hit["start"], hit["end"]]})
 
-        after = out / "after.png"
-        m.tool("export_png", {"page": 0, "path": str(after), "scale": 1.0})
+        shot_pages = [p for p in shot_pages if _shot(m, p, out / f"after_p{p}.png")]
         pdf = out / "fixed.pdf"
         m.ex("file.exportPdf", path=str(pdf))
         source_out = None
@@ -244,7 +285,8 @@ def _apply_blocking(src: Path, ext: str, out: Path, fixes: list[dict[str, Any]])
         # 고친 뒤 남은 문제도 알려 준다(교정이 넘침을 새로 만들었을 수 있다)
         pf = m.ex("preflight.run", minPpi=150) or {}
     return {"applied": applied, "failed": failed, "pdf_path": str(pdf), "source_out": source_out,
-            "before_png": before.name, "after_png": after.name,
+            "shots": [{"page": p, "before": f"before_p{p}.png", "after": f"after_p{p}.png"} for p in shot_pages],
+            "shots_total": want_total,
             "preflight_after": [{"severity": i.get("severity"), "kind": i.get("kind"), "message": i.get("message"),
                                  "page": (i["page"] + 1) if isinstance(i.get("page"), int) else None}
                                 for i in pf.get("issues", [])]}
