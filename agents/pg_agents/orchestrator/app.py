@@ -16,17 +16,20 @@ import hashlib
 import json
 import os
 import secrets
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 import httpx
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from ..client import call_agent, new_meta
 from ..common_log import log_event, query
-from ..config import CORS_ORIGIN_REGEX, PORTS, STORE, agent_url, ensure_dirs, set_agent_name
+from ..config import CORS_ORIGIN_REGEX, DC_OUT, PORTS, SRC, STORE, agent_url, ensure_dirs, set_agent_name
 from ..contracts import AgentCard, AgentRequest
 from ..tracing import build_trace
 from .engine import Engine, Job
@@ -277,3 +280,97 @@ async def report(ctx: str, x_pg_client: str | None = Client) -> dict[str, Any]:
     if r["status"] == "completed":
         j.results["report"] = {k: r["output"][k] for k in ("markdown", "path", "verified")}
     return {"data": r, "meta": {}}
+
+
+# ---------- DesignCraft(인디자인 원본 수정) ----------
+# 검수는 PDF로 하지만 고치는 것은 원본이어야 한다 — DesignCraft에서 PDF는 배치만 되고 글자를
+# 집을 수 없다. 그래서 흐름이 둘로 나뉜다: PDF를 검수해 교정 목록을 만들고, 그 목록을 원본에 얹는다.
+# 의뢰 번호는 PDF 검수(ctx_job_…)와 따로 쓴다(ctx_dc_…). 주인 가리기는 PDF 쪽과 같은 열쇠를 쓴다.
+MAX_SOURCE = max(1, int(os.environ.get("PG_MAX_SOURCE_MB", "60"))) * 1024 * 1024
+MAX_FIXES = max(1, int(os.environ.get("PG_MAX_FIXES", "300")))
+DC_EXT = {".idml", ".indd", ".indt", ".designcraft"}
+DCJOBS: dict[str, dict[str, Any]] = {}
+
+
+def _dc_owned(ctx: str, client: str) -> dict[str, Any]:
+    j = DCJOBS.get(ctx)
+    if not j or not client or j.get("client") != client:
+        raise HTTPException(404, "없는 의뢰")
+    return j
+
+
+@app.get("/designcraft/status")
+async def dc_status() -> dict[str, Any]:
+    """MCP가 연결되는지. 화면에 그대로 띄운다 — 안 되면 왜 안 되는지도 같이 온다."""
+    r = await _ask("designcraft", "mcp_status", "ctx_dc_status", {})
+    return {"data": r.get("output") or {"available": False, "reason": "designcraft 에이전트가 꺼져 있습니다"},
+            "meta": {"status": r.get("status")}}
+
+
+@app.post("/designcraft/source")
+async def dc_source(file: UploadFile = File(...), x_pg_client: str | None = Client) -> dict[str, Any]:
+    """원본(IDML/INDD)을 올리고 바로 들여다본다. 검수용 PDF도 여기서 뽑아 둔다."""
+    set_agent_name(NAME)
+    who = _who(x_pg_client)
+    if not who:
+        raise HTTPException(400, "브라우저 열쇠가 없습니다")
+    name = file.filename or "source"
+    ext = ("." + name.rsplit(".", 1)[-1].lower()) if "." in name else ""
+    if ext not in DC_EXT:
+        raise HTTPException(400, f"열 수 없는 형식입니다({ext or '확장자 없음'}). {', '.join(sorted(DC_EXT))}만 됩니다. "
+                                 "PDF는 글자를 고칠 수 없어 받지 않습니다")
+    buf, size = [], 0
+    while blk := await file.read(1 << 20):
+        size += len(blk)
+        if size > MAX_SOURCE:
+            raise HTTPException(413, f"원본이 너무 큽니다(최대 {MAX_SOURCE // (1024 * 1024)}MB)")
+        buf.append(blk)
+    data = b"".join(buf)
+    if not data:
+        raise HTTPException(400, "빈 파일입니다")
+    ensure_dirs()
+    sha = hashlib.sha256(data).hexdigest()
+    (SRC / f"{sha}{ext}").write_bytes(data)
+    active = sum(1 for j in DCJOBS.values() if j.get("client") == who)
+    if active >= MAX_ACTIVE * 3:
+        raise HTTPException(429, "올린 원본이 너무 많습니다. 잠시 뒤에 다시 해 주세요")
+    ctx = f"ctx_dc_{secrets.token_hex(4)}"
+    DCJOBS[ctx] = {"client": who, "src_ref": sha, "filename": name, "ext": ext, "created": time.time(), "result": None}
+    while len(DCJOBS) > MAX_JOBS:  # 쌓이기만 하므로 오래된 것부터 버린다
+        DCJOBS.pop(min(DCJOBS, key=lambda k: DCJOBS[k]["created"]), None)
+    log_event(ctx, "dc_source_opened", source=NAME, payload={"ext": ext, "src_ref": sha[:12]})
+    r = await _ask("designcraft", "inspect_source", ctx, {"src_ref": sha, "filename": name})
+    if r.get("status") != "completed":
+        raise HTTPException(502, ((r.get("output") or {}).get("message") or "원본을 열지 못했습니다")[:300])
+    DCJOBS[ctx]["inspect"] = r.get("output")
+    return {"data": {"context_id": ctx, "filename": name, **(r.get("output") or {})}, "meta": {}}
+
+
+@app.post("/designcraft/{ctx}/apply")
+async def dc_apply(ctx: str, body: dict[str, Any], x_pg_client: str | None = Client) -> dict[str, Any]:
+    """검수에서 복사해 온 교정 목록을 원본에 얹고 PDF로 내보낸다."""
+    j = _dc_owned(ctx, _who(x_pg_client))
+    fixes = body.get("fixes")
+    if not isinstance(fixes, list) or not fixes:
+        raise HTTPException(400, "반영할 교정이 없습니다")
+    if len(fixes) > MAX_FIXES:
+        raise HTTPException(413, f"교정이 너무 많습니다(최대 {MAX_FIXES}건)")
+    r = await _ask("designcraft", "apply_fixes", ctx,
+                   {"src_ref": j["src_ref"], "filename": j["filename"], "fixes": fixes})
+    if r.get("status") == "completed":
+        j["result"] = r.get("output")
+    return {"data": r, "meta": {}}
+
+
+@app.get("/designcraft/{ctx}/file/{name}")
+async def dc_file(ctx: str, name: str, x_pg_client: str | None = Client) -> FileResponse:
+    """작업 폴더의 결과물(전후 PNG, 고친 PDF/IDML)을 내려 준다. 폴더 밖은 내보내지 않는다."""
+    _dc_owned(ctx, _who(x_pg_client))
+    if name != Path(name).name or name.startswith("."):
+        raise HTTPException(400, "잘못된 이름")
+    p = (DC_OUT / ctx / name).resolve()
+    root = (DC_OUT / ctx).resolve()
+    if root not in p.parents or not p.is_file():
+        raise HTTPException(404, "없는 파일")
+    kind = {".png": "image/png", ".pdf": "application/pdf"}.get(p.suffix.lower(), "application/octet-stream")
+    return FileResponse(p, media_type=kind, filename=name)

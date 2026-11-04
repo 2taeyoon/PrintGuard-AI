@@ -16,7 +16,8 @@ HERE = Path(__file__).resolve().parent
 FRONT = HERE.parent / "frontend"
 LOGS = HERE / ".data" / "logs"
 PY = {"orchestrator": "pg_agents.orchestrator", "guide": "pg_agents.guide", "proofread": "pg_agents.proofread",
-      "safety": "pg_agents.safety", "shop": "pg_agents.shop", "report": "pg_agents.report"}
+      "safety": "pg_agents.safety", "shop": "pg_agents.shop", "report": "pg_agents.report",
+      "designcraft": "pg_agents.designcraft"}
 # 메모리가 빠듯한 PC에서 OpenBLAS가 스레드마다 큰 버퍼를 잡다 실패하는 것을 막는다. 모델은 로컬 캐시만 쓴다.
 ENV = {"PYTHONIOENCODING": "utf-8", "OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "2", "MKL_NUM_THREADS": "2", "HF_HUB_OFFLINE": "1",
        "TOKENIZERS_PARALLELISM": "false"}

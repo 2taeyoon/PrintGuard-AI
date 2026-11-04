@@ -8,12 +8,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]  # PrintGuard/
 DATA = Path(os.environ.get("PG_DATA_DIR", ROOT / "agents" / ".data"))
 STORE = DATA / "pdf"  # 의뢰한 PDF를 sha256 이름으로 둔다(에이전트끼리는 pdf_ref만 주고받는다)
+SRC = DATA / "src"    # 올린 인디자인 원본(IDML/INDD). 확장자를 남긴다 — DesignCraft가 이걸로 가져오기 방식을 고른다
+DC_OUT = DATA / "dc"  # 의뢰별 DesignCraft 작업 폴더. MCP를 여기에 가둔다
 LOG_DB = Path(os.environ.get("PG_COMMON_LOG_DB", DATA / "common_log.sqlite"))
 MAX_PATH_LENGTH = 3
 
 PORTS: dict[str, int] = {
     "orchestrator": 8700, "safety": 8701, "preflight": 8702, "color": 8703, "guide": 8704,
-    "paper": 8705, "proofread": 8706, "shop": 8707, "report": 8708,
+    "paper": 8705, "proofread": 8706, "shop": 8707, "report": 8708, "designcraft": 8709,
 }
 
 # 배포용 설정. 기본값은 로컬 그대로이고, 컨테이너에서는 환경변수로 바꾼다.
@@ -57,6 +59,8 @@ def agent_url(target: str) -> str:
 
 def ensure_dirs() -> None:
     STORE.mkdir(parents=True, exist_ok=True)
+    SRC.mkdir(parents=True, exist_ok=True)
+    DC_OUT.mkdir(parents=True, exist_ok=True)
     LOG_DB.parent.mkdir(parents=True, exist_ok=True)
 
 
