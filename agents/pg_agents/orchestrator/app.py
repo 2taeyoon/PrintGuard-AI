@@ -23,10 +23,11 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
+from ..auth import Claims, bearer, mint, verify
 from ..client import call_agent, new_meta
 from ..common_log import log_event, query
 from ..config import CORS_ORIGIN_REGEX, DC_OUT, PORTS, SRC, STORE, agent_url, ensure_dirs, set_agent_name
@@ -77,14 +78,69 @@ async def registry() -> dict[str, dict[str, Any]]:
 
 # ---------- 의뢰의 주인 ----------
 # 에이전트는 이 PC 한 대인데 공개 주소로 누구나 들어온다. 주인을 가리지 않으면 남의 파일명과
-# 소통 기록이 그대로 보이고, 남의 질문에 대신 답까지 할 수 있다. 그래서 브라우저가 들고 오는
-# 임의의 값(X-PG-Client)을 의뢰에 적어 두고, 그 값이 맞는 요청에만 돌려준다.
-# 로그인이 아니라 열쇠다. 열쇠를 잃으면 그 브라우저의 지난 의뢰는 다시 못 본다.
-Client = Header(None, alias="X-PG-Client")
+# 소통 기록이 그대로 보이고, 남의 질문에 대신 답까지 할 수 있다. 그래서 요청마다 **서버가 발급해
+# 서명한** 토큰을 받고, 그 안의 subject가 맞는 의뢰만 돌려준다(`pg_agents.auth` 참조).
+#
+# 전에는 브라우저가 스스로 만든 값(X-PG-Client)을 그대로 믿었다. 서버가 발급하지 않으니 기한도
+# 회수도 없고, 브라우저는 그것을 localStorage에 영구히 두어야 했다. 지금은 `POST /auth/session`이
+# 기한 있는 토큰을 내주고, 브라우저는 탭이 살아 있는 동안만 들고 있는다.
+#
+# 로그인은 아니다 — 누구인지는 묻지도 담지도 않는다. 세션을 새로 받으면 지난 의뢰는 다시 못 본다.
+Auth = Header(None, alias="Authorization")
+SESSION_HOURS = max(0.1, float(os.environ.get("PG_SESSION_HOURS", "12")))
+# 세션을 무한정 받을 수 있으면 토큰을 바꿔 가며 MAX_ACTIVE를 넘길 수 있다. 발급 자체를 IP로 막는다.
+MAX_SESSIONS_PER_IP = max(1, int(os.environ.get("PG_MAX_SESSIONS_PER_IP", "60")))
+SESSION_WINDOW = 3600.0
+_minted: dict[str, list[float]] = {}
 
 
-def _who(raw: str | None) -> str:
-    return (raw or "").strip()[:64]
+def _claims(header: str | None) -> Claims | None:
+    """토큰이 없으면 None. **있는데 틀리면** 401 — 브라우저가 이것을 보고 세션을 새로 받는다.
+    둘을 뭉개면 만료된 탭이 '의뢰가 없다'만 보고 영원히 빈 화면에 머문다."""
+    raw = bearer(header)
+    if raw is None:
+        return None
+    c = verify(raw)
+    if c is None:
+        raise HTTPException(401, "세션이 만료되었거나 토큰이 올바르지 않습니다. 세션을 새로 받아 주세요")
+    return c
+
+
+def _who(header: str | None) -> str:
+    c = _claims(header)
+    return c.subject if c else ""
+
+
+def _writer(header: str | None) -> Claims:
+    """상태를 바꾸는 일에만 쓴다. 조회 전용 토큰으로는 통과하지 못한다."""
+    c = _claims(header)
+    if not c:
+        raise HTTPException(401, "토큰이 필요합니다")
+    if not c.write:
+        raise HTTPException(403, "이 토큰은 조회만 할 수 있습니다. 쓰기 토큰은 "
+                                 "`python -m pg_agents.mktoken --write`로 받습니다")
+    return c
+
+
+@app.post("/auth/session")
+async def session(request: Request) -> dict[str, Any]:
+    """브라우저에 익명 세션 토큰을 내준다. 로그인이 아니다 — 누구인지는 묻지 않는다.
+
+    하는 일은 "이 세션이 넣은 의뢰만 이 세션에 보인다"뿐이고, 전과 달라진 것은 **서버가 발급하고
+    기한이 있다**는 점이다. 브라우저는 이 값을 탭이 살아 있는 동안만 들고 있으면 된다.
+    """
+    ip = (request.client.host if request.client else "?") or "?"
+    now = time.time()
+    seen = [t for t in _minted.get(ip, []) if now - t < SESSION_WINDOW]
+    if len(seen) >= MAX_SESSIONS_PER_IP:
+        raise HTTPException(429, "세션을 너무 자주 받았습니다. 잠시 뒤에 다시 해 주세요")
+    seen.append(now)
+    _minted[ip] = seen
+    if len(_minted) > 4096:  # 오래된 IP는 버린다(메모리가 쌓이기만 하는 것을 막는다)
+        for k in [k for k, v in _minted.items() if not v or now - max(v) > SESSION_WINDOW]:
+            _minted.pop(k, None)
+    return {"data": {"token": mint("browser", hours=SESSION_HOURS),
+                     "expires_in": int(SESSION_HOURS * 3600)}, "meta": {}}
 
 
 def _mine(client: str) -> set[str]:
@@ -112,8 +168,8 @@ async def health() -> dict[str, Any]:
 
 
 @app.get("/jobs")
-async def list_jobs(x_pg_client: str | None = Client) -> dict[str, Any]:
-    mine = _mine(_who(x_pg_client))
+async def list_jobs(authorization: str | None = Auth) -> dict[str, Any]:
+    mine = _mine(_who(authorization))
     rows = sorted((j for j in JOBS.values() if j.context_id in mine), key=lambda j: -j.created)[:30]
     return {"data": [{"context_id": j.context_id, "status": j.status, "filename": j.filename, "created": j.created} for j in rows], "meta": {}}
 
@@ -124,20 +180,20 @@ async def agents() -> dict[str, Any]:
 
 
 @app.get("/logs")
-async def logs(context_id: str | None = None, limit: int = 300, x_pg_client: str | None = Client) -> dict[str, Any]:
-    mine = _mine(_who(x_pg_client))
+async def logs(context_id: str | None = None, limit: int = 300, authorization: str | None = Auth) -> dict[str, Any]:
+    mine = _mine(_who(authorization))
     return {"data": query(limit=limit, contexts=mine & {context_id} if context_id else mine), "meta": {}}
 
 
 @app.get("/trace")
-async def trace(context_id: str, limit: int = 2000, x_pg_client: str | None = Client) -> dict[str, Any]:
+async def trace(context_id: str, limit: int = 2000, authorization: str | None = Auth) -> dict[str, Any]:
     """공통 로그로 만든 의뢰별 추적(에이전트 탭 워터폴). 로그에 있는 것만 담는다."""
-    _owned(context_id, _who(x_pg_client))
+    _owned(context_id, _who(authorization))
     return {"data": build_trace(context_id, limit), "meta": {}}
 
 
 @app.post("/jobs")
-async def create_job(file: UploadFile = File(...), options: str = Form("{}"), x_pg_client: str | None = Client) -> dict[str, Any]:
+async def create_job(file: UploadFile = File(...), options: str = Form("{}"), authorization: str | None = Auth) -> dict[str, Any]:
     set_agent_name(NAME)
     # 통째로 읽고 나서 크기를 재면 이미 메모리에 들어온 뒤다. 한도를 넘는 순간 끊는다
     buf, size = [], 0
@@ -152,7 +208,7 @@ async def create_job(file: UploadFile = File(...), options: str = Form("{}"), x_
     opts = json.loads(options or "{}")
     sha = hashlib.sha256(data).hexdigest()
     (STORE / f"{sha}.pdf").write_bytes(data)
-    who = _who(x_pg_client)
+    who = _who(authorization)
     # 주인을 키에 섞는다. 안 그러면 같은 PDF를 올린 다른 사람에게 남의 의뢰가 돌아간다
     # 멱등성 키를 세 값의 배열로 묶어서 만든다. 이어 붙이면 경계가 모호해져 다른 조합이 같은 키가 될 수 있다
     key = hashlib.sha256(json.dumps([sha, opts, who], sort_keys=True).encode()).hexdigest()[:24]
@@ -165,7 +221,7 @@ async def create_job(file: UploadFile = File(...), options: str = Form("{}"), x_
     if who and active >= MAX_ACTIVE:
         raise HTTPException(429, f"이미 진행 중인 검사가 {active}건입니다. 끝난 뒤에 다시 맡겨 주세요")
     _evict()
-    ctx = f"ctx_job_{secrets.token_hex(4)}"
+    ctx = f"ctx_job_{secrets.token_hex(12)}"
     job = Job(context_id=ctx, idempotency_key=key, options=opts, pdf_ref=sha, filename=file.filename or "upload.pdf", client=who)
     JOBS[ctx], BY_KEY[key] = job, ctx
     reg = await registry()
@@ -200,13 +256,13 @@ async def _run(engine: Engine, job: Job) -> None:
 
 
 @app.get("/jobs/{ctx}")
-async def get_job(ctx: str, x_pg_client: str | None = Client) -> dict[str, Any]:
-    return {"data": _owned(ctx, _who(x_pg_client)).public(), "meta": {}}
+async def get_job(ctx: str, authorization: str | None = Auth) -> dict[str, Any]:
+    return {"data": _owned(ctx, _who(authorization)).public(), "meta": {}}
 
 
 @app.post("/jobs/{ctx}/answer")
-async def answer(ctx: str, body: dict[str, Any], x_pg_client: str | None = Client) -> dict[str, Any]:
-    job = _owned(ctx, _who(x_pg_client))
+async def answer(ctx: str, body: dict[str, Any], authorization: str | None = Auth) -> dict[str, Any]:
+    job = _owned(ctx, _who(authorization))
     if job.status != "input-required":
         raise HTTPException(409, "답을 기다리는 의뢰가 아닙니다")
     set_agent_name(NAME)
@@ -244,8 +300,8 @@ async def _reviews_of(contexts: set[str]) -> list[dict[str, Any]]:
 
 
 @app.get("/reviews")
-async def reviews(context_id: str | None = None, x_pg_client: str | None = Client) -> dict[str, Any]:
-    who = _who(x_pg_client)
+async def reviews(context_id: str | None = None, authorization: str | None = Auth) -> dict[str, Any]:
+    who = _who(authorization)
     if context_id:
         _owned(context_id, who)
         return {"data": await _reviews_of({context_id}), "meta": {}}
@@ -253,24 +309,34 @@ async def reviews(context_id: str | None = None, x_pg_client: str | None = Clien
 
 
 @app.post("/reviews/{review_id}/decide")
-async def decide_review(review_id: str, body: dict[str, Any], authorization: str | None = Header(None),
-                        x_pg_client: str | None = Client) -> dict[str, Any]:
+async def decide_review(review_id: str, body: dict[str, Any], authorization: str | None = Auth,
+                        x_pg_human: str | None = Header(None, alias="X-PG-Human")) -> dict[str, Any]:
     """사람 토큰을 그대로 safety에 넘긴다(오케스트레이터는 대신 승인하지 않는다).
-    넘기기 전에 그 승인 요청이 이 브라우저의 의뢰에 딸린 것인지부터 본다 — 아니면 남의 주문을
-    승인·거절할 수 있게 된다."""
-    mine = {v["review_id"] for v in await _reviews_of(_mine(_who(x_pg_client)))}
+
+    자격증명이 **둘** 오간다. `Authorization`은 이 세션이 누구의 의뢰를 보는지를 가리는
+    오케스트레이터의 토큰이고, `X-PG-Human`은 safety가 요구하는 **사람** 토큰이다. 둘을 한
+    헤더에 담으면 세션 토큰이 승인 권한으로 둔갑하거나 그 반대가 된다 — 그래서 따로 받는다.
+    오케스트레이터는 사람 토큰을 들여다보지 않고 safety에 그대로 넘긴다(대신 승인하지 않는다).
+
+    넘기기 전에 그 승인 요청이 이 세션의 의뢰에 딸린 것인지부터 본다 — 아니면 남의 주문을
+    승인·거절할 수 있게 된다.
+    """
+    mine = {v["review_id"] for v in await _reviews_of(_mine(_who(authorization)))}
     if review_id not in mine:
         raise HTTPException(404, "없는 승인 요청")
     async with httpx.AsyncClient(timeout=5) as c:
-        r = await c.post(f"{agent_url('safety')}/reviews/{review_id}/decide", json=body, headers={"Authorization": authorization or ""})
+        r = await c.post(f"{agent_url('safety')}/reviews/{review_id}/decide", json=body,
+                         headers={"Authorization": x_pg_human or ""})
     if r.status_code != 200:
         raise HTTPException(r.status_code, r.json().get("detail", "거절"))
     return r.json()
 
 
 @app.post("/jobs/{ctx}/report")
-async def report(ctx: str, x_pg_client: str | None = Client) -> dict[str, Any]:
-    j = _owned(ctx, _who(x_pg_client))
+async def report(ctx: str, authorization: str | None = Auth) -> dict[str, Any]:
+    """보고서를 만든다(A 등급). 상태를 바꾸는 일이라 **쓰기 권한이 있는 토큰**만 통한다 —
+    조회용으로 발급한 MCP 토큰으로는 파일을 남길 수 없다."""
+    j = _owned(ctx, _writer(authorization).subject)
     r = await _ask("report", "compile_report", ctx, report_input(j))
     if r["status"] == "completed":
         j.results["report"] = {k: r["output"][k] for k in ("markdown", "path", "verified")}
@@ -334,7 +400,7 @@ def _safe_rel(raw: str) -> str:
 
 @app.post("/designcraft/source")
 async def dc_source(files: list[UploadFile] = File(...), paths: str = Form("[]"),
-                    x_pg_client: str | None = Client) -> dict[str, Any]:
+                    authorization: str | None = Auth) -> dict[str, Any]:
     """편집 파일을 올린다. **파일 하나도 되고 폴더째도 된다.**
 
     IDML은 사진을 링크로만 들고 있어서 파일 하나만 올리면 인쇄용 사진이 빠진다. 폴더로 주면
@@ -342,9 +408,9 @@ async def dc_source(files: list[UploadFile] = File(...), paths: str = Form("[]")
     그래서 올라온 것을 **폴더 하나로 풀어** 두고 그 안에서 문서를 찾는다(하나만 올려도 같다).
     """
     set_agent_name(NAME)
-    who = _who(x_pg_client)
+    who = _who(authorization)
     if not who:
-        raise HTTPException(400, "브라우저 열쇠가 없습니다")
+        raise HTTPException(401, "세션 토큰이 없습니다. 화면을 새로 고치면 다시 받습니다")
     if len(files) > MAX_SOURCE_FILES:
         raise HTTPException(413, f"파일이 너무 많습니다(최대 {MAX_SOURCE_FILES}개)")
     try:
@@ -388,7 +454,7 @@ async def dc_source(files: list[UploadFile] = File(...), paths: str = Form("[]")
     active = sum(1 for j in DCJOBS.values() if j.get("client") == who)
     if active >= MAX_ACTIVE * 3:
         raise HTTPException(429, "올린 원본이 너무 많습니다. 잠시 뒤에 다시 해 주세요")
-    ctx = f"ctx_dc_{secrets.token_hex(4)}"
+    ctx = f"ctx_dc_{secrets.token_hex(12)}"
     doc = docs[0]
     DCJOBS[ctx] = {"client": who, "src_ref": token, "filename": doc.rsplit("/", 1)[-1], "doc": doc,
                    "files": saved, "created": time.time(), "result": None}
@@ -404,9 +470,9 @@ async def dc_source(files: list[UploadFile] = File(...), paths: str = Form("[]")
 
 
 @app.post("/designcraft/{ctx}/apply")
-async def dc_apply(ctx: str, body: dict[str, Any], x_pg_client: str | None = Client) -> dict[str, Any]:
+async def dc_apply(ctx: str, body: dict[str, Any], authorization: str | None = Auth) -> dict[str, Any]:
     """검수에서 복사해 온 교정 목록을 원본에 얹고 PDF로 내보낸다."""
-    j = _dc_owned(ctx, _who(x_pg_client))
+    j = _dc_owned(ctx, _writer(authorization).subject)
     fixes = body.get("fixes")
     if not isinstance(fixes, list) or not fixes:
         raise HTTPException(400, "반영할 교정이 없습니다")
@@ -420,9 +486,9 @@ async def dc_apply(ctx: str, body: dict[str, Any], x_pg_client: str | None = Cli
 
 
 @app.get("/designcraft/{ctx}/file/{name}")
-async def dc_file(ctx: str, name: str, x_pg_client: str | None = Client) -> FileResponse:
+async def dc_file(ctx: str, name: str, authorization: str | None = Auth) -> FileResponse:
     """작업 폴더의 결과물(전후 PNG, 고친 PDF/IDML)을 내려 준다. 폴더 밖은 내보내지 않는다."""
-    _dc_owned(ctx, _who(x_pg_client))
+    _dc_owned(ctx, _who(authorization))
     if name != Path(name).name or name.startswith("."):
         raise HTTPException(400, "잘못된 이름")
     p = (DC_OUT / ctx / name).resolve()

@@ -661,6 +661,13 @@ input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, 
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1.4rem; overflow-wrap: anywhere; }
 .cmd .note { flex-basis: 100%; margin: 0; }
 
+/* 같은 MCP를 클로드·커서에 직접 붙이는 길 — 이 화면을 거치지 않아도 되는 일이라 접어 둔다.
+   같이 적는 경고가 더 중요하다(가두는 플래그를 빼면 디스크 전체가 열린다). */
+.dc_direct { margin: 12px 0 0; border: 1px solid var(--borderLight); background: var(--bgSurface); }
+.dc_direct > summary { cursor: pointer; padding: 10px 12px; font-size: 1.5rem; font-weight: 600; color: var(--thema); }
+.dc_direct > *:not(summary) { margin: 0 12px 10px; }
+.dc_direct .warn { padding: 10px 12px; background: var(--redLight); font-size: 1.4rem; }
+
 /* 형식 표 — 무엇을 올리고 무엇을 돌려받는지는 고르기 전에 알아야 한다 */
 .dc_formats { width: 100%; border-collapse: collapse; margin: 8px 0 12px; font-size: 1.5rem; }
 .dc_formats th, .dc_formats td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--borderSubtle); }
