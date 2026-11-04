@@ -19,7 +19,8 @@ const MM = 72 / 25.4;
 serveAgent(card, {
   async check_structure(req) {
     const i = req.input as { pdf_ref: string; width_mm: number; height_mm: number; bleed_mm: number };
-    const r = await analyze(loadPdf(i.pdf_ref), pdfjs, { widthMm: i.width_mm, heightMm: i.height_mm, bleedMm: i.bleed_mm });
+    // 맞춤법은 교정(proofread) 에이전트 몫이다. 여기서 또 돌리면 같은 교정이 두 번 나온다.
+    const r = await analyze(loadPdf(i.pdf_ref), pdfjs, { widthMm: i.width_mm, heightMm: i.height_mm, bleedMm: i.bleed_mm, misuse: false });
     const issues = r.issues.map((it) => ({ ...it, heat: undefined, key: `pf-${it.id}` }));
     return { status: "completed", output: { pages: r.pages, page_sizes: r.pageSizes, issues, texts: r.texts, color_summary: r.colorSummary },
       evidence: { queries: [], data_summary: `${r.pages}쪽, 이슈 ${issues.length}건`, ref_ids: [i.pdf_ref.slice(0, 12)] } };

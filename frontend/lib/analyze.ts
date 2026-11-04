@@ -189,7 +189,9 @@ async function placedImages(pdfjs: PdfJs, page: PdfJs): Promise<Placed[]> {
 
 export async function analyze(
   data: Uint8Array, pdfjs: PdfJs,
-  opts: { widthMm: number; heightMm: number; bleedMm: number; color?: ColorEngine | null },
+  // misuse: 맞춤법 사전을 여기서 돌릴지. 에이전트 검사에서는 **교정 에이전트가 같은 사전을 돌리므로**
+  // preflight가 또 돌리면 같은 교정이 두 번 나온다. 브라우저 혼자 검사할 때만 켠다.
+  opts: { widthMm: number; heightMm: number; bleedMm: number; color?: ColorEngine | null; misuse?: boolean },
 ): Promise<Analysis> {
   const issues: Issue[] = [];
   const colorImgs: { area: number; pageArea: number; stats: ColorStats }[] = [];
@@ -315,7 +317,7 @@ export async function analyze(
       "PDF에 출력 프로파일이 지정되지 않았습니다.", "인쇄소가 지정한 PDF/X 프로파일로 내보내세요."));
   }
   issues.push(...checkFonts(doc));
-  issues.push(...checkText(texts));
+  issues.push(...checkText(texts, { misuse: opts.misuse !== false }));
   issues.sort((a, b) => SEV[a.severity] - SEV[b.severity] || a.page - b.page);
   issues.forEach((x, k) => (x.id = k + 1));
   await task.destroy?.();
@@ -359,8 +361,8 @@ function checkMisuse(pages: string[]): Issue[] {
   return out;
 }
 
-export function checkText(pages: string[]): Issue[] {
-  const out: Issue[] = checkMisuse(pages);
+export function checkText(pages: string[], opts: { misuse?: boolean } = {}): Issue[] {
+  const out: Issue[] = opts.misuse === false ? [] : checkMisuse(pages);
   const full = pages.join("\n");
   const cnt = new Map<string, number>();
   for (const m of full.matchAll(new RegExp(`(?<![${HG}])[${HG}]{2,}`, "g"))) cnt.set(m[0], (cnt.get(m[0]) ?? 0) + 1);

@@ -75,7 +75,9 @@ export function serveAgent(card: AgentCard, handlers: Record<string, Handler>) {
   const ids = card.skills.map((s) => s.id).sort().join(), keys = Object.keys(handlers).sort().join();
   if (ids !== keys) throw new Error(`카드 skill과 핸들러가 다르다: ${ids} / ${keys}`);
   for (const s of card.skills) if (s.grade === "B" && (!s.verifier || s.verifier === card.name)) throw new Error(`skill ${s.id}: B 등급 verifier 규칙 위반`);
-  const port = PORTS[card.name];
+  // 두 번째 메시를 띄워 볼 때가 있다(고친 코드를 사장님이 켜 둔 에이전트를 건드리지 않고 시험할 때).
+  // 파이썬 쪽이 orchestrator에 PORT를 허용하는 것과 같은 뜻으로, 이름별 환경변수를 받는다.
+  const port = Number(process.env[`PG_${card.name.toUpperCase()}_PORT`]) || PORTS[card.name];
   const send = (res: ServerResponse, code: number, obj: unknown) => {
     res.writeHead(code, { "Content-Type": "application/json; charset=utf-8", "Access-Control-Allow-Origin": "*" });
     res.end(JSON.stringify(obj));
