@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
-  applyFixes, dcFileBlob, mcpStatus, orchBuiltSnapshot, orchUrl, subscribeOrch, uploadSource,
+  applyFixes, dcFileBlob, mcpStatus, uploadSource,
   type ApplyResult, type McpStatus, type PreflightIssue, type SourceView,
 } from "@/lib/agentClient";
 import { parseFixText } from "@/lib/fixlist";
@@ -79,7 +79,7 @@ function Cmd({ children, note }: { children: string; note?: string }) {
 
 /** 연결이 안 될 때 **무엇을 하면 되는지**를 순서대로. 이유마다 짚을 곳이 다르다:
  *  오케스트레이터가 옛 버전인가 / 에이전트가 안 떴나 / CLI가 없나. */
-function SetupGuide({ reason, orch }: { reason: string; orch: string }) {
+function SetupGuide({ reason }: { reason: string }) {
   // 할 일이 전혀 다른 네 경우를 가른다. '연결 안 됨'으로 뭉뚱그리면 아무도 고치지 못한다.
   const cliMissing = /찾을 수 없|실행할 수 없|PG_DESIGNCRAFT_CLI/.test(reason);
   const noRoute = /^404\b|\b404 —/.test(reason);
@@ -90,14 +90,14 @@ function SetupGuide({ reason, orch }: { reason: string; orch: string }) {
     <div className="dc_setup">
       <p className="warn">
         {cliMissing && <><b>designcraft-cli가 그 PC에 없습니다.</b> 아래 1번으로 설치해 주세요.</>}
-        {!cliMissing && unreachable && <><b>에이전트에 닿지 못했습니다.</b> <code>{orch}</code>가 응답하지 않습니다 — 아래 2번으로 켜 주세요.</>}
+        {!cliMissing && unreachable && <><b>에이전트에 닿지 못했습니다.</b> 아래 2번으로 켜 주세요.</>}
         {!cliMissing && !unreachable && noRoute && <><b>에이전트가 옛 버전입니다.</b> 이 기능이 생기기 전에 켠 것이라 이 주소를 모릅니다 — 아래 2번으로 다시 켜 주세요.</>}
         {!cliMissing && !unreachable && !noRoute && <>{reason || "연결하지 못했습니다."}</>}
       </p>
 
       <p className="note">
         MCP는 <b>stdin/stdout으로만</b> 말합니다. 브라우저가 직접 부를 수 없어서, <b>에이전트를 돌리는 그 PC</b>에{" "}
-        <code>designcraft-cli</code>가 있어야 합니다. 지금 보고 있는 에이전트 주소는 <code>{orch}</code>입니다.
+        <code>designcraft-cli</code>가 있어야 합니다.
       </p>
 
       <ol className="dc_steps">
@@ -179,10 +179,6 @@ function Compare({ ctx, shot }: { ctx: string; shot: { page: number; before: str
 }
 
 export default function FixPage() {
-  // 저장된 주소는 localStorage에 있다. 처음 그릴 때 그대로 읽으면 서버가 그린 화면과 달라져
-  // 하이드레이션이 어긋난다 — 그래서 빌드 기본값으로 먼저 그리고 구독으로 따라간다.
-  const orch = useSyncExternalStore(subscribeOrch, orchUrl, orchBuiltSnapshot);
-
   const [mcp, setMcp] = useState<McpStatus | null>(null);
   const [mcpBusy, setMcpBusy] = useState(true);
 
@@ -214,7 +210,7 @@ export default function FixPage() {
       .finally(() => setMcpBusy(false)),
     [],
   );
-  useEffect(() => { void check(); }, [check, orch]);
+  useEffect(() => { void check(); }, [check]);
   const recheck = () => { setMcpBusy(true); void check(); };  // 버튼에서는 바로 바꿔도 된다
 
   async function upload(fs: File[]) {
@@ -277,7 +273,7 @@ export default function FixPage() {
           이 1번은 <b>DesignCraft가 제공하는 기능</b>입니다 — <code>designcraft-cli mcp</code>를 띄워 상태를 읽습니다.
           아래 <b>2·3·4는 그 위에 PrintGuard가 올린 화면</b>이고, 글자를 실제로 고치고 내보내는 일은 어느 쪽이든 DesignCraft가 합니다.
         </p>
-        {mcp?.available === false && <SetupGuide reason={mcp.reason ?? ""} orch={orch} />}
+        {mcp?.available === false && <SetupGuide reason={mcp.reason ?? ""} />}
         <DirectConnect />
         {mcp === null && <div className="dc_why"><p>확인 중입니다.</p></div>}
         {mcp?.available && (

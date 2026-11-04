@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { FormEvent, Suspense, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { FormEvent, Suspense, useEffect, useRef, useState } from "react";
 import type { Analysis, Issue, Sev } from "@/lib/analyze";
 import type { IntentName } from "@/lib/color";
 import type { Guide, Hit } from "@/lib/guide";
@@ -17,7 +17,7 @@ import { measure, type Measured } from "@/lib/pagesize";
 import { assess, inputFrom, type Risk } from "@/lib/risk";
 import CopyFixes from "./copy-fixes";
 import { SignInNote } from "./sign-in";
-import { answerJob, createJob, isLocalOrch, ORCH_BUILT, orchBuiltSnapshot, orchestratorUp, orchUrl, setOrchUrl, subscribeOrch, toScreen, waitJob, type JobView } from "@/lib/agentClient";
+import { answerJob, createJob, hostedOrch, orchestratorUp, toScreen, waitJob, type JobView } from "@/lib/agentClient";
 
 const LEVEL_LABEL = { check: "확인 필요", none: "해당 없음", na: "판단 불가" } as const;
 
@@ -78,16 +78,9 @@ function Home() {
   // 검사 방식: agent = 에이전트들이 A2A로 나눠 검사(기본), direct = 이 브라우저 안에서 바로.
   // 이 앱이 보여 주려는 것이 에이전트 협업이라 그 화면이 첫 화면이다. '바로 검사'는 `?mode=direct`로 간다.
   // 기본이 에이전트인 덕이 하나 더 있다 — 첫 화면에서 브라우저 임베딩 모델(약 130MB)을 아예 내려받지 않는다.
-  // 에이전트 주소. 저장해 둔 값이 있으면 그것을 쓴다(터널 주소는 켤 때마다 바뀌는데, 빌드 때 박힌 값은 재배포해야 바뀐다).
-  // 저장된 값은 첫 그림을 그린 뒤에 읽는다. 처음부터 읽으면 서버가 그린 화면(저장소가 없으니 빌드 값)과
-  // 브라우저가 그린 화면(저장된 값)이 달라져 hydration이 깨진다 — 주소를 한 번이라도 저장한 사람에게만 나던 오류다.
-  const orch = useSyncExternalStore(subscribeOrch, orchUrl, orchBuiltSnapshot);
-  const orchIn = useRef<HTMLInputElement>(null);
-  const HOSTED = !isLocalOrch(orch);
-  const saveOrch = (v: string) => {
-    if (!setOrchUrl(v)) { setErr("에이전트 주소는 http://127.0.0.1:8700 처럼 넣어 주세요(뒤에 경로는 빼고)."); return; }
-    setErr(""); setAgentUp(null);   // 주소가 바뀌면 orch가 따라 바뀌고 건강 검사가 다시 돈다
-  };
+  // 에이전트 주소는 빌드 값 하나로 고정이다(lib/orch.ts). 화면에서 바꾸는 칸은 두지 않는다 —
+  // 그 칸은 들어오는 사람 아무에게나 내 에이전트 주소를 적어 보여 주는 자리였다.
+  const HOSTED = hostedOrch();
   const [mode, setModeState] = useState<"direct" | "agent">(sp.get("mode") === "direct" ? "direct" : "agent");
   const [showAgents, setShowAgents] = useState(true); // '에이전트 검사'를 고르면 에이전트 탭 내용을 이 자리에 펼친다
   const setMode = (m: "direct" | "agent") => {
@@ -129,7 +122,7 @@ function Home() {
     check();
     const t = setInterval(check, 5000);
     return () => { alive = false; clearInterval(t); };
-  }, [mode, orch]);
+  }, [mode]);
 
   useEffect(() => {
     if (mode !== "direct") return; // 에이전트 모드에서는 가이드 검색을 guide 에이전트가 한다
@@ -308,21 +301,6 @@ function Home() {
             : <span className="sev-high">{HOSTED ? "에이전트가 꺼져 있습니다. 에이전트를 돌리는 PC에서 켜야 이 모드를 쓸 수 있습니다. 그동안에는 ‘바로 검사’로 검사하세요." : "에이전트가 꺼져 있습니다. 그동안에는 ‘바로 검사’로 검사하세요."}</span>}
         </span>
       </div>
-
-      {/* 에이전트 주소: 주소는 고정이라 평소에는 숨긴다. 연결이 안 될 때만 꺼내 고칠 수 있게 보여 준다.
-          (이 브라우저에만 저장하고 서버로 보내지 않는다) */}
-      {mode === "agent" && agentUp === false && (
-        <div className="orchbar panel">
-          <label>에이전트 주소
-            {/* key에 현재 주소를 걸어 두면 주소가 바뀔 때 칸이 그 값으로 다시 채워진다 */}
-            <input key={orch} ref={orchIn} type="url" inputMode="url" spellCheck={false} placeholder={ORCH_BUILT} defaultValue={orch}
-              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); saveOrch(e.currentTarget.value); } }} />
-          </label>
-          <button type="button" onClick={() => saveOrch(orchIn.current?.value ?? "")}>저장</button>
-          <button type="button" className="ghost" onClick={() => saveOrch("")}>기본값</button>
-          <span className="note">지금 부르는 곳 <code>{orch}</code> — {orch === ORCH_BUILT ? "기본값입니다." : "이 브라우저에 저장한 주소입니다."} 다른 곳의 에이전트를 부를 때만 고치세요. 오케스트레이터 주소만 넣습니다(뒤의 <code>/health</code> 같은 경로는 빼고).</span>
-        </div>
-      )}
 
       {/* 에이전트 검사를 고르면 '에이전트' 탭과 같은 내용(목록·의뢰 추적·소통 기록)을 이 자리에서 본다 */}
       {mode === "agent" && (

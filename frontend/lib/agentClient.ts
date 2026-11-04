@@ -7,7 +7,7 @@ import type { Fix } from "./fixlist";
 import type { Hit } from "./guide";
 import type { Risk } from "./risk";
 
-export { ORCH_BUILT, hostedOrch, isLocalOrch, orchBuiltSnapshot, orchUrl, setOrchUrl, subscribeOrch } from "./orch";
+export { ORCH_BUILT, hostedOrch, isLocalOrch, orchUrl } from "./orch";
 
 /* ---------- 이 세션의 토큰 ----------
    에이전트는 PC 한 대인데 공개 주소로 누구나 들어온다. 그래서 오케스트레이터는 토큰 안의

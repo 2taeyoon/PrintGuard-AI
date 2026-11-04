@@ -21,10 +21,13 @@ export type Session = {
   error: string;
   ready: boolean;   // 조용한 로그인 시도를 한 번은 끝냈는가(그 전에는 단추를 그리지 않는다)
   moved: number;    // 로그인하면서 계정으로 옮겨 온 의뢰 수(화면에 한 번 알린다)
+  tied: boolean;    // 에이전트에까지 붙었는가. 구글 로그인은 됐는데 에이전트가 꺼져 있을 수 있다
 };
 
 const ANON_KEY = "pg.anon";     // 로그인 전 토큰. 자격증명이지만 **버려도 되는** 값이다
 let tok: string | null = null;  // 로그인한 토큰. 이 페이지가 사는 동안만, 어떤 저장소에도 넣지 않는다
+let cred: string | null = null; // 구글이 준 ID 토큰. 에이전트가 늦게 켜졌을 때 다시 바꿔 보려고 들고 있는다
+let retryAt = 0;                // 바꾸기를 다시 시도할 수 있는 시각(실패가 반복될 때 매 요청마다 때리지 않게)
 let account: Account | null = null;
 let busy = false;
 let error = "";
@@ -32,10 +35,10 @@ let ready = false;
 let moved = 0;
 
 const subs = new Set<() => void>();
-const EMPTY: Session = { account: null, busy: false, error: "", ready: false, moved: 0 };
+const EMPTY: Session = { account: null, busy: false, error: "", ready: false, moved: 0, tied: false };
 let snap: Session = EMPTY;
 function push(): void {
-  snap = { account, busy, error, ready, moved };
+  snap = { account, busy, error, ready, moved, tied: tok !== null };
   subs.forEach((f) => f());
 }
 export function subscribeSession(fn: () => void): () => void {
@@ -71,9 +74,17 @@ async function anon(): Promise<string> {
   return anonMint;
 }
 
-/** 요청에 붙일 토큰. 로그인했으면 계정 토큰, 아니면 익명 토큰. **로그인을 요구하지 않는다.** */
+/** 요청에 붙일 토큰. 로그인했으면 계정 토큰, 아니면 익명 토큰. **로그인을 요구하지 않는다.**
+ *  구글 로그인은 됐는데 에이전트가 꺼져 있어 못 바꿨다면, 여기서 한 번 더 바꿔 본다 —
+ *  에이전트를 나중에 켠 사람이 다시 로그인하지 않아도 되게. */
 export async function requireToken(): Promise<string> {
-  return tok ?? anon();
+  if (tok) return tok;
+  if (cred && Date.now() > retryAt) {
+    retryAt = Date.now() + 5000;
+    await exchange(cred);
+    if (tok) return tok;
+  }
+  return anon();
 }
 
 /** 서버가 401을 돌려줬을 때 버린다. 익명 토큰이면 지워서 다음 요청에 새로 받는다. */
@@ -147,9 +158,29 @@ async function init(): Promise<Gsi> {
   return g;
 }
 
+/** ID 토큰 속을 **표시용으로만** 들여다본다. 서명을 확인하지 않으므로 주인을 가르는 데는 쓸 수 없다 —
+ *  그 일은 서버가 구글 공개키로 한다. 여기서 꺼내는 것은 화면에 띄울 이름·사진뿐이다.
+ *  이게 필요한 이유: 구글 로그인은 끝났는데 에이전트가 꺼져 있으면, 서버 쪽 값을 받을 길이 없다.
+ *  그때도 "로그인했다"는 사실은 화면에 바로 보여야 한다. */
+function peek(credential: string): Account | null {
+  try {
+    const body = credential.split(".")[1];
+    const bin = atob(body.replace(/-/g, "+").replace(/_/g, "/"));
+    const json = JSON.parse(new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0))));
+    const pic = String(json.picture ?? "");
+    return { email: String(json.email ?? ""), name: String(json.name ?? ""),
+             picture: pic.startsWith("https://") ? pic : "" };
+  } catch {
+    return null;
+  }
+}
+
 /** 구글 토큰을 이 앱의 토큰으로 바꾸고, 로그인 전에 하던 일을 계정으로 옮긴다.
  *  구글 토큰은 이 함수 밖으로 나가지 않는다. */
 async function exchange(credential: string): Promise<void> {
+  cred = credential;
+  const shown = peek(credential);
+  if (shown) account = shown;      // 구글 쪽은 이미 끝났다. 에이전트 응답을 기다리지 않고 바로 보여 준다
   busy = true; error = ""; push();
   try {
     const r = await fetch(`${orchUrl()}/auth/google`, {
@@ -168,8 +199,10 @@ async function exchange(credential: string): Promise<void> {
     account = { email: d.email ?? "", name: d.name ?? "", picture: d.picture ?? "" };
     moved = await claim();
   } catch (e) {
+    // 구글 로그인 자체는 된 것이다. 계정 표시는 남겨 두고 '에이전트에 못 붙었다'만 알린다
     error = e instanceof Error ? e.message : String(e);
-    tok = null; account = null;
+    tok = null;
+    if (!account) account = shown;
   } finally {
     busy = false; ready = true; prompting = false; push();
   }
@@ -220,7 +253,7 @@ export async function mountButton(el: HTMLElement): Promise<void> {
 
 export function signOut(): void {
   try { win().google?.accounts?.id?.disableAutoSelect(); } catch { /* 스크립트가 아직 없을 수 있다 */ }
-  tok = null; account = null; error = ""; moved = 0; push();
+  tok = null; cred = null; account = null; error = ""; moved = 0; push();
 }
 
 /** '옮겼습니다' 알림을 한 번 보여 주고 끈다. */
