@@ -1,36 +1,41 @@
-// 구글 로그인. 에이전트 검사(남의 PC에 파일을 올리는 쪽)는 이 로그인을 통과해야 쓸 수 있다.
-// '바로 검사'는 전부 이 브라우저 안에서 끝나므로 로그인과 아무 상관이 없다.
+// 구글 로그인 — **선택이다.** 로그인하지 않아도 검사는 전부 된다.
 //
-// ── 토큰을 어디에 두는가 ──────────────────────────────────────────────────────
-// **아무 데도 두지 않는다.** 이 모듈의 `tok`은 그냥 변수라 새로 고치면 사라진다.
+// ── 주인이 두 가지인 이유 ─────────────────────────────────────────────────────
+// 에이전트는 PC 한 대인데 주소는 누구에게나 열려 있다. 그래서 의뢰마다 주인이 있어야
+// 남의 파일 이름과 소통 기록이 섞이지 않는다. 그 주인을 이렇게 만든다.
 //
-// 전에는 세션 토큰을 sessionStorage에 넣었다. 그 전에는 브라우저가 직접 만든 값을
-// localStorage에 넣었다. 둘 다 "토큰을 잃으면 지난 의뢰를 못 찾는다"가 전제였고, 그래서
-// 어딘가에 남겨 두어야 했다. 로그인이 생기면서 그 전제가 사라졌다 — 토큰을 잃어도 다시
-// 로그인하면 **같은 주인**으로 돌아오고, 서버는 그 주인의 의뢰를 그대로 돌려준다.
-// 남길 이유가 없어진 값은 남기지 않는 쪽이 맞다.
-//
-// 새로 고치면 구글에 조용히 한 번 다시 묻는다(자동 선택). 구글 쪽 로그인이 살아 있으면
-// 사람 눈에는 아무 일도 일어나지 않고, 아니면 로그인 단추가 뜬다.
+// 1. 로그인 전 — 서버에서 **익명 토큰**을 받아(`POST /auth/session`) `localStorage`에 둔다.
+//    누구인지는 담기지 않는다. 그 브라우저에서만 그 의뢰가 보인다.
+// 2. 로그인 — 구글이 서명한 ID 토큰을 서버에 한 번 내밀면(`POST /auth/google`) 구글 계정
+//    번호(ID 토큰 안의 `sub`)에 묶인 토큰으로 바꿔 준다. 이 토큰은 저장하지 않는다.
+//    새로 고치면 구글에 조용히 다시 물어 받는다 — 잃어도 다시 받으면 그만이라 남길 이유가 없다.
+// 3. 그 사이 — 로그인하는 순간 익명 토큰으로 넣어 둔 의뢰를 계정으로 **옮기고**
+//    (`POST /auth/claim`) 로컬에 있던 익명 토큰을 지운다. 옮기지 않으면 로그인했더니
+//    하던 일이 사라진 것처럼 보인다.
 import { orchUrl } from "./orch";
 
 export type Account = { email: string; name: string; picture: string };
-export type Session = { account: Account | null; busy: boolean; error: string; ready: boolean };
+export type Session = {
+  account: Account | null;
+  busy: boolean;
+  error: string;
+  ready: boolean;   // 조용한 로그인 시도를 한 번은 끝냈는가(그 전에는 단추를 그리지 않는다)
+  moved: number;    // 로그인하면서 계정으로 옮겨 온 의뢰 수(화면에 한 번 알린다)
+};
 
-/** 로그인이 필요한데 안 되어 있을 때 던지는 오류.
- *  값 자체를 사람이 읽을 말로 둔다 — 어딘가에서 이 오류를 그대로 화면에 찍어도 영문 코드가 뜨지 않게. */
-export const NEED_SIGN_IN = "구글로 로그인해야 쓸 수 있습니다";
-
-let tok: string | null = null;      // 이 페이지가 살아 있는 동안만. 어떤 저장소에도 넣지 않는다
+const ANON_KEY = "pg.anon";     // 로그인 전 토큰. 자격증명이지만 **버려도 되는** 값이다
+let tok: string | null = null;  // 로그인한 토큰. 이 페이지가 사는 동안만, 어떤 저장소에도 넣지 않는다
 let account: Account | null = null;
 let busy = false;
 let error = "";
-let ready = false;                  // 조용한 로그인 시도를 한 번은 끝냈는가(그 전에는 단추를 그리지 않는다)
+let ready = false;
+let moved = 0;
 
 const subs = new Set<() => void>();
-let snap: Session = { account: null, busy: false, error: "", ready: false };
+const EMPTY: Session = { account: null, busy: false, error: "", ready: false, moved: 0 };
+let snap: Session = EMPTY;
 function push(): void {
-  snap = { account, busy, error, ready };
+  snap = { account, busy, error, ready, moved };
   subs.forEach((f) => f());
 }
 export function subscribeSession(fn: () => void): () => void {
@@ -38,9 +43,44 @@ export function subscribeSession(fn: () => void): () => void {
   return () => { subs.delete(fn); };
 }
 export const sessionSnapshot = (): Session => snap;
-/** 서버에서 그릴 때 쓰는 값. 브라우저 쪽과 같은 모양이어야 hydration이 깨지지 않는다 */
+/** 서버에서 그릴 때 쓰는 값. 브라우저 쪽 첫 그림과 같아야 hydration이 깨지지 않는다 */
 export const sessionServerSnapshot = (): Session => EMPTY;
-const EMPTY: Session = { account: null, busy: false, error: "", ready: false };
+
+/* ---------- 로그인 전: 익명 토큰 ---------- */
+const readAnon = () => { try { return localStorage.getItem(ANON_KEY) ?? ""; } catch { return ""; } };
+const writeAnon = (v: string) => { try { localStorage.setItem(ANON_KEY, v); } catch { /* 저장을 막아 둔 브라우저 */ } };
+const dropAnon = () => { try { localStorage.removeItem(ANON_KEY); } catch { /* 같음 */ } };
+
+let anonMint: Promise<string> | null = null;
+async function anon(): Promise<string> {
+  const have = readAnon();
+  if (have) return have;
+  if (!anonMint) {
+    anonMint = (async () => {
+      const r = await fetch(`${orchUrl()}/auth/session`, { method: "POST" });
+      if (!r.ok) throw new Error(r.status === 404
+        ? "에이전트가 옛 버전입니다. 에이전트를 돌리는 PC에서 다시 켜 주세요"
+        : `에이전트에 연결하지 못했습니다(${r.status})`);
+      const t = (await r.json())?.data?.token;
+      if (typeof t !== "string" || !t) throw new Error("에이전트에 연결하지 못했습니다");
+      writeAnon(t);
+      return t;
+    })();
+    void anonMint.catch(() => undefined).then(() => { anonMint = null; });
+  }
+  return anonMint;
+}
+
+/** 요청에 붙일 토큰. 로그인했으면 계정 토큰, 아니면 익명 토큰. **로그인을 요구하지 않는다.** */
+export async function requireToken(): Promise<string> {
+  return tok ?? anon();
+}
+
+/** 서버가 401을 돌려줬을 때 버린다. 익명 토큰이면 지워서 다음 요청에 새로 받는다. */
+export function forgetSession(): void {
+  if (tok) { tok = null; account = null; push(); return; }
+  dropAnon();
+}
 
 /* ---------- 구글 쪽 ---------- */
 type Gsi = {
@@ -75,7 +115,7 @@ function script(): Promise<Gsi> {
 
 /* 클라이언트 ID는 **에이전트에게 묻는다**. 앱은 한 번 배포해 두고 에이전트는 사람마다 자기 PC에서
    켜기 때문이다 — 앱에 박아 두면 다른 사람이 자기 에이전트를 쓸 때 ID를 바꿀 길이 없다.
-   앱에 박아 둔 값(NEXT_PUBLIC_GOOGLE_CLIENT_ID)은 에이전트가 답하지 못할 때의 대비책이다. */
+   앱 쪽 값(NEXT_PUBLIC_GOOGLE_CLIENT_ID)은 에이전트가 답하지 못할 때의 대비책이다. */
 const BUILT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
 let clientId: Promise<string> | null = null;
 function id(): Promise<string> {
@@ -89,7 +129,6 @@ function id(): Promise<string> {
 }
 
 let started: string | null = null;  // 어떤 ID로 초기화했는가(주소가 바뀌면 다시 한다)
-let waiting: ((t: string) => void)[] = [];
 
 async function init(): Promise<Gsi> {
   const cid = await id();
@@ -108,7 +147,8 @@ async function init(): Promise<Gsi> {
   return g;
 }
 
-/** 구글 토큰을 이 앱의 세션 토큰으로 바꾼다. 구글 토큰은 이 함수 밖으로 나가지 않는다. */
+/** 구글 토큰을 이 앱의 토큰으로 바꾸고, 로그인 전에 하던 일을 계정으로 옮긴다.
+ *  구글 토큰은 이 함수 밖으로 나가지 않는다. */
 async function exchange(credential: string): Promise<void> {
   busy = true; error = ""; push();
   try {
@@ -117,18 +157,16 @@ async function exchange(credential: string): Promise<void> {
       body: JSON.stringify({ credential }),
     });
     if (!r.ok) {
-      const msg = r.status === 503 ? "이 에이전트에 구글 로그인이 설정되어 있지 않습니다"
+      throw new Error(r.status === 503 ? "이 에이전트에 구글 로그인이 설정되어 있지 않습니다"
         : r.status === 404 ? "에이전트가 옛 버전입니다. 에이전트를 돌리는 PC에서 다시 켜 주세요"
         : r.status === 429 ? "로그인을 너무 자주 했습니다. 잠시 뒤에 다시 해 주세요"
-        : `로그인하지 못했습니다(${r.status})`;
-      throw new Error(msg);
+        : `로그인하지 못했습니다(${r.status})`);
     }
     const d = (await r.json())?.data;
     if (!d?.token) throw new Error("로그인하지 못했습니다");
     tok = d.token;
     account = { email: d.email ?? "", name: d.name ?? "", picture: d.picture ?? "" };
-    const take = waiting; waiting = [];
-    take.forEach((f) => f(tok as string));
+    moved = await claim();
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
     tok = null; account = null;
@@ -137,9 +175,26 @@ async function exchange(credential: string): Promise<void> {
   }
 }
 
-/** 화면이 뜰 때 한 번. 구글 쪽 로그인이 살아 있으면 사람 눈에 아무 일도 일어나지 않는다.
- *  **겹쳐 부르지 않는다** — 브라우저는 자격증명 요청을 한 번에 하나만 받고, 둘째 요청은
- *  NotAllowedError로 떨어진다(화면이 뜰 때와 첫 요청이 거의 동시에 부른다). */
+/** 로그인 전에 넣어 둔 의뢰를 계정으로 옮긴다. 옮기고 나면 로컬의 익명 토큰을 지운다.
+ *  옮기지 못해도 로그인은 성공한 것이라, 여기서 실패해도 오류로 올리지 않는다. */
+async function claim(): Promise<number> {
+  const old = readAnon();
+  if (!old || !tok) return 0;
+  try {
+    const r = await fetch(`${orchUrl()}/auth/claim`, {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${tok}` },
+      body: JSON.stringify({ token: old }),
+    });
+    if (!r.ok) return 0;
+    dropAnon();
+    return Number((await r.json())?.data?.moved ?? 0);
+  } catch {
+    return 0;
+  }
+}
+
+/** 화면이 열릴 때 한 번, 조용히 로그인을 시도한다. 구글 쪽 로그인이 살아 있으면 아무 일도 일어나지 않는다.
+ *  **겹쳐 부르지 않는다** — 브라우저는 자격증명 요청을 한 번에 하나만 받고, 둘째는 NotAllowedError다. */
 let prompting = false;
 export async function silentSignIn(): Promise<void> {
   if (tok || busy || prompting) return;
@@ -147,7 +202,6 @@ export async function silentSignIn(): Promise<void> {
   try {
     const g = await init();
     g.accounts.id.prompt();
-    // 조용한 시도는 실패해도 오류가 아니다. 단추를 그리면 그만이다
     setTimeout(() => { prompting = false; if (!tok && !busy) { ready = true; push(); } }, 2500);
   } catch (e) {
     prompting = false;
@@ -156,35 +210,20 @@ export async function silentSignIn(): Promise<void> {
   }
 }
 
-/** 구글 단추를 이 자리에 그린다. 단추 모양·글씨는 구글이 그린다(직접 그리면 약관 위반이다). */
+/** 구글 단추를 이 자리에 그린다. 모양·글씨는 구글이 그린다(직접 그리면 약관 위반이다). */
 export async function mountButton(el: HTMLElement): Promise<void> {
   const g = await init();
   el.replaceChildren();
-  g.accounts.id.renderButton(el, { type: "standard", theme: "outline", size: "large",
-    text: "signin_with", shape: "square", locale: "ko", width: 240 });
+  g.accounts.id.renderButton(el, { type: "standard", theme: "outline", size: "medium",
+    text: "signin_with", shape: "square", locale: "ko" });
 }
 
 export function signOut(): void {
   try { win().google?.accounts?.id?.disableAutoSelect(); } catch { /* 스크립트가 아직 없을 수 있다 */ }
-  tok = null; account = null; error = ""; push();
+  tok = null; account = null; error = ""; moved = 0; push();
 }
 
-/** 지금 들고 있는 토큰(없으면 null). 요청을 보낼 때만 쓴다. */
-export const token = (): string | null => tok;
-
-/** 토큰을 버린다(서버가 401을 돌려줬을 때). */
-export function forgetSession(): void {
-  tok = null; account = null; push();
-}
-
-/** 요청에 붙일 토큰. 없으면 조용히 한 번 더 시도하고, 그래도 없으면 로그인하라고 알린다. */
-export async function requireToken(): Promise<string> {
-  if (tok) return tok;
-  let mine!: (t: string) => void;
-  const wait = new Promise<string>((ok) => { mine = ok; waiting.push(mine); });
-  void silentSignIn();
-  const got = await Promise.race([wait, new Promise<null>((ok) => setTimeout(() => ok(null), 5000))]);
-  waiting = waiting.filter((f) => f !== mine);
-  if (typeof got === "string") return got;
-  throw new Error(NEED_SIGN_IN);
+/** '옮겼습니다' 알림을 한 번 보여 주고 끈다. */
+export function clearMoved(): void {
+  moved = 0; push();
 }

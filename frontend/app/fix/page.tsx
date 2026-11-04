@@ -9,7 +9,7 @@ import {
 } from "@/lib/agentClient";
 import { parseFixText } from "@/lib/fixlist";
 import { GsMark } from "../gs-mark";
-import { SessionBoot, SignInPanel, useSession } from "../sign-in";
+import { SignInNote } from "../sign-in";
 
 const SEV: Record<string, string> = { error: "오류", warning: "경고" };
 // DesignCraft preflight가 내는 종류를 우리말로. 모르는 종류는 영문 그대로 둔다(숨기면 왜 걸렸는지 알 수 없다).
@@ -217,8 +217,6 @@ export default function FixPage() {
   useEffect(() => { void check(); }, [check, orch]);
   const recheck = () => { setMcpBusy(true); void check(); };  // 버튼에서는 바로 바꿔도 된다
 
-  const me = useSession().account;
-
   async function upload(fs: File[]) {
     setSrcBusy(true); setErr(""); setSrc(null); setResult(null);
     try { setSrc(await uploadSource(fs)); } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
@@ -246,7 +244,6 @@ export default function FixPage() {
 
   return (
     <main className="common_wrap">
-      <SessionBoot />
       <div className="page_head">
         <h1>원본 수정</h1>
         <p className="lead">
@@ -264,8 +261,7 @@ export default function FixPage() {
         </p>
       </div>
 
-      {/* 올린 편집 파일도 에이전트를 돌리는 PC에 저장된다. 그래서 여기도 주인이 있어야 한다 */}
-      {!me && <SignInPanel what="원본 수정" />}
+      <SignInNote />
 
       {/* 1. 연결 상태 */}
       <section className="panel dc_mcp">
@@ -327,19 +323,19 @@ export default function FixPage() {
             <b>폴더 올리기</b>
             <span className="note">사진·글꼴까지 — 권장</span>
             {/* webkitdirectory는 React 타입에 없어서 속성으로 직접 준다 */}
-            <input type="file" disabled={!mcp?.available || srcBusy || !me}
+            <input type="file" disabled={!mcp?.available || srcBusy}
               ref={(el) => { if (el) { el.setAttribute("webkitdirectory", ""); el.setAttribute("directory", ""); } }}
               onChange={(e) => { const fs = e.target.files; if (fs?.length) { setPicked(Array.from(fs)); void upload(Array.from(fs)); } }} />
           </label>
           <label className="pick">
             <b>파일 하나만</b>
             <span className="note">글자 교정만 할 때</span>
-            <input type="file" accept={ACCEPT} disabled={!mcp?.available || srcBusy || !me}
+            <input type="file" accept={ACCEPT} disabled={!mcp?.available || srcBusy}
               onChange={(e) => { const f = e.target.files?.[0]; if (f) { setPicked([f]); void upload([f]); } }} />
           </label>
           {srcBusy && <span className="badge">여는 중…</span>}
           {picked.length > 0 && src && (
-            <button type="button" className="pill" onClick={() => void upload(picked)} disabled={srcBusy || !me}>다시 열기</button>
+            <button type="button" className="pill" onClick={() => void upload(picked)} disabled={srcBusy}>다시 열기</button>
           )}
         </div>
 
@@ -424,7 +420,7 @@ export default function FixPage() {
       <section className="panel dc_run">
         <div className="dc_head">
           <strong>4. 반영하고 내보내기</strong>
-          <button type="button" className="pill on" disabled={!ctx || !parsed.fixes.length || runBusy || !mcp?.available || !me} onClick={() => void run()}>
+          <button type="button" className="pill on" disabled={!ctx || !parsed.fixes.length || runBusy || !mcp?.available} onClick={() => void run()}>
             {runBusy ? "반영 중…" : `교정 ${parsed.fixes.length}건 반영`}
           </button>
           {!ctx && <span className="note">먼저 원본을 올려 주세요.</span>}

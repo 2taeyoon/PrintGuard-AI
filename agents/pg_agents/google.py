@@ -37,16 +37,13 @@ class User:
     picture: str
 
 
-# 이 저장소가 쓰는 클라이언트 ID(구글 클라우드 프로젝트 PrintGuard-AI, 2026-11-04 발급).
-# 코드에 적어 두는 이유: 비밀이 아니고(브라우저가 화면에 들고 다닌다), 에이전트는 사람마다
-# 자기 PC에서 켜는데 `.env`는 커밋되지 않아 PC마다 다시 적어야 하기 때문이다.
-# 이 저장소를 가져다 쓰는 쪽은 PG_GOOGLE_CLIENT_ID로 덮어쓴다.
-DEFAULT_CLIENT_ID = "574540618178-8fl93bcmpqi2fj5mfh0n8mr2nr4njngg.apps.googleusercontent.com"
-
-
 def client_id() -> str:
-    """이 앱의 구글 클라이언트 ID. 비어 있으면 로그인을 아예 열지 않는다(열어 두면 아무 토큰이나 통한다)."""
-    return os.environ.get("PG_GOOGLE_CLIENT_ID", DEFAULT_CLIENT_ID).strip()
+    """이 앱의 구글 클라이언트 ID. `agents/.env`의 `PG_GOOGLE_CLIENT_ID`에서 읽는다.
+
+    비어 있으면 로그인을 아예 열지 않는다 — 청중을 맞춰 볼 대상이 없으면 아무 앱의 토큰이나
+    통과시키게 되기 때문이다. 이때도 **검사는 그대로 된다**(로그인은 선택이다).
+    """
+    return os.environ.get("PG_GOOGLE_CLIENT_ID", "").strip()
 
 
 _jwks = None

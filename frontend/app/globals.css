@@ -578,16 +578,29 @@ input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, 
   .card:hover, .shoplist a:hover, button:hover, .pill:hover, .topmenu a:hover { border-radius: 0; }
 }
 .dot, .spinner { border-radius: 999px; }
-/* ===== 구글 로그인 ===== */
-/* 로그인이 필요한 화면 앞에 세우는 안내. 왜 필요한지를 읽히려고 글을 좁게 잡는다 */
-.signin { border-left: 3px solid var(--thema); }
-.signin > b { display: block; font-size: 1.8rem; margin-bottom: 8px; }
-.signin .note { max-width: 86ch; font-size: 1.4rem; line-height: 175%; margin: 0 0 8px; }
-.signin .warn { max-width: 86ch; }
+/* ===== 구글 로그인(헤더 오른쪽) ===== */
+/* 로그인은 선택이다. 막지 않고, 하면 무엇이 달라지는지만 한 줄로 알린다 */
+.signin_note { font-size: 1.4rem; line-height: 175%; color: var(--blacklight); max-width: 100ch; margin: 0 0 12px; }
 /* 단추는 구글이 iframe 안에 그린다. 자리만 비워 둔다 */
-.gbtn { margin-top: 4px; min-height: 40px; }
-/* 상단 막대의 계정 표시 */
+.gbtn { display: flex; align-items: center; min-height: 32px; }
+/* 상단 막대의 로그인·계정 표시 */
 .acct { display: inline-flex; align-items: center; gap: 8px; font-size: 1.4rem; color: var(--blacklight); }
+.acct_moved { padding: 2px 8px; background: var(--themaLight); color: var(--thema); font-weight: 600; white-space: nowrap; }
+
+/* ===== 바닥글 ===== */
+.sitefoot { display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; padding: 24px 64px 40px;
+  border-top: 1px solid var(--borderSubtle); font-size: 1.4rem; }
+.sitefoot a { color: var(--blacklight); }
+@media (hover: hover) { .sitefoot a:hover { color: var(--thema); } }
+@media (max-width: 768px) { .sitefoot { padding: 20px 16px 32px; gap: 16px; } }
+
+/* ===== 긴 글 쪽(개인정보처리방침·이용약관) ===== */
+.doc h2 { font-size: 1.8rem; margin: 24px 0 8px; }
+.doc h2:first-child { margin-top: 0; }
+.doc p { margin: 0 0 10px; line-height: 180%; max-width: 90ch; }
+.doc ul { margin: 0 0 10px; padding-left: 20px; max-width: 90ch; }
+.doc li { margin-bottom: 6px; line-height: 180%; }
+.doc a { color: var(--thema); }
 .acct img { display: block; width: 24px; height: 24px; object-fit: cover; }
 .acct_no { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px;
   background: var(--themaLight); color: var(--thema); font-weight: 700; }

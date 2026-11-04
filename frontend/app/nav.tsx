@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import { AccountChip } from "./sign-in";
+import SignIn from "./sign-in";
 
 const TABS = [
   { href: "/", label: "인쇄 검수" },
@@ -33,13 +33,19 @@ export default function Shell({ children }: { children: ReactNode }) {
               <Link key={t.href} href={t.href} className={path === t.href ? "on" : ""} onClick={() => setOpen(false)}>{t.label}</Link>
             ))}
           </nav>
-          {/* 오른쪽 칸. 로그인하지 않았으면 비어 있고, 그 빈 칸이 가운데 메뉴의 균형을 잡는다 */}
-          <div className="topright"><AccountChip /></div>
+          {/* 오른쪽 칸: 구글 로그인. 로그인은 선택이고, 하면 지금까지 한 검수가 계정으로 옮겨 간다 */}
+          <div className="topright"><SignIn /></div>
           <button type="button" className="icon_btn menu_btn" aria-label={open ? "메뉴 닫기" : "메뉴 열기"} aria-expanded={open}
             onClick={() => setOpen((o) => !o)}>{open ? "✕" : "☰"}</button>
         </div>
       </header>
       <div className="content">{children}</div>
+      {/* 구글 동의 화면이 가리키는 두 쪽. 메뉴에 넣으면 검수와 같은 무게로 보여서 아래에 둔다 */}
+      <footer className="sitefoot">
+        <Link href="/privacy">개인정보처리방침</Link>
+        <Link href="/terms">이용약관</Link>
+        <a href="https://github.com/2taeyoon/PrintGuard-AI" target="_blank" rel="noreferrer">GitHub</a>
+      </footer>
     </div>
   );
 }

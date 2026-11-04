@@ -16,7 +16,7 @@ import { CUSTOM, GROUPS as FORMATS, dims, match } from "@/lib/formats";
 import { measure, type Measured } from "@/lib/pagesize";
 import { assess, inputFrom, type Risk } from "@/lib/risk";
 import CopyFixes from "./copy-fixes";
-import { SessionBoot, SignInPanel, useSession } from "./sign-in";
+import { SignInNote } from "./sign-in";
 import { answerJob, createJob, isLocalOrch, ORCH_BUILT, orchBuiltSnapshot, orchestratorUp, orchUrl, setOrchUrl, subscribeOrch, toScreen, waitJob, type JobView } from "@/lib/agentClient";
 
 const LEVEL_LABEL = { check: "확인 필요", none: "해당 없음", na: "판단 불가" } as const;
@@ -95,8 +95,6 @@ function Home() {
     if (m === "agent") setShowAgents(true); // 누르면 에이전트 내용이 바로 보이게
     router.replace(m === "direct" ? "/?mode=direct" : "/", { scroll: false });
   };
-  // 에이전트 검사는 파일을 남의 PC로 보내므로 주인이 있어야 한다. '바로 검사'는 로그인과 무관하다.
-  const me = useSession().account;
   const [agentUp, setAgentUp] = useState<boolean | null>(null);
   const [agentJob, setAgentJob] = useState<JobView | null>(null);
   const pdfData = useRef<Uint8Array | null>(null);
@@ -283,7 +281,6 @@ function Home() {
 
   return (
     <div className="common_wrap">
-      <SessionBoot />
       {mode === "direct" && !guide && !guideStatus.startsWith("가이드 검색 사용 불가") && <ModelLoadingScreen status={guideStatus} />}
       <header className="page_head">
         <h1>인쇄 검수</h1>
@@ -340,7 +337,7 @@ function Home() {
         </section>
       )}
 
-      {mode === "agent" && !me && <SignInPanel what="에이전트 검사" />}
+      {mode === "agent" && <SignInNote />}
 
       <TermsPanel />
 
@@ -418,7 +415,7 @@ function Home() {
         <label>총 잉크량 한도(%)<input type="number" value={tac} onChange={(e) => setTac(+e.target.value)} /></label>
         <label title="분광측색기로 잰 종이 흰색을 넣으면, 프로파일이 가정한 종이 대신 이 종이를 기준으로 삼습니다. 그 기준으로 인쇄 색을 옮겨 ΔE를 다시 잽니다. 비워 두면 보정하지 않습니다.">종이 흰색 측정값(Lab, 선택)
           <input type="text" inputMode="decimal" placeholder="예: 94.9, 2.0, -6.0" value={whiteIn} onChange={(e) => setWhiteIn(e.target.value)} disabled={!paperColor} /></label>
-        <button disabled={!file || busy || (!profile && !(mode === "agent" && paperId === "unknown")) || (mode === "agent" && (!agentUp || !me))}>{busy ? "검사 중…" : mode === "agent" ? "에이전트에 맡기기" : "검사 시작"}</button>
+        <button disabled={!file || busy || (!profile && !(mode === "agent" && paperId === "unknown")) || (mode === "agent" && !agentUp)}>{busy ? "검사 중…" : mode === "agent" ? "에이전트에 맡기기" : "검사 시작"}</button>
         {paper && profile && (
           <div className="paperpick">
             <span className="chip">{paper.group}</span><span className="chip">{surface(paper)}</span>
@@ -442,9 +439,8 @@ function Home() {
       {!res && !busy && !err && !agentJob && (
         <div className="empty">{mode === "direct"
           ? "검수할 파일을 고르고 ‘검사 시작’을 누르세요. 파일은 서버로 보내지 않습니다."
-          : !me ? "구글로 로그인하면 ‘에이전트에 맡기기’를 쓸 수 있습니다. 로그인 없이 쓰려면 ‘바로 검사’를 고르세요."
-            : HOSTED ? "검수할 파일을 고르고 ‘에이전트에 맡기기’를 누르세요. 파일은 위 주소의 에이전트로 올라갑니다."
-              : "검수할 파일을 고르고 ‘에이전트에 맡기기’를 누르세요. 파일은 이 PC의 에이전트에만 보냅니다."}</div>
+          : HOSTED ? "검수할 파일을 고르고 ‘에이전트에 맡기기’를 누르세요. 파일은 위 주소의 에이전트로 올라갑니다."
+            : "검수할 파일을 고르고 ‘에이전트에 맡기기’를 누르세요. 파일은 이 PC의 에이전트에만 보냅니다."}</div>
       )}
 
       {res && (
