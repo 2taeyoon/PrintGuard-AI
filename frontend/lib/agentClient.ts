@@ -176,7 +176,7 @@ export const mcpStatus = async () => j<McpStatus>(await fetch(`${orchUrl()}/desi
 
 export type PreflightIssue = { severity: string; kind: string; message: string; page: number | null };
 export type SourceView = {
-  context_id: string; filename: string; pages: number; roundtrip: boolean; pdf_ref: string;
+  context_id: string; filename: string; pages: number; pdf_ref: string;
   stories: { id: number; length: number; overset: boolean; pages: number[]; preview: string }[];
   preflight: PreflightIssue[]; missing_fonts: string[]; open_warnings: string[];
   paragraph_styles: number; swatches: number; png: string;
@@ -192,7 +192,7 @@ export async function uploadSource(file: File): Promise<SourceView> {
 export type ApplyResult = {
   applied: { key?: string; page: number | null; original: string; suggestion: string; story: number; at: [number, number] }[];
   failed: { key?: string; page: number | null; original: string; suggestion: string; reason: string }[];
-  pdf_ref: string; source_out: string | null; roundtrip: boolean;
+  pdf_ref: string; source_out: string | null;
   shots: { page: number; before: string; after: string }[];  // 바뀐 쪽만 찍는다
   shots_total: number;                                        // 바뀐 쪽이 더 있으면 이 수가 더 크다
   preflight_after: PreflightIssue[];

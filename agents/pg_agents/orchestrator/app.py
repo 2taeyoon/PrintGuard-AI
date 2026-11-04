@@ -288,7 +288,14 @@ async def report(ctx: str, x_pg_client: str | None = Client) -> dict[str, Any]:
 # 의뢰 번호는 PDF 검수(ctx_job_…)와 따로 쓴다(ctx_dc_…). 주인 가리기는 PDF 쪽과 같은 열쇠를 쓴다.
 MAX_SOURCE = max(1, int(os.environ.get("PG_MAX_SOURCE_MB", "60"))) * 1024 * 1024
 MAX_FIXES = max(1, int(os.environ.get("PG_MAX_FIXES", "300")))
-DC_EXT = {".idml", ".indd", ".indt", ".designcraft"}
+# INDD는 받지 않는다 — 고친 결과를 INDD로 돌려줄 수 없어서다(자세한 이유는 designcraft 에이전트에).
+DC_EXT = {".idml", ".designcraft"}
+DC_REFUSED = {
+    ".indd": "INDD는 받지 않습니다 — 고친 결과를 INDD로 돌려드릴 수 없어서입니다. "
+             "InDesign에서 파일 → 다른 이름으로 저장 → InDesign Markup(IDML)으로 내보내 올려 주세요.",
+    ".indt": "INDT는 받지 않습니다 — IDML로 내보내 올려 주세요.",
+    ".pdf": "PDF는 고칠 수 없습니다 — PDF에서는 글자를 집을 수 없습니다. 편집 파일(IDML)을 올려 주세요.",
+}
 DCJOBS: dict[str, dict[str, Any]] = {}
 
 
@@ -321,9 +328,10 @@ async def dc_source(file: UploadFile = File(...), x_pg_client: str | None = Clie
         raise HTTPException(400, "브라우저 열쇠가 없습니다")
     name = file.filename or "source"
     ext = ("." + name.rsplit(".", 1)[-1].lower()) if "." in name else ""
+    if ext in DC_REFUSED:
+        raise HTTPException(400, DC_REFUSED[ext])
     if ext not in DC_EXT:
-        raise HTTPException(400, f"열 수 없는 형식입니다({ext or '확장자 없음'}). {', '.join(sorted(DC_EXT))}만 됩니다. "
-                                 "PDF는 글자를 고칠 수 없어 받지 않습니다")
+        raise HTTPException(400, f"열 수 없는 형식입니다({ext or '확장자 없음'}). {', '.join(sorted(DC_EXT))}만 됩니다")
     buf, size = [], 0
     while blk := await file.read(1 << 20):
         size += len(blk)

@@ -18,7 +18,7 @@ const KIND: Record<string, string> = {
   emptyText: "빈 텍스트 프레임", rgbColor: "인쇄 문서의 RGB 색", unsupportedTypography: "미지원 조판",
   unsupportedGraphicLayers: "미지원 그래픽 레이어",
 };
-const ACCEPT = ".idml,.indd,.indt,.designcraft";
+const ACCEPT = ".idml,.designcraft";
 
 /** 같은 종류는 묶어서 센다 — 넘침 28건을 28줄로 늘어놓으면 읽을 수가 없다. */
 function IssueRows({ rows, empty }: { rows: PreflightIssue[]; empty: string }) {
@@ -155,7 +155,6 @@ export default function FixPage() {
 
   const [mcp, setMcp] = useState<McpStatus | null>(null);
   const [mcpBusy, setMcpBusy] = useState(true);
-  const [showTools, setShowTools] = useState(false);
 
   const [file, setFile] = useState<File | null>(null);
   const [src, setSrc] = useState<SourceView | null>(null);
@@ -216,11 +215,19 @@ export default function FixPage() {
   return (
     <main className="common_wrap">
       <div className="page_head">
-        <h1>인디자인 원본 수정</h1>
+        <h1>원본 수정</h1>
         <p className="lead">
-          <Link href="/">인쇄 검수</Link>에서 복사한 교정 목록을 붙여 넣고 원본(IDML·INDD)을 올리면, DesignCraft가 글자를 찾아
-          고치고 PDF로 다시 내보냅니다. <b>PDF는 고칠 수 없습니다</b> — DesignCraft에서 PDF는 배치만 되고 글자를 집을 수 없어서,
-          고치려면 편집 파일이 있어야 합니다.
+          <Link href="/">인쇄 검수</Link>에서 복사한 교정 목록을 붙여 넣고 편집 파일(IDML)을 올리면, DesignCraft가 글자를 찾아
+          고치고 PDF로 다시 내보냅니다.
+        </p>
+        <p className="cantfix">
+          <span className="nobadge">PDF는 고칠 수 없습니다</span>
+          DesignCraft에서 PDF는 배치만 되고 글자를 집을 수 없습니다. 고치려면 편집 파일이 있어야 합니다.
+        </p>
+        <p className="cantfix">
+          <span className="nobadge">INDD는 고칠 수 없습니다</span>
+          고친 결과를 INDD로 돌려드릴 수 없어서 받지 않습니다. InDesign에서 <b>파일 → 다른 이름으로 저장 → InDesign Markup(IDML)</b>로
+          내보내 올려 주세요.
         </p>
       </div>
 
@@ -243,10 +250,7 @@ export default function FixPage() {
               <span className="chip">방식<b>{mcp.mode === "headless" ? "헤드리스(창 없음)" : mcp.mode}</b></span>
               <span className="chip">도구<b>{mcp.tools?.length ?? 0}</b></span>
             </div>
-            <button type="button" className="gs_toggle" onClick={() => setShowTools((o) => !o)} aria-expanded={showTools}>
-              <GsMark open={showTools} /> 쓸 수 있는 도구 보기
-            </button>
-            {showTools && <div className="dc_tools">{mcp.tools?.map((t) => <code key={t}>{t}</code>)}</div>}
+            <div className="dc_tools">{mcp.tools?.map((t) => <code key={t}>{t}</code>)}</div>
           </>
         )}
       </section>
@@ -263,15 +267,15 @@ export default function FixPage() {
           <tbody>
             <tr><td><code>.idml</code></td><td>O</td><td>고친 <b>PDF + IDML</b></td></tr>
             <tr><td><code>.designcraft</code></td><td>O</td><td>고친 <b>PDF + .designcraft</b></td></tr>
-            <tr><td><code>.indd</code> <code>.indt</code></td><td>O</td>
-              <td>고친 <b>PDF + IDML</b> — <b>INDD로는 돌려드리지 못합니다</b>(DesignCraft가 INDD 내보내기를 지원하지 않습니다)</td></tr>
+            <tr className="no"><td><code>.indd</code> <code>.indt</code></td><td>✕</td>
+              <td>받지 않습니다 — INDD로 돌려드릴 수 없어서입니다. IDML로 내보내 올려 주세요</td></tr>
             <tr className="no"><td><code>.pdf</code></td><td>✕</td><td>받지 않습니다 — PDF는 글자를 집을 수 없습니다</td></tr>
           </tbody>
         </table>
         <div className="dc_row">
           <input type="file" accept={ACCEPT} disabled={!mcp?.available || srcBusy}
             onChange={(e) => { const f = e.target.files?.[0] ?? null; setFile(f); if (f) void upload(f); }} />
-          {srcBusy && <span className="badge">여는 중… (INDD는 변환이 있어 몇 초 걸립니다)</span>}
+          {srcBusy && <span className="badge">여는 중…</span>}
           {file && src && <button type="button" className="pill" onClick={() => void upload(file)} disabled={srcBusy}>다시 열기</button>}
         </div>
 
@@ -285,12 +289,6 @@ export default function FixPage() {
               <span className="chip">넘친 글<b>{src.stories.filter((s) => s.overset).length}</b></span>
             </div>
 
-            {!src.roundtrip && (
-              <p className="warn">
-                읽기는 됐습니다. 다만 <b>INDD로는 돌려드리지 못합니다</b> — 고친 뒤에는 PDF와 IDML로 받습니다.
-                올리신 원본은 그대로 두고 건드리지 않습니다.
-              </p>
-            )}
             {src.missing_fonts.length > 0 && (
               <p className="warn">
                 <b>이 PC에 없는 글꼴 {src.missing_fonts.length}개</b>: {src.missing_fonts.join(", ")} — 대체 글꼴로 열렸습니다.
