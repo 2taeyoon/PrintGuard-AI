@@ -389,7 +389,6 @@ function Home() {
         <label title="분광측색기로 잰 종이 흰색을 넣으면, 프로파일이 가정한 종이 대신 이 종이를 기준으로 삼습니다. 그 기준으로 인쇄 색을 옮겨 ΔE를 다시 잽니다. 비워 두면 보정하지 않습니다.">종이 흰색 측정값(Lab, 선택)
           <input type="text" inputMode="decimal" placeholder="예: 94.9, 2.0, -6.0" value={whiteIn} onChange={(e) => setWhiteIn(e.target.value)} disabled={!paperColor} /></label>
         <button disabled={!file || busy || (!profile && !(mode === "agent" && paperId === "unknown")) || (mode === "agent" && !agentUp)}>{busy ? "검사 중…" : mode === "agent" ? "에이전트에 맡기기" : "검사 시작"}</button>
-        {res && <button type="button" className="ghost" onClick={() => window.print()}>보고서 인쇄/PDF 저장</button>}
         {paper && profile && (
           <div className="paperpick">
             <span className="chip">{paper.group}</span><span className="chip">{surface(paper)}</span>
@@ -428,7 +427,7 @@ function Home() {
             <label className="chip heatsw"><input type="checkbox" checked={showHeat} onChange={(e) => setShowHeat(e.target.checked)} /> 색 차이 지도(ΔE00&gt;5)</label>
             <span className="note">{mode === "agent" ? "오탈자는 교정 에이전트(규칙+Kiwi)가 제안만 합니다. 자동으로 고치지 않습니다." : "AI 문맥 교정(LLM)은 연결하지 않았습니다. 표기·수치 검사는 규칙 기반입니다."}</span>
           </div>
-          <CopyFixes issues={res.issues} filename={res.filename} mode={mode} />
+          <CopyFixes issues={res.issues} filename={res.filename} pages={res.pages} mode={mode} />
           {res.colorReport && (
             <div className="summary colorrep panel">
               <strong>인쇄 색 차이 ({res.colorReport.profile || "선택한 프로파일"})</strong>

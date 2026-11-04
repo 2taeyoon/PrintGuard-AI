@@ -16,8 +16,16 @@ const DECISION: Record<string, string> = { executed: "실행", pending_review: "
 const STATUS: Record<string, string> = { on: "켜짐", fake: "가짜", off: "꺼짐" };
 const secs = (ms: number) => `${(ms / 1000).toFixed(ms < 10000 ? 2 : 1)}초`;
 // 에이전트는 서버가 주는 차례가 호출 순서에 따라 달라지므로, 일하는 차례대로 고정해서 보여 준다
-const ORDER = ["orchestrator", "preflight", "color", "paper", "guide", "proofread", "shop", "report", "safety"];
+const ORDER = ["orchestrator", "preflight", "color", "paper", "guide", "proofread", "report", "safety", "shop", "designcraft"];
 const rank = (n: string) => { const i = ORDER.indexOf(n.replace("(fake)", "")); return i < 0 ? ORDER.length : i; };
+
+// 이 PDF 검수에 **실제로 참여하는** 에이전트. 나머지는 켜져 있어도 이 검사에서는 한 번도 불리지 않는다.
+// 한 목록에 섞어 두면 "이 검사가 쟤도 쓰는구나"로 읽힌다 — 인쇄소·원본 수정은 다른 화면의 기능이다.
+const IN_PLAN = new Set(["orchestrator", "preflight", "color", "paper", "guide", "proofread", "report", "safety"]);
+const ELSEWHERE: Record<string, string> = {
+  shop: "인쇄소 지도 탭에서 씁니다",
+  designcraft: "원본 수정 탭에서 씁니다. PDF는 고칠 수 없어 이 검수에는 참여하지 않습니다",
+};
 // 공통 로그의 시각은 UTC로 남는다. 화면에는 한국 시간으로 '2026년 10월 27일 오전 9시 30분 20초'처럼 적는다
 const KST = new Intl.DateTimeFormat("ko-KR", {
   timeZone: "Asia/Seoul", year: "numeric", month: "numeric", day: "numeric",
@@ -67,6 +75,45 @@ export function AgentHealth() {
   );
 }
 
+/** 에이전트 한 줄. 누르면 그 자리에서 할 수 있는 일(skill)과 등급이 펼쳐진다.
+ *  `why`는 이 검수에 참여하지 않는 에이전트에만 붙는다 — 왜 여기 있는지 말해 주지 않으면
+ *  '켜짐'만 보고 이 검사가 쓰는 줄로 읽는다. */
+function AgentRow({ name, a, open, toggle, why }:
+  { name: string; a: AgentInfo; open: boolean; toggle: (n: string) => void; why?: string }) {
+  return (
+    <li className={`aitem ${a.status}${open ? " open" : ""}${why ? " aside_of_plan" : ""}`}>
+      <button type="button" className="aitem_head" aria-expanded={open} onClick={() => toggle(name)}>
+        <span className={`dot ${a.status}`} aria-hidden="true" />
+        <b>{agentLabel(name)}</b>
+        <code>({name})</code>
+        <span className="grow" />
+        <span className="note">{STATUS[a.status] ?? a.status}</span>
+        <span className="mark" aria-hidden="true">{open ? "－" : "＋"}</span>
+      </button>
+      {why && <p className="note aitem_why">{why}</p>}
+      {open && (
+        <div className="aitem_body">
+          {a.card ? (
+            <>
+              <p className="note">{a.card.description}</p>
+              <ul className="skills">
+                {a.card.skills.map((s) => (
+                  <li key={s.id}>
+                    <div className="s_head"><SkillName id={s.id} /> <span className="chip grade">{GRADE[s.grade] ?? s.grade}</span>
+                      {s.verifier && <span className="chip">검증자 {agentLabel(s.verifier)}</span>}</div>
+                    <div className="note">{s.description}</div>
+                    <div className="note">부를 수 있는 쪽: {s.allowed_requesters.map(agentLabel).join(", ")}</div>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : <p className="note">아직 켜지지 않았거나 만들어지지 않은 에이전트입니다.</p>}
+        </div>
+      )}
+    </li>
+  );
+}
+
 export default function AgentsView({ initialCtx = "", showWarn = true }: { initialCtx?: string; showWarn?: boolean }) {
   // initialCtx가 바뀌면(검사 중에 새 의뢰가 생기면) 그 의뢰로 따라간다. 사용자가 직접 고른 뒤에는 그대로 둔다.
   const [up, setUp] = useState<boolean | null>(null);
@@ -104,7 +151,9 @@ export default function AgentsView({ initialCtx = "", showWarn = true }: { initi
   }, [ctx]);
 
   const list = Object.entries(agents).sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b));
-  const onCount = list.filter(([, a]) => a.status !== "off").length;
+  const inPlan = list.filter(([n]) => IN_PLAN.has(n.replace("(fake)", "")));
+  const other = list.filter(([n]) => !IN_PLAN.has(n.replace("(fake)", "")));
+  const onCount = inPlan.filter(([, a]) => a.status !== "off").length;
 
   return (
     <>
@@ -114,46 +163,28 @@ export default function AgentsView({ initialCtx = "", showWarn = true }: { initi
         {/* 왼쪽: 에이전트 목록 */}
         <aside className="agent_side">
           <div className="side_head">
-            <strong>에이전트</strong>
-            <span className="chip">{onCount}/{list.length} 켜짐</span>
+            <strong>이 검수에 참여</strong>
+            <span className="chip">{onCount}/{inPlan.length} 켜짐</span>
           </div>
           <ul className="agent_list">
-            {list.map(([name, a]) => {
-              const isOpen = opened.includes(name);
-              return (
-                <li key={name} className={`aitem ${a.status}${isOpen ? " open" : ""}`}>
-                  <button type="button" className="aitem_head" aria-expanded={isOpen} onClick={() => toggle(name)}>
-                    <span className={`dot ${a.status}`} aria-hidden="true" />
-                    <b>{agentLabel(name)}</b>
-                    <code>({name})</code>
-                    <span className="grow" />
-                    <span className="note">{STATUS[a.status] ?? a.status}</span>
-                    <span className="mark" aria-hidden="true">{isOpen ? "－" : "＋"}</span>
-                  </button>
-                  {isOpen && (
-                    <div className="aitem_body">
-                      {a.card ? (
-                        <>
-                          <p className="note">{a.card.description}</p>
-                          <ul className="skills">
-                            {a.card.skills.map((s) => (
-                              <li key={s.id}>
-                                <div className="s_head"><SkillName id={s.id} /> <span className="chip grade">{GRADE[s.grade] ?? s.grade}</span>
-                                  {s.verifier && <span className="chip">검증자 {agentLabel(s.verifier)}</span>}</div>
-                                <div className="note">{s.description}</div>
-                                <div className="note">부를 수 있는 쪽: {s.allowed_requesters.map(agentLabel).join(", ")}</div>
-                              </li>
-                            ))}
-                          </ul>
-                        </>
-                      ) : <p className="note">아직 켜지지 않았거나 만들어지지 않은 에이전트입니다.</p>}
-                    </div>
-                  )}
-                </li>
-              );
-            })}
+            {inPlan.map(([name, a]) => <AgentRow key={name} name={name} a={a} open={opened.includes(name)} toggle={toggle} />)}
             {list.length === 0 && <li className="aitem"><span className="note">에이전트를 불러오는 중…</span></li>}
           </ul>
+
+          {other.length > 0 && (
+            <>
+              <div className="side_head side_head2">
+                <strong>다른 화면에서 쓰는 에이전트</strong>
+              </div>
+              <p className="note side_note">켜져 있어도 <b>이 검수에서는 한 번도 불리지 않습니다.</b> 같은 A2A 계약으로 돌지만 하는 일이 다릅니다.</p>
+              <ul className="agent_list">
+                {other.map(([name, a]) => (
+                  <AgentRow key={name} name={name} a={a} open={opened.includes(name)} toggle={toggle}
+                    why={ELSEWHERE[name.replace("(fake)", "")]} />
+                ))}
+              </ul>
+            </>
+          )}
         </aside>
 
         {/* 오른쪽: 의뢰를 하나 고르면 추적과 기록이 그 의뢰로 좁혀진다 */}
