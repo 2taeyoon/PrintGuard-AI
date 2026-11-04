@@ -581,7 +581,7 @@ input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, 
 /* 쓰임이 다른 두 복사를 나란히 둔다. 한 줄에 버튼만 늘어놓으면 어느 것이 무엇인지 모른다 */
 .copyfix_row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
 .copyfix_one { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px;
-  border: 1px solid var(--borderLight); border-radius: 4px; background: var(--bgSurface); }
+  border: 1px solid var(--borderLight); background: var(--bgSurface); }
 .copyfix_one .note { flex-basis: 100%; margin: 0; }
 .copyfix_one .pill.on[disabled] { opacity: 0.5; cursor: not-allowed; }
 
@@ -593,7 +593,7 @@ input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, 
 .aitem.aside_of_plan { background: var(--bgMuted); }
 /* 설명은 에이전트 이름과 줄을 맞춘다 — 머리의 패딩 16 + 점 8 + 사이 8 */
 .aitem_why { margin: 0; padding: 0 16px 12px 32px; }
-.copyfix_text { width: 100%; margin-top: 12px; padding: 12px; border: 1px solid var(--borderLight); border-radius: 4px;
+.copyfix_text { width: 100%; margin-top: 12px; padding: 12px; border: 1px solid var(--borderLight);
   background: var(--bgMuted); color: var(--black); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 1.4rem; line-height: 1.7; resize: vertical; }
 .copyfix .note { display: block; margin-top: 8px; }
@@ -609,33 +609,33 @@ input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, 
 .dc_row input[type="file"] { font-size: 1.5rem; }
 .dc_why p { font-size: 1.5rem; margin: 4px 0; }
 .dc_why code, .dc_log code, .dc_skipped code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  background: var(--bgMuted); padding: 1px 6px; border-radius: 3px; font-size: 1.4rem; }
+  background: var(--bgMuted); padding: 1px 6px; font-size: 1.4rem; }
 .dc_tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
 .dc_tools code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1.3rem;
-  background: var(--bgMuted); color: var(--blacklight); padding: 3px 8px; border-radius: 999px; }
+  background: var(--bgMuted); color: var(--blacklight); padding: 3px 8px; }
 
 .dc_issues { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .dc_issues li { display: grid; grid-template-columns: 160px auto 1fr; gap: 8px; align-items: baseline;
-  padding: 8px 12px; border-radius: 4px; background: var(--bgMuted); font-size: 1.5rem; }
+  padding: 8px 12px; background: var(--bgMuted); font-size: 1.5rem; }
 .dc_issues li.sev-high { background: var(--redLight); }
 .dc_issues .dc_msg { color: var(--blacklight); font-size: 1.4rem; overflow-wrap: anywhere; }
 .dc_warnbox { margin: 8px 0; font-size: 1.4rem; color: var(--blacklight); }
 .dc_warnbox summary { cursor: pointer; }
 .dc_warnbox ul { margin: 8px 0 0 16px; }
-.dc_shot { display: block; max-width: 360px; width: 100%; margin: 12px 0 0; border: 1px solid var(--borderLight); border-radius: 4px; }
+.dc_shot { display: block; max-width: 360px; width: 100%; margin: 12px 0 0; border: 1px solid var(--borderLight); }
 
-.dc_ta { width: 100%; padding: 12px; border: 1px solid var(--borderLight); border-radius: 4px; background: var(--white);
+.dc_ta { width: 100%; padding: 12px; border: 1px solid var(--borderLight); background: var(--white);
   color: var(--black); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1.4rem; line-height: 1.8; resize: vertical; }
 .dc_skipped { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 1.4rem; }
-.dc_skipped li { padding: 6px 12px; border-radius: 4px; background: var(--redLight); }
+.dc_skipped li { padding: 6px 12px; background: var(--redLight); }
 
 .dc_compare { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
 .dc_compare figure { margin: 0; }
 .dc_compare figcaption { font-size: 1.5rem; font-weight: 600; margin-bottom: 6px; }
-.dc_compare img { width: 100%; border: 1px solid var(--borderLight); border-radius: 4px; background: var(--white); }
+.dc_compare img { width: 100%; border: 1px solid var(--borderLight); background: var(--white); }
 .dc_sub { font-size: 1.7rem; margin: 20px 0 8px; }
 .dc_log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.dc_log li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; padding: 8px 12px; border-radius: 4px; font-size: 1.5rem; }
+.dc_log li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; padding: 8px 12px; font-size: 1.5rem; }
 .dc_log li.ok { background: var(--bgMuted); }
 .dc_log li.bad { background: var(--redLight); }
 .dc_log del { color: var(--blackmute); }
@@ -647,11 +647,11 @@ input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, 
 /* 연결 안내 — 읽고 따라 치는 것이 아니라 복사해서 붙여넣는 것이어야 한다 */
 .dc_setup { margin: 8px 0 4px; }
 .dc_steps { margin: 12px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 14px; font-size: 1.5rem; }
-.dc_steps li { padding: 10px 12px; border-radius: 4px; border: 1px solid var(--borderLight); background: var(--bgSurface); }
+.dc_steps li { padding: 10px 12px; border: 1px solid var(--borderLight); background: var(--bgSurface); }
 .dc_steps li.on { border-color: var(--thema); background: var(--themaLight); }   /* 지금 해야 할 단계 */
 .dc_steps .note { display: block; margin-top: 6px; }
 .cmd { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 0; }
-.cmd code { flex: 1 1 320px; padding: 8px 12px; border-radius: 4px; background: var(--black); color: var(--textOnDark);
+.cmd code { flex: 1 1 320px; padding: 8px 12px; background: var(--black); color: var(--textOnDark);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1.4rem; overflow-wrap: anywhere; }
 .cmd .note { flex-basis: 100%; margin: 0; }
 
@@ -662,10 +662,10 @@ input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, 
 .dc_formats td:nth-child(2) { width: 56px; text-align: center; font-weight: 600; }
 .dc_formats tr.no td { color: var(--blackmute); }
 .dc_formats code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1.4rem;
-  background: var(--bgMuted); padding: 2px 6px; border-radius: 3px; }
+  background: var(--bgMuted); padding: 2px 6px; }
 
 /* 못 고치는 것은 뱃지로 먼저 말한다 — 본문에 섞어 두면 읽다 놓친다 */
 .cantfix { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin: 8px 0 0;
   font-size: 1.6rem; color: var(--blacklight); line-height: 1.7; }
-.nobadge { flex: none; padding: 3px 10px; border-radius: 999px; background: var(--redLight); color: var(--redBright);
+.nobadge { flex: none; padding: 3px 10px; background: var(--redLight); color: var(--redBright);
   font-size: 1.4rem; font-weight: 700; }

@@ -78,7 +78,7 @@ function Cmd({ children, note }: { children: string; note?: string }) {
 
 /** 연결이 안 될 때 **무엇을 하면 되는지**를 순서대로. 이유마다 짚을 곳이 다르다:
  *  오케스트레이터가 옛 버전인가 / 에이전트가 안 떴나 / CLI가 없나. */
-function SetupGuide({ reason, hint, orch }: { reason: string; hint?: string; orch: string }) {
+function SetupGuide({ reason, orch }: { reason: string; orch: string }) {
   // 할 일이 전혀 다른 네 경우를 가른다. '연결 안 됨'으로 뭉뚱그리면 아무도 고치지 못한다.
   const cliMissing = /찾을 수 없|실행할 수 없|PG_DESIGNCRAFT_CLI/.test(reason);
   const noRoute = /^404\b|\b404 —/.test(reason);
@@ -122,8 +122,6 @@ function SetupGuide({ reason, hint, orch }: { reason: string; hint?: string; orc
         </li>
       </ol>
 
-      {hint && <p className="note">{hint}</p>}
-      <p className="note">자세한 설명은 <Link href="/help">도움말</Link>에 있습니다.</p>
     </div>
   );
 }
@@ -239,7 +237,7 @@ export default function FixPage() {
           <button type="button" className="pill" onClick={recheck} disabled={mcpBusy}>다시 확인</button>
           <span className="note">에이전트 주소: {orch}{isLocalOrch(orch) ? " (이 PC)" : ""}</span>
         </div>
-        {mcp?.available === false && <SetupGuide reason={mcp.reason ?? ""} hint={mcp.hint} orch={orch} />}
+        {mcp?.available === false && <SetupGuide reason={mcp.reason ?? ""} orch={orch} />}
         {mcp === null && <div className="dc_why"><p>확인 중입니다.</p></div>}
         {mcp?.available && (
           <>
