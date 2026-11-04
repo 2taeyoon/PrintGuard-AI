@@ -185,7 +185,7 @@ CARD = AgentCard.model_validate({
     "name": NAME, "description": "실행 관문: 등급은 레지스트리에서, 금액은 코드로, A 실행·B 교차 검증·C 사람 승인, 하루 한도, fail-closed",
     "url": "http://127.0.0.1:8701",
     "skills": [{"id": "execute", "description": "상태를 바꾸는 행동을 실행해도 되는지 결정한다", "grade": "read",
-                "allowed_requesters": ["report", "orchestrator", "mcp"],
+                "allowed_requesters": ["report", "orchestrator", "mcp", "designcraft"],
                 "input_schema": {"action": "agent.skill", "idempotency_key": "string", "params": "object"},
                 "output_schema": {"decision": "executed|pending_review|rejected", "grade": "A|B|C", "reason": "string", "review_id": "string?"}}],
 })

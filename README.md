@@ -26,7 +26,7 @@
 
 에이전트를 켜지 않아도 앱은 바로 검사 모드로 전부 동작합니다.
 
-## 에이전트 9개
+## 에이전트 10개
 
 | 에이전트 | 포트 | 하는 일 | 런타임 |
 |---|---|---|---|
@@ -39,12 +39,13 @@
 | 교정 proofread | 8706 | 오탈자 수정 제안 | Python |
 | 인쇄소 shop | 8707 | 공공 인허가 데이터에서 인쇄소 찾기(조회만) | Python |
 | 보고서 report | 8708 | 검수 보고서 작성 | Python |
+| 원본 수정 designcraft | 8709 | 인디자인 원본(IDML·INDD)을 열어 교정을 반영하고 PDF로 내보냅니다 | Python + DesignCraft MCP |
 
 ## 구조
 
 ```
 frontend/   Next.js 16 앱 (app/ 화면, lib/ 계산, agents/ Node 에이전트, scripts/ 검증, public/ 데이터)
-agents/     에이전트 9종(A2A)과 MCP 서버 — 에이전트 검사 모드의 뒷단
+agents/     에이전트 10종(A2A)과 MCP 서버 — 에이전트 검사 모드의 뒷단
 eval/       평가·데이터 생성(Python): 검색 모델 비교, 색 엔진 대조, 종이·인쇄소 수집
 deploy/     배포용(에이전트 컨테이너, ICC 내려받기 스크립트)
 samples/    시험용 PDF
@@ -160,6 +161,77 @@ claude mcp add printguard -- "$(conda run -n dev python -c 'import sys;print(sys
 ```
 
 cwd는 `agents/`여야 합니다. 읽기 도구 8개와 쓰기 도구 1개(보고서 작성)를 내보냅니다. 쓰기 도구는 safety 관문을 거치고, 사람 승인(C 등급)은 MCP가 대신할 수 없습니다 — 웹 화면에서 사람이 승인합니다.
+
+## 인디자인 원본 수정 (DesignCraft MCP)
+
+검수는 PDF로 하지만 **고칠 수 있는 것은 원본뿐입니다.** DesignCraft에서 PDF는 배치만 되고 글자를
+집을 수 없습니다(editable vectors 미지원). 그래서 화면이 둘로 나뉩니다 — 인쇄 검수에서 교정 목록을
+복사하고, 원본 수정에서 IDML·INDD에 얹습니다.
+
+| 포맷 | 열기 | 돌려주기 |
+|---|---|---|
+| `.idml` · `.designcraft` | O | O (같은 형식 + PDF) |
+| `.indd` · `.indt` | O (indd-utils가 IDML로 변환) | **PDF와 IDML로만** — INDD로는 못 돌려줍니다 |
+| `.pdf` | — | 받지 않습니다(고칠 수 없어서) |
+
+### 설치
+
+[DesignCraft](https://github.com/storytold/designcraft)의 `designcraft-cli`가 **에이전트를 돌리는 PC에**
+있어야 합니다. MCP는 stdin/stdout으로만 말해서 브라우저가 직접 부를 수 없고, 이 PC에서 프로세스를
+띄워 파이프로 말하는 수밖에 없습니다(Claude 데스크톱이 하는 것과 같습니다).
+
+릴리스의 Windows portable zip이나 MSI에 CLI가 같이 들어 있습니다. 푼 다음 `designcraft-cli.exe`를
+기본 위치에 두면 설정 없이 찾습니다.
+
+```
+%LOCALAPPDATA%\Programs\ArtCraft\DesignCraft\designcraft-cli.exe   # Windows 기본
+/Applications/DesignCraft.app/Contents/MacOS/designcraft-cli           # macOS
+/usr/bin/designcraft-cli                                               # Linux
+```
+
+다른 데 두었으면 `agents/.env`에 경로를 적습니다. PATH에 있으면 그것도 씁니다.
+
+```
+PG_DESIGNCRAFT_CLI=D:\tools\designcraft\designcraft-cli.exe
+```
+
+화면 위쪽 **DesignCraft MCP 연결**에 버전·프로토콜·도구 수가 뜨면 된 것입니다. 안 되면 왜 안 되는지
+같이 나옵니다.
+
+### 어떻게 고치나
+
+교정 한 건마다 `find.find`로 **다시 찾고** `story.replaceRange`로 바꿉니다. 미리 위치를 모아 두지
+않는 이유는 한글이 글자당 3바이트여서 앞을 고치면 뒤가 전부 밀리기 때문입니다. 다시 찾으면 밀린
+위치가 저절로 따라옵니다.
+
+**같은 문구가 여러 군데면 고치지 않고 실패로 남깁니다.** 어느 것인지 가릴 수 없는데 찍어서 고치면
+조용히 틀립니다. 교정 줄에 쪽 번호를 적어 주면 그 쪽에서만 찾습니다.
+
+고친 뒤 한 번 더 `preflight.run`을 돌립니다. 교정이 새 문제를 만들 수 있어서입니다 — 한글을 라틴
+글꼴 자리에 넣으면 글리프가 없고, 글이 길어지면 넘칩니다.
+
+### 원본으로만 알 수 있는 것
+
+`preflight.run`은 **PDF만 봐서는 알 수 없는 것들**을 잡습니다. 넘친 글자는 PDF에 아예 안 찍히고,
+끊긴 이미지는 빈 칸으로 보일 뿐이며, 폰트는 이미 대체가 끝난 상태입니다.
+
+`overset`(넘침) · `missingFont` · `missingGlyphs` · `missingLink` · `lowResolution` · `emptyText` · `rgbColor`
+
+반대로 CMYK 색 차이(ΔE)·총 잉크량은 PDF를 래스터화해야 나오므로 기존 검수가 맡습니다. 원본만
+올리면 DesignCraft가 PDF를 직접 뽑아 주므로 **판본이 어긋날 일이 없습니다.**
+
+### 한계
+
+- **글꼴이 1순위 위험입니다.** 원본이 쓰는 글꼴이 이 PC에 없으면 대체 글꼴로 열립니다. 글자 너비가
+  달라져 줄바꿈과 넘침이 원본과 다르게 보이고, 내보낸 PDF도 그만큼 달라집니다. 화면에 경고로 띄웁니다.
+- INDD 변환은 indd-utils가 합니다. 자체 측정으로 스토리 37,156개 중 37,153개가 글자까지 일치하고
+  변환 실패는 0건이지만, 복잡한 실무 파일은 레이아웃이 어긋날 수 있습니다. **올린 원본은 그대로 두고
+  건드리지 않습니다.**
+- 표 안의 글자는 아직 고치지 않습니다.
+- MCP는 **의뢰 하나에 프로세스 하나**를 씁니다. 열린 문서가 서버 전체의 상태라 두 의뢰가 같이 돌면
+  서로의 문서를 덮어씁니다. 시작에 1초쯤 걸립니다.
+- 파일 접근은 `--automation-read-root`/`--write-root`로 의뢰 폴더에 가둡니다. 읽기는 올린 원본이 있는
+  폴더와 작업 폴더만, 쓰기는 작업 폴더만입니다.
 
 ## 공개 배포
 

@@ -8,6 +8,9 @@ export type Issue = {
   rect: number[] | null; // 페이지 좌상단 기준 [x0,y0,x1,y1] (pt)
   source: "rule" | "heuristic" | "proofread";
   metrics?: ColorMetrics; // 색 차이 측정값 (RGB 이미지)
+  // 기계가 그대로 적용할 수 있는 교정(교정 에이전트의 제안). 원본 파일에서 이 글자를 찾아 바꾼다.
+  // 사람이 판단해야 하는 항목(여백 부족, 수치 불일치 등)에는 없다 — 그래서 선택이다.
+  edit?: { original: string; suggestion: string };
   heat?: { w: number; h: number; rgba: Uint8ClampedArray }; // ΔE 지도
 };
 export type PageInfo = { w: number; h: number };
