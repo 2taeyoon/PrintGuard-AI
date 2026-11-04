@@ -43,26 +43,62 @@ export function subscribeOrch(fn: () => void): () => void {
 export const orchBuiltSnapshot = () => ORCH_BUILT;
 const trimUrl = (s: string) => s.trim().replace(/\/+$/, "");
 
-/* ---------- 이 브라우저를 가리키는 열쇠 ----------
-   에이전트는 PC 한 대인데 공개 주소로 누구나 들어온다. 그래서 오케스트레이터는 이 값이 붙은
-   요청에만 그 브라우저가 넣은 의뢰를 돌려준다. 로그인이 아니라 열쇠라서, 지우면 지난 의뢰는
-   다시 못 본다(남이 볼 일도 없다). 서버로 가는 것은 이 임의의 값뿐이고 누구인지는 담기지 않는다. */
-const CLIENT_KEY = "pg.client";
-let cid: string | null = null;
-const rand = () => (globalThis.crypto?.randomUUID?.() ?? `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`);
+/* ---------- 이 세션의 토큰 ----------
+   에이전트는 PC 한 대인데 공개 주소로 누구나 들어온다. 그래서 오케스트레이터는 토큰 안의
+   주인이 맞는 의뢰만 돌려준다. **로그인이 아니다** — 누구인지는 묻지도 담지도 않는다.
 
-export function clientId(): string {
-  if (cid === null) {
-    if (typeof window === "undefined") return "";   // 서버 렌더에서는 열쇠가 없다
-    try {
-      cid = localStorage.getItem(CLIENT_KEY) ?? "";
-      if (!cid) { cid = rand(); localStorage.setItem(CLIENT_KEY, cid); }
-    } catch { cid = rand(); }                       // 저장을 막아 둔 브라우저 — 이 탭에서만 쓰는 값
-  }
-  return cid;
+   전에는 이 값을 브라우저가 `crypto.randomUUID()`로 스스로 만들어 `localStorage`에 넣어 두었다.
+   서버가 발급하지 않으니 기한도 회수도 없고, 자격증명이 영구 저장소에 남아 스크립트 하나가
+   새면 그 브라우저의 지난 의뢰가 영구히 열렸다. 지금은 서버가 기한을 붙여 발급하고(`POST
+   /auth/session`), 브라우저는 **`sessionStorage`**에만 둔다 — 새로 고쳐도 남고 탭을 닫으면
+   사라지는 수명이라 이 값에 딱 맞는다. 탭을 닫으면 지난 의뢰는 다시 못 본다(남도 못 본다). */
+const TOKEN_KEY = "pg.session";
+let tok: string | null = null;
+let minting: Promise<string> | null = null;
+
+const stored = () => { try { return sessionStorage.getItem(TOKEN_KEY) ?? ""; } catch { return ""; } };
+
+/** 토큰을 버린다(만료되었을 때. 다음 요청에서 새로 받는다). */
+export function forgetSession(): void {
+  tok = null;
+  try { sessionStorage.removeItem(TOKEN_KEY); } catch { /* 저장을 막아 둔 브라우저 */ }
 }
-/** 모든 오케스트레이터 요청에 붙인다. 빠뜨리면 그 요청은 아무 의뢰도 못 본다. */
-const H = (extra: Record<string, string> = {}): Record<string, string> => ({ "X-PG-Client": clientId(), ...extra });
+
+async function mintSession(): Promise<string> {
+  const r = await fetch(`${orchUrl()}/auth/session`, { method: "POST" });
+  // 이 기능이 생기기 전에 켠 에이전트는 이 주소를 모른다. '세션 오류'로 뭉개면 아무도 못 고친다
+  if (r.status === 404) throw new Error("에이전트가 옛 버전입니다. 에이전트를 돌리는 PC에서 다시 켜 주세요");
+  if (!r.ok) throw new Error(`세션을 받지 못했습니다(${r.status})`);
+  const t = (await r.json())?.data?.token;
+  if (typeof t !== "string" || !t) throw new Error("세션을 받지 못했습니다");
+  tok = t;
+  try { sessionStorage.setItem(TOKEN_KEY, t); } catch { /* 저장을 막아 둔 브라우저 — 이 탭에서만 */ }
+  return t;
+}
+
+/** 지금 쓸 토큰. 없으면 받아 온다. 동시에 여러 요청이 와도 발급은 한 번만 한다. */
+async function token(): Promise<string> {
+  if (tok) return tok;
+  const s = stored();
+  if (s) { tok = s; return s; }
+  if (!minting) {
+    minting = mintSession();
+    void minting.catch(() => undefined).then(() => { minting = null; });
+  }
+  return minting;
+}
+
+/** 토큰을 붙여 오케스트레이터를 부른다. 만료되면(401) **한 번만** 새로 받아 다시 부른다.
+ *  이 재시도가 없으면 탭을 오래 열어 둔 사람은 모든 화면이 빈 채로 멈춘다. */
+async function call(path: string, init: RequestInit = {}, extra: Record<string, string> = {}): Promise<Response> {
+  const go = async () => fetch(`${orchUrl()}${path}`, {
+    ...init, headers: { ...extra, Authorization: `Bearer ${await token()}` },
+  });
+  const r = await go();
+  if (r.status !== 401) return r;
+  forgetSession();
+  return go();
+}
 export const isLocalOrch = (u: string) => /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:|\/|$)/.test(u);
 /** 에이전트가 내 PC가 아니라 다른 서버에 있는가(공개 배포·터널). 화면 문구와 기본 모드가 달라진다. */
 export const hostedOrch = () => !isLocalOrch(orchUrl());
@@ -86,16 +122,16 @@ export async function orchestratorUp(): Promise<boolean> {
   try { return (await fetch(`${orchUrl()}/health`, { signal: AbortSignal.timeout(ms) })).ok; } catch { return false; }
 }
 export const listAgents = async () => j<Record<string, AgentInfo>>(await fetch(`${orchUrl()}/agents`));
-export const listLogs = async (ctx?: string) => j<LogRow[]>(await fetch(`${orchUrl()}/logs${ctx ? `?context_id=${encodeURIComponent(ctx)}` : ""}`, { headers: H() }));
-export const getJob = async (ctx: string) => j<JobView>(await fetch(`${orchUrl()}/jobs/${ctx}`, { headers: H() }));
+export const listLogs = async (ctx?: string) => j<LogRow[]>(await call(`/logs${ctx ? `?context_id=${encodeURIComponent(ctx)}` : ""}`));
+export const getJob = async (ctx: string) => j<JobView>(await call(`/jobs/${ctx}`));
 export const answerJob = async (ctx: string, value: string) =>
-  j<unknown>(await fetch(`${orchUrl()}/jobs/${ctx}/answer`, { method: "POST", headers: H({ "Content-Type": "application/json" }), body: JSON.stringify({ value }) }));
+  j<unknown>(await call(`/jobs/${ctx}/answer`, { method: "POST", body: JSON.stringify({ value }) }, { "Content-Type": "application/json" }));
 
 export async function createJob(file: File, options: Record<string, unknown>): Promise<{ context_id: string; duplicate: boolean }> {
   const fd = new FormData();
   fd.append("file", file);
   fd.append("options", JSON.stringify(options));
-  return j(await fetch(`${orchUrl()}/jobs`, { method: "POST", headers: H(), body: fd }));
+  return j(await call("/jobs", { method: "POST", body: fd }));
 }
 
 /** 끝나거나(completed·failed) 질문이 생길 때까지 상태를 받아 온다. 진행 중에는 onStep으로 단계를 알린다. */
@@ -142,7 +178,7 @@ export function toScreen(v: JobView): { analysis: Analysis; risks: (Risk & { hit
   return { analysis, risks, hits, texts: pf.texts ?? [] };
 }
 export type JobRow = { context_id: string; status: string; filename: string; created: number };
-export const listJobs = async () => j<JobRow[]>(await fetch(`${orchUrl()}/jobs`, { headers: H() }));
+export const listJobs = async () => j<JobRow[]>(await call("/jobs"));
 
 // ---- 6단계: 추적(공통 로그의 요청↔결과 짝으로 만든 구간·관문·사건). 로그에 있는 것만 담긴다 ----
 export type TraceSpan = { agent: string; skill: string | null; requester: string | null; start_ms: number; end_ms: number | null; ms: number | null;
@@ -152,7 +188,7 @@ export type TraceGate = { at_ms: number; kind: string; source: string; requester
 export type Trace = { context_id: string; t0: string | null; total_ms: number; spans: TraceSpan[]; gates: TraceGate[];
   events: { at_ms: number; kind: string; source: string; skill: string | null; status: string | null; outcome: string | null }[];
   agents: { agent: string; calls: number; ms: number; open: number }[]; lines: number };
-export const getTrace = async (ctx: string) => j<Trace>(await fetch(`${orchUrl()}/trace?context_id=${encodeURIComponent(ctx)}`, { headers: H() }));
+export const getTrace = async (ctx: string) => j<Trace>(await call(`/trace?context_id=${encodeURIComponent(ctx)}`));
 
 /** 에이전트 모드의 가이드 검색: guide 에이전트가 찾은 절을 앱 형식(Hit)으로 바꾼다 */
 export async function searchGuideViaAgent(q: string, k = 5): Promise<Hit[]> {
@@ -164,7 +200,7 @@ export async function searchGuideViaAgent(q: string, k = 5): Promise<Hit[]> {
 // ---- 보고서(A 등급). 상태를 바꾸는 일은 safety 관문을 거친다 ----
 export type AgentReply = { status: string; outcome: string | null; output: Record<string, any>; question: Record<string, any> | null }; // eslint-disable-line @typescript-eslint/no-explicit-any
 const post = async <T,>(path: string, body?: unknown, headers: Record<string, string> = {}) =>
-  j<T>(await fetch(`${orchUrl()}${path}`, { method: "POST", headers: H({ "Content-Type": "application/json", ...headers }), body: JSON.stringify(body ?? {}) }));
+  j<T>(await call(path, { method: "POST", body: JSON.stringify(body ?? {}) }, { "Content-Type": "application/json", ...headers }));
 export const compileReport = (ctx: string) => post<AgentReply>(`/jobs/${ctx}/report`);
 
 // ---- 인디자인 원본 수정(DesignCraft MCP). 검수는 PDF로 하지만 고칠 수 있는 것은 원본뿐이다 ----
@@ -172,7 +208,7 @@ export type McpStatus = {
   available: boolean; reason?: string; hint?: string; cli?: string | null; version?: string; mode?: string;
   protocol?: string; server?: string; server_version?: string; tools?: string[];
 };
-export const mcpStatus = async () => j<McpStatus>(await fetch(`${orchUrl()}/designcraft/status`, { headers: H() }));
+export const mcpStatus = async () => j<McpStatus>(await call("/designcraft/status"));
 
 export type PreflightIssue = { severity: string; kind: string; message: string; page: number | null };
 export type SourceView = {
@@ -192,7 +228,7 @@ export async function uploadSource(files: File[] | FileList): Promise<SourceView
   // DesignCraft가 Links/에서 사진을 찾는다.
   for (const f of list) fd.append("files", f);
   fd.append("paths", JSON.stringify(list.map((f) => f.webkitRelativePath || f.name)));
-  return j<SourceView>(await fetch(`${orchUrl()}/designcraft/source`, { method: "POST", headers: H(), body: fd }));
+  return j<SourceView>(await call("/designcraft/source", { method: "POST", body: fd }));
 }
 
 export type ApplyResult = {
@@ -207,11 +243,12 @@ export const applyFixes = (ctx: string, fixes: Fix[]) =>
   post<AgentReply>(`/designcraft/${ctx}/apply`, { fixes });
 
 /** 작업 폴더의 결과물 주소(전후 PNG, 고친 PDF/IDML). 주인만 받을 수 있다. */
-export const dcFileUrl = (ctx: string, name: string) => `${orchUrl()}/designcraft/${ctx}/file/${encodeURIComponent(name)}`;
+const dcFilePath = (ctx: string, name: string) => `/designcraft/${ctx}/file/${encodeURIComponent(name)}`;
+export const dcFileUrl = (ctx: string, name: string) => `${orchUrl()}${dcFilePath(ctx, name)}`;
 
 /** 이미지·파일은 <img src>로 바로 못 건다 — 열쇠 헤더가 필요해서 받아서 blob URL로 바꾼다. */
 export async function dcFileBlob(ctx: string, name: string): Promise<string> {
-  const r = await fetch(dcFileUrl(ctx, name), { headers: H() });
+  const r = await call(dcFilePath(ctx, name));
   if (!r.ok) throw new Error(`${name}을 받지 못했습니다(${r.status})`);
   return URL.createObjectURL(await r.blob());
 }

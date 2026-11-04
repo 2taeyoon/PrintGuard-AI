@@ -1,6 +1,23 @@
-"""PrintGuard MCP 서버(FastMCP, stdio) — 밖의 LLM 클라이언트가 PrintGuard 에이전트를 쓰게 한다.
+"""PrintGuard MCP 서버 — 밖의 LLM 클라이언트가 PrintGuard 검수를 쓰게 한다.
 
-등록 예: `claude mcp add printguard -- <dev python> -m pg_agents.mcp_server` (cwd `agents/`). 먼저 `python run_agents.py`로 에이전트를 켠다.
+등록 예(같은 PC, stdio): `claude mcp add printguard -- <dev python> -m pg_agents.mcp_server` (cwd `agents/`).
+먼저 `python run_agents.py`로 에이전트를 켠다.
+
+전송 두 가지 — `PG_MCP_TRANSPORT`
+    `stdio`(기본)
+        MCP 클라이언트가 이 프로세스를 **직접 띄운다**. 띄운 사람이 곧 주인이라 따로 인증이
+        없다(파이프 양쪽이 같은 PC의 같은 사용자다). 오케스트레이터에 낼 토큰은 서명 비밀
+        파일을 읽어 스스로 만든다 — 그 파일을 읽을 수 있다는 것이 이 PC의 주인이라는 뜻이다.
+    `streamable-http`·`sse`
+        주소로 열린다. 그러면 **누가 부르는지 알 수 없으므로** Bearer 토큰을 요구한다
+        (`token_verifier`). 토큰은 `python -m pg_agents.mktoken`으로 미리 발급해 둔 `mcp`
+        종류만 받고, 받은 토큰을 오케스트레이터에 **그대로 넘긴다** — 조회 전용으로 발급한
+        토큰이 중간에서 쓰기 권한을 얻는 일이 없어야 한다.
+
+주소로 열 때 달라지는 것(이것 때문에 stdio와 같은 코드를 쓸 수 없다)
+- `check_pdf(path=…)`는 **막힌다.** path는 '이 서버 PC의 파일'을 뜻해서, 부르는 쪽이 남의 PC
+  아무 파일이나 고르게 된다. 주소로 들어온 요청은 `content_base64`로 파일을 **올려야** 한다.
+- `compile_report`는 파일을 남기는 일(A 등급)이라 **쓰기 권한이 있는 토큰**만 통한다.
 
 규칙(에이전트 쪽과 같다)
 - 요청자 이름은 `mcp`. Agent Card의 allowed_requesters에 mcp가 적힌 skill만 부를 수 있다(아니면 FORBIDDEN_SKILL을 그대로 돌려준다).
@@ -11,7 +28,11 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
+import hashlib
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -25,6 +46,7 @@ except ModuleNotFoundError:  # mcp 1.x
     from mcp.server.fastmcp import FastMCP as McpServer
     from mcp.server.fastmcp.exceptions import ToolError
 
+from .auth import mint, secret, verify
 from .client import call_agent, new_meta
 from .config import agent_url, ensure_dirs, load_env_files, set_agent_name
 from .contracts import AgentRequest
@@ -36,8 +58,91 @@ MAX_PDF = 64 * 1024 * 1024
 DROP_KEYS = {"heat", "rgba"}  # 색 차이 지도 비트맵: LLM에 쓸모가 없고 크다
 MAX_STR = 1200
 MAX_LIST = 200
+LOCAL = ("127.0.0.1", "localhost", "[::1]")
 
-mcp = McpServer("printguard", instructions=__doc__)
+# 전송 방식은 서버를 **만들기 전에** 알아야 한다 — 인증 설정은 MCPServer 생성 인자이고,
+# 생성자가 "auth와 token_verifier는 둘 다 있거나 둘 다 없어야 한다"를 검사한다.
+# MCP 클라이언트가 띄우면 터미널 환경변수가 없으니 .env를 먼저 올린다.
+load_env_files()
+TRANSPORT = os.environ.get("PG_MCP_TRANSPORT", "stdio").strip() or "stdio"
+PUBLIC = os.environ.get("PG_MCP_PUBLIC_URL", "").strip().rstrip("/")
+
+
+def _verifier() -> Any:
+    """주소로 열 때 쓰는 Bearer 검증자. 우리가 발급한 `mcp` 종류만 받는다.
+
+    브라우저 세션 토큰(`browser`)은 받지 않는다 — 그쪽은 아무 심사 없이 내주는 짧은 값이라,
+    주소로 열린 MCP의 자격증명으로 쓰이면 안 된다.
+    """
+    from mcp.server.auth.provider import AccessToken
+
+    class PgVerifier:
+        async def verify_token(self, token: str) -> AccessToken | None:
+            c = verify(token)
+            if c is None or c.kind != "mcp":
+                return None
+            return AccessToken(token=token, client_id=c.label or "mcp", subject=c.subject,
+                               scopes=["read", "write"] if c.write else ["read"], expires_at=c.expires)
+
+    return PgVerifier()
+
+
+def _auth_settings() -> Any:
+    """stdio면 None(인증 없음 — 띄운 사람이 주인). 주소로 열면 Bearer를 요구한다.
+
+    공개 주소를 모르면 None을 돌려주고, `main()`이 그때 설명과 함께 멈춘다. 여기서 바로
+    터뜨리면 이 모듈을 **불러오기만 해도**(테스트 등) 죽는다.
+    """
+    if TRANSPORT == "stdio" or not PUBLIC:
+        return None
+    from mcp.server.auth.settings import AuthSettings
+    return AuthSettings(issuer_url=PUBLIC, resource_server_url=PUBLIC, required_scopes=["read"])
+
+
+AUTH = _auth_settings()
+mcp = McpServer("printguard", instructions=__doc__,
+                token_verifier=_verifier() if AUTH else None, auth=AUTH)
+
+
+# ---------- 누가 부르는가 ----------
+def _caller() -> Any:
+    """주소로 들어온 요청이면 검증된 토큰, stdio면 None. mcp 1.x에는 이 개념이 없다."""
+    try:
+        from mcp.server.auth.middleware.auth_context import get_access_token
+    except ModuleNotFoundError:
+        return None
+    try:
+        return get_access_token()
+    except Exception:  # noqa: BLE001  — 인증 없는 전송에서는 문맥 자체가 없다
+        return None
+
+
+def _orch_is_local() -> bool:
+    url = agent_url("orchestrator")
+    return any(f"//{h}" in url for h in LOCAL)
+
+
+def _token() -> str:
+    """오케스트레이터에 낼 토큰.
+
+    주소로 들어온 요청이면 **부른 쪽의 토큰을 그대로** 넘긴다 — 그래야 조회 전용 토큰이
+    이 서버를 거치면서 쓰기 권한을 얻는 일이 없다. stdio면 띄운 사람이 주인이므로 서명
+    비밀을 읽어 스스로 만든다. subject를 비밀에서 뽑아 두어 다시 켜도 같은 주인이 된다
+    (그래야 지난 의뢰가 계속 보인다).
+    """
+    at = _caller()
+    if at is not None:
+        return str(at.token)
+    env = os.environ.get("PG_TOKEN", "").strip()
+    if env:
+        return env
+    if not _orch_is_local():
+        raise ToolError(
+            f"오케스트레이터가 다른 PC({agent_url('orchestrator')})인데 토큰이 없습니다. "
+            "에이전트를 돌리는 PC에서 `python -m pg_agents.mktoken --label <이름>`으로 받아 "
+            "이 클라이언트의 PG_TOKEN에 넣어 주세요")
+    sub = hashlib.sha256(secret() + b"mcp-local").hexdigest()[:32]
+    return mint("mcp", subject=sub, hours=1, write=True, label="mcp-local")
 
 
 # ---------- 공통 ----------
@@ -79,11 +184,15 @@ class JobLike:
 async def _orch(method: str, path: str, *, timeout: float = 30, **kw: Any) -> Any:
     """오케스트레이터 HTTP API. 닿지 못하면 켜는 방법을 알려 준다."""
     url = f"{agent_url('orchestrator')}{path}"
+    headers = {"Authorization": f"Bearer {_token()}", **(kw.pop("headers", None) or {})}
     try:
         async with httpx.AsyncClient(timeout=timeout) as c:
-            r = await c.request(method, url, **kw)
+            r = await c.request(method, url, headers=headers, **kw)
     except httpx.HTTPError as e:
         raise ToolError(f"오케스트레이터({url})에 닿지 못했습니다: {type(e).__name__}. agents 폴더에서 `python run_agents.py`로 켜세요") from e
+    if r.status_code in (401, 403):
+        raise ToolError(f"오케스트레이터가 토큰을 거절했습니다({r.status_code}): {r.text[:200]}. "
+                        "`python -m pg_agents.mktoken`으로 다시 받으세요(쓰기가 필요하면 --write)")
     if r.status_code != 200:
         raise ToolError(f"오케스트레이터 {r.status_code}: {r.text[:200]}")
     return r.json().get("data")
@@ -129,22 +238,46 @@ def _summary(job: dict[str, Any]) -> dict[str, Any]:
 
 # ---------- 읽기 도구 ----------
 @mcp.tool()
-async def check_pdf(path: str, options: dict[str, Any] | None = None, wait_seconds: float = 180) -> dict[str, Any]:
+async def check_pdf(path: str | None = None, content_base64: str | None = None, filename: str = "upload.pdf",
+                    options: dict[str, Any] | None = None, wait_seconds: float = 180) -> dict[str, Any]:
     """PDF를 검수에 맡기고 끝날 때까지(또는 질문이 생길 때까지) 기다린다.
 
-    path: 이 컴퓨터의 PDF 경로. options 예: {"paper_id":"art","width_mm":148,"height_mm":210,"bleed_mm":3,"finish":"none","proofread":true}.
+    파일을 주는 길이 둘이고 **하나만** 준다.
+    - path: 이 서버 PC의 PDF 경로. 같은 PC에서 stdio로 띄웠을 때만 쓸 수 있다.
+    - content_base64: PDF 바이트를 base64로. 주소로 열린 서버에는 이 길만 열려 있다 — path는
+      '서버 PC의 파일'을 뜻해서, 멀리서 부르는 쪽이 남의 PC 파일을 고르게 되기 때문이다.
+      filename은 화면·보고서에 적히는 이름이다(경로가 아니다).
+
+    options 예: {"paper_id":"art","width_mm":148,"height_mm":210,"bleed_mm":3,"finish":"none","proofread":true}.
     종이·후가공을 모르면(paper_id "unknown"·finish 없음) status가 input-required로 멈추고 question이 온다 → answer_question으로 답한다.
     """
-    p = Path(path).expanduser()
-    if not p.is_file():
-        raise ToolError(f"파일이 없습니다: {p}")
-    size = p.stat().st_size
-    if size > MAX_PDF:
-        raise ToolError(f"PDF가 너무 큽니다({size:,}바이트, 한도 {MAX_PDF:,})")
-    data = p.read_bytes()
+    if bool(path) == bool(content_base64):
+        raise ToolError("path와 content_base64 중 하나만 주세요")
+
+    if path:
+        if _caller() is not None:
+            raise ToolError("주소로 열린 서버에서는 path를 쓸 수 없습니다(서버 PC의 파일을 고르는 뜻이 됩니다). "
+                            "PDF를 content_base64로 올려 주세요")
+        p = Path(path).expanduser()
+        if not p.is_file():
+            raise ToolError(f"파일이 없습니다: {p}")
+        size = p.stat().st_size
+        if size > MAX_PDF:
+            raise ToolError(f"PDF가 너무 큽니다({size:,}바이트, 한도 {MAX_PDF:,})")
+        data, name = p.read_bytes(), p.name
+    else:
+        try:
+            data = base64.b64decode(content_base64 or "", validate=True)
+        except (binascii.Error, ValueError) as e:
+            raise ToolError("content_base64가 base64가 아닙니다") from e
+        if len(data) > MAX_PDF:
+            raise ToolError(f"PDF가 너무 큽니다({len(data):,}바이트, 한도 {MAX_PDF:,})")
+        # 이름은 바깥에서 온 값이다. 경로로 쓰지 않지만 파일명 자리에 들어가니 조각을 걷어낸다
+        name = Path(filename or "upload.pdf").name or "upload.pdf"
+
     if not data.startswith(b"%PDF"):
         raise ToolError("PDF 파일이 아닙니다")
-    r = await _orch("POST", "/jobs", timeout=60, files={"file": (p.name, data, "application/pdf")},
+    r = await _orch("POST", "/jobs", timeout=60, files={"file": (name, data, "application/pdf")},
                     data={"options": json.dumps(options or {}, ensure_ascii=False)})
     ctx = r["context_id"]
     return {"context_id": ctx, "duplicate": bool(r.get("duplicate")), **_summary(await _wait(ctx, wait_seconds))}
@@ -210,17 +343,35 @@ async def search_guide(question: str, k: int = 3) -> dict[str, Any]:
 # ---------- 쓰기 도구(그 에이전트가 safety 관문을 거친다) ----------
 @mcp.tool()
 async def compile_report(context_id: str) -> dict[str, Any]:
-    """검수 결과를 마크다운 보고서로 묶어 파일로 남긴다(A 등급: safety를 거친다). ΔE는 report가 color로 다시 계산해 대조한다."""
+    """검수 결과를 마크다운 보고서로 묶어 파일로 남긴다(A 등급: safety를 거친다). ΔE는 report가 color로 다시 계산해 대조한다.
+
+    파일을 남기는 일이라 주소로 열린 서버에서는 **쓰기 권한이 있는 토큰**만 통한다
+    (`python -m pg_agents.mktoken --write`). stdio로 띄웠으면 띄운 사람이 주인이라 그냥 된다.
+    """
+    at = _caller()
+    if at is not None and "write" not in (getattr(at, "scopes", None) or []):
+        raise ToolError("이 토큰은 조회만 할 수 있습니다. 보고서를 남기려면 "
+                        "`python -m pg_agents.mktoken --write`로 받은 토큰이 필요합니다")
     j = JobLike(await _job(context_id))
     r = await _call("report", "compile_report", report_input(j), context_id=context_id)
     return {"context_id": context_id, **r}
 
 
 def main() -> None:
-    load_env_files()  # MCP 클라이언트가 띄우면 터미널 환경변수가 없다
     set_agent_name(NAME)
     ensure_dirs()
-    mcp.run()
+    if TRANSPORT == "stdio":
+        mcp.run()
+        return
+    # 주소로 여는 경우. 인증 없이는 띄우지 않는다 — 터널에 올리는 순간 누구나 검수를 돌리고
+    # 남의 의뢰 번호를 찍어 볼 수 있다. stdio와 달리 '띄운 사람이 주인'이 성립하지 않는다.
+    if AUTH is None:
+        raise SystemExit(
+            f"PG_MCP_TRANSPORT={TRANSPORT}로 열려면 PG_MCP_PUBLIC_URL이 필요합니다"
+            " (이 서버의 공개 주소. 인증을 걸지 않은 채로는 띄우지 않습니다).\n"
+            "먼저 `python -m pg_agents.mktoken --label <이름>`으로 토큰을 받아 두세요.")
+    mcp.run(transport=TRANSPORT, host=os.environ.get("PG_MCP_HOST", "127.0.0.1"),
+            port=int(os.environ.get("PG_MCP_PORT", "8710")))
 
 
 if __name__ == "__main__":

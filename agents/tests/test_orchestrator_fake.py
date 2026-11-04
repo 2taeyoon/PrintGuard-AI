@@ -7,6 +7,7 @@ os.environ["PG_FAKE_AGENTS"] = "1"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
+from pg_agents.auth import mint  # noqa: E402
 from pg_agents.orchestrator.app import app  # noqa: E402
 
 PDF = b"%PDF-1.4\n% fake\n"
@@ -16,9 +17,9 @@ KEY = "test-browser"
 
 
 def client(key: str = KEY) -> TestClient:
-    """의뢰의 주인은 브라우저가 들고 오는 열쇠(X-PG-Client)로 가린다. 열쇠 없이 부르면 404가 맞다.
-    그래서 테스트도 실제 브라우저처럼 열쇠를 달고 부른다."""
-    return TestClient(app, headers={"X-PG-Client": key})
+    """의뢰의 주인은 **서버가 발급해 서명한** 토큰 속 subject로 가린다. 토큰 없이 부르면 404가 맞다.
+    그래서 테스트도 실제 브라우저처럼 토큰을 달고 부른다 — subject를 바꿔 '다른 브라우저'를 만든다."""
+    return TestClient(app, headers={"Authorization": f"Bearer {mint('browser', subject=key)}"})
 
 
 def wait(c, ctx, until, timeout=5):
@@ -92,7 +93,7 @@ def test_color_input_passes_measured_paper_white_only_when_given():
 
 
 def test_other_browser_cannot_see_or_answer_my_job():
-    """열쇠가 다르면 남의 의뢰는 없는 것처럼 보여야 한다(목록·상세·답·로그 모두)."""
+    """토큰의 주인이 다르면 남의 의뢰는 없는 것처럼 보여야 한다(목록·상세·답·로그 모두)."""
     with client("alice") as a:
         r = a.post("/jobs", files={"file": ("a.pdf", PDF + b"iso", "application/pdf")},
                    data={"options": json.dumps({"finish": "unknown"})}).json()["data"]
@@ -104,5 +105,5 @@ def test_other_browser_cannot_see_or_answer_my_job():
         assert b.post(f"/jobs/{ctx}/answer", json={"value": "none"}).status_code == 404
         assert b.get("/jobs").json()["data"] == []
         assert b.get("/logs", params={"context_id": ctx}).json()["data"] == []
-    with client() as c:  # 또 다른 열쇠에도 안 보인다
+    with client() as c:  # 또 다른 토큰에도 안 보인다
         assert c.get(f"/jobs/{ctx}").status_code == 404

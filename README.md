@@ -148,18 +148,39 @@ cloudflared service uninstall     # 등록 해제
 
 **서비스가 돌고 있으면 `cloudflared tunnel run`을 따로 치지 마세요.** 같은 터널에 두 프로세스가 붙어 요청이 둘로 갈립니다. 긴가민가하면 `tasklist | findstr cloudflared`로 먼저 셉니다.
 
-테스트: `python -m pytest agents -q` (65개)
+테스트: `python -m pytest agents -q` (100개)
 타입·린트·빌드: `cd frontend && npx tsc --noEmit && npx eslint app lib && npm run build`
 
 ### MCP (선택)
 
-밖의 LLM 클라이언트가 에이전트를 쓰게 합니다. 에이전트를 먼저 켭니다.
+밖의 LLM 클라이언트가 검수를 쓰게 합니다. 에이전트를 먼저 켭니다.
 
 ```bash
 claude mcp add printguard -- "$(conda run -n dev python -c 'import sys;print(sys.executable)')" -m pg_agents.mcp_server
 ```
 
 cwd는 `agents/`여야 합니다. 읽기 도구 7개와 쓰기 도구 1개(보고서 작성)를 내보냅니다. 쓰기 도구는 safety 관문을 거치고, 사람 승인(C 등급)은 MCP가 대신할 수 없습니다 — 웹 화면에서 사람이 승인합니다.
+
+**같은 PC라면 토큰이 필요 없습니다.** MCP 클라이언트가 이 프로세스를 직접 띄우고(stdio), 서명 비밀
+파일을 읽을 수 있다는 것이 곧 이 PC의 주인이라는 뜻이라, 오케스트레이터에 낼 토큰을 스스로 만듭니다.
+
+**다른 PC에서 터널을 넘어 붙일 때는** 에이전트를 돌리는 PC에서 토큰을 발급해 옮깁니다.
+
+```bash
+cd agents
+python -m pg_agents.mktoken --label claude-desktop --days 90          # 조회만
+python -m pg_agents.mktoken --label cursor --days 30 --write          # 보고서 작성까지
+```
+
+발급한 값은 **다시 볼 수 없습니다**(서버가 저장하지 않고 서명만 확인합니다). 한꺼번에 무효로 만들려면
+`agents/.data/auth_secret`을 지우고 다시 켭니다. 토큰은 클라이언트의 `PG_TOKEN`에, 주소는
+`PG_ORCHESTRATOR_URL`에 넣습니다.
+
+MCP 서버 자체를 주소로 열 수도 있습니다(`PG_MCP_TRANSPORT=streamable-http`, `PG_MCP_PUBLIC_URL` 필수).
+그때는 공개 주소에 놓이므로 **인증 없이는 뜨지 않고**, 받은 Bearer 토큰을 오케스트레이터에 그대로
+넘깁니다 — 조회 전용 토큰이 중간에서 쓰기 권한을 얻는 일이 없게 합니다. 또 `check_pdf(path=…)`가
+막히고 `content_base64`로 올려야 합니다: `path`는 '서버 PC의 파일'을 뜻해서, 멀리서 부르는 쪽이 남의
+PC 파일을 고르는 길이 되기 때문입니다.
 
 ## 인디자인 원본 수정 (DesignCraft MCP)
 
@@ -263,6 +284,28 @@ PG_DESIGNCRAFT_CLI=D:\tools\designcraft\designcraft-cli.exe
   서로의 문서를 덮어씁니다. 시작에 1초쯤 걸립니다.
 - 파일 접근은 `--automation-read-root`/`--write-root`로 의뢰 폴더에 가둡니다. 읽기는 올린 원본이 있는
   폴더와 작업 폴더만, 쓰기는 작업 폴더만입니다.
+
+### 같은 MCP를 클로드·커서에 직접 붙이기
+
+화면의 1번(DesignCraft MCP 연결)은 **DesignCraft 자체 기능**이고, 2·3·4는 그 위에 PrintGuard가 올린
+화면입니다. 그래서 같은 MCP를 AI 코딩 도구에 바로 붙여 대화로 고치게 할 수도 있습니다 — 도구 26개가
+그대로 붙어서 `file.openIdml` → `find.change` → `file.exportPdf`를 스스로 합니다.
+
+```bash
+claude mcp add designcraft -- designcraft-cli mcp \
+  --automation-read-root  C:\work\idml \
+  --automation-write-root C:\work\out
+```
+
+> **두 폴더를 빼면 디스크 전체가 열립니다.** 문서의 "Without either flag nothing changes"는 *가두지
+> 않는다*는 뜻입니다. 실제로 확인해 보니, 플래그 없이 띄운 MCP가 임의의 폴더에 있는 IDML을 읽고
+> `%LOCALAPPDATA%\Temp`에 PNG를 **썼습니다**. 그래서 `mcp_client.py`는 두 폴더가 없으면 프로세스를
+> 아예 띄우지 않습니다.
+
+직접 붙이면 이 저장소가 하던 것들은 빠집니다 — 같은 글자가 여러 쪽에 있을 때 쪽으로 가리기, 한 건
+고칠 때마다 다시 찾기(한글은 한 자가 3바이트라 한 번 바꾸면 뒤쪽 바이트 위치가 모두 밀립니다),
+항목별 실패 이유, safety 관문, 고친 뒤 preflight 재검사. 한두 건이면 직접 붙이는 편이 빠르고, 검수
+결과 전부를 그대로 반영할 때는 화면 쪽이 안전합니다.
 
 ## 공개 배포
 
@@ -372,7 +415,8 @@ LangSmith로 나가는 것은 공통 로그로 만든 추적(에이전트·skill
 - 교정은 제안만 하며 자동으로 고치지 않습니다. 합성 평가셋(문서 60개)에서 기본 조합(규칙+Kiwi 오타)은 재현율 60.3%·정밀도 99.5%, LLM을 더하면 98.1%·97.8%입니다(`gemini-3.5-flash-lite`, 2026-10-27). 규칙 기반 쪽은 오류를 넣는 규칙과 찾는 규칙이 겹쳐 재현율이 부풀어 있어 실제 원고로 다시 재야 합니다.
 - 기본값은 로컬 조합입니다. LLM을 켜면 PDF 본문이 외부 API로 나가므로(앱의 나머지 계산은 모두 기기 안) `PG_PROOF_METHODS`로 직접 켜야 합니다. LLM 교정기와 LangSmith 추적은 사용자가 `GEMINI_API_KEY`·`LANGSMITH_API_KEY`를 직접 넣을 때만 씁니다 — 키를 찾거나 읽지 않습니다.
 - 오케스트레이터의 의뢰 목록은 메모리에만 있어 재시작하면 사라집니다(safety 기록과 공통 로그는 SQLite에 남아 추적은 유지됩니다). 의뢰 목록이 사라지면 그 의뢰에 딸린 소통 기록도 화면에서 같이 사라집니다 — 누구 것인지 가릴 근거가 없어지기 때문입니다.
-- 의뢰와 소통 기록은 **그것을 넣은 브라우저에만** 보입니다. 에이전트는 PC 한 대인데 공개 주소로는 누구나 들어오므로, 브라우저가 처음 접속할 때 만든 임의의 값(`localStorage`의 `pg.client`)을 요청마다 보내고 오케스트레이터가 그 값이 맞는 의뢰만 돌려줍니다. 로그인이 아니라 열쇠입니다 — 브라우저 데이터를 지우면 지난 의뢰는 다시 못 보고, 대신 남에게도 보이지 않습니다. 업로드한 PDF 자체는 애초에 내려받을 수 있는 주소가 없습니다.
+- 의뢰와 소통 기록은 **그것을 넣은 탭에만** 보입니다. 에이전트는 PC 한 대인데 공개 주소로는 누구나 들어오므로, 오케스트레이터가 **서버에서 발급해 서명한** 토큰(`POST /auth/session`) 속 주인이 맞는 의뢰만 돌려줍니다. 로그인이 아닙니다 — 누구인지는 묻지도 담지도 않고, 하는 일은 남의 의뢰를 가리는 것뿐입니다. 브라우저는 이 토큰을 `sessionStorage`에만 두어 새로 고쳐도 남고 탭을 닫으면 사라집니다. 업로드한 PDF 자체는 애초에 내려받을 수 있는 주소가 없습니다.
+- 전에는 이 값을 브라우저가 `crypto.randomUUID()`로 **스스로** 만들어 `localStorage`에 영구히 두었습니다. 서버가 발급하지 않으니 기한도 회수도 없고, 자격증명이 영구 저장소에 남아 스크립트 하나가 새면 그 브라우저의 지난 의뢰가 영구히 열렸습니다. 지금은 서명이 맞지 않는 값은 통하지 않고(기한 기본 12시간), 발급 자체를 IP로 제한합니다 — 토큰을 바꿔 가며 동시 실행 한도를 넘기지 못하게.
 
 ## 데이터 출처
 

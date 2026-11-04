@@ -115,7 +115,7 @@ function SetupGuide({ reason, orch }: { reason: string; orch: string }) {
         <li className={step === 2 ? "on" : ""}>
           <b>에이전트 다시 켜기</b> — 설치한 뒤에는 꼭 다시 켜야 합니다(켤 때 CLI를 찾습니다).
           <Cmd note="저장소 루트에서. 창은 그대로 두세요">conda activate dev; python agents\run_agents.py</Cmd>
-          <span className="note">포트가 <b>10개</b>(8700~8709) 떠야 정상입니다.</span>
+          <span className="note">포트가 <b>9개</b>(8700~8706·8708·8709) 떠야 정상입니다.</span>
         </li>
         <li>
           <b>위 ‘다시 확인’ 누르기</b> — 서버 이름과 도구 수가 뜨면 끝입니다.
@@ -123,6 +123,35 @@ function SetupGuide({ reason, orch }: { reason: string; orch: string }) {
       </ol>
 
     </div>
+  );
+}
+
+/** 같은 MCP를 클로드·커서에 **직접** 붙이는 길. 이 화면을 거치지 않아도 되는 일이라 적어 둔다.
+ *  같이 적는 경고가 더 중요하다 — 가두는 플래그를 빼면 디스크 전체가 열린다(확인했다). */
+function DirectConnect() {
+  return (
+    <details className="dc_direct">
+      <summary>이 MCP를 클로드·커서에 직접 붙이려면</summary>
+      <p className="note">
+        1번이 DesignCraft 자체 기능이라, 같은 MCP를 AI 코딩 도구에 바로 붙여 대화로 고치게 할 수도 있습니다.
+        도구 26개가 그대로 붙어서 <code>file.openIdml</code> → <code>find.change</code> → <code>file.exportPdf</code>를
+        스스로 합니다. 아래 두 폴더는 <b>읽기·쓰기를 가두는 값</b>이니 본인 폴더로 바꿔 주세요.
+      </p>
+      <Cmd note="두 폴더를 반드시 같이 주세요">
+        claude mcp add designcraft -- designcraft-cli mcp --automation-read-root C:\work\idml --automation-write-root C:\work\out
+      </Cmd>
+      <p className="warn">
+        <b>두 폴더를 빼면 디스크 전체가 열립니다.</b> 문서의 “Without either flag nothing changes”는 <i>가두지 않는다</i>는
+        뜻입니다. 실제로 확인해 보니, 플래그 없이 띄운 MCP가 임의의 폴더에 있는 파일을 읽고 임의의 자리에 파일을 썼습니다.
+        그래서 PrintGuard는 두 폴더가 없으면 MCP를 <b>아예 띄우지 않습니다</b>.
+      </p>
+      <p className="note">
+        직접 붙이면 이 화면이 하던 것들은 빠집니다 — 같은 글자가 여러 쪽에 있을 때 <b>쪽으로 가리기</b>,
+        한 건 고칠 때마다 <b>다시 찾기</b>(한글은 한 자가 3바이트라 한 번 바꾸면 뒤쪽 위치가 모두 밀립니다),
+        항목별 실패 이유, 승인 관문, 고친 뒤 재검사. 한두 건이면 직접 붙이는 편이 빠르고,
+        검수 결과를 그대로 반영할 때는 아래 2·3·4가 안전합니다.
+      </p>
+    </details>
   );
 }
 
@@ -233,10 +262,18 @@ export default function FixPage() {
       <section className="panel dc_mcp">
         <div className="dc_head">
           <strong>1. DesignCraft MCP 연결</strong>
+          <span className="chip">DesignCraft 기능</span>
           <span className={`badge ${mcp?.available ? "ok" : "off"}`}>{mcpBusy ? "확인 중…" : mcp?.available ? "연결됨" : "연결 안 됨"}</span>
           <button type="button" className="pill" onClick={recheck} disabled={mcpBusy}>다시 확인</button>
         </div>
+        {/* 어디까지가 남의 기능이고 어디부터가 우리 화면인지 적어 둔다. 이걸 섞어 두면
+            'PrintGuard가 파일을 고친다'고 읽히는데, 고치는 것은 DesignCraft다. */}
+        <p className="note">
+          이 1번은 <b>DesignCraft가 제공하는 기능</b>입니다 — <code>designcraft-cli mcp</code>를 띄워 상태를 읽습니다.
+          아래 <b>2·3·4는 그 위에 PrintGuard가 올린 화면</b>이고, 글자를 실제로 고치고 내보내는 일은 어느 쪽이든 DesignCraft가 합니다.
+        </p>
         {mcp?.available === false && <SetupGuide reason={mcp.reason ?? ""} orch={orch} />}
+        <DirectConnect />
         {mcp === null && <div className="dc_why"><p>확인 중입니다.</p></div>}
         {mcp?.available && (
           <>
@@ -359,8 +396,14 @@ export default function FixPage() {
           }}>클립보드에서 붙여넣기</button>
           {paste && <button type="button" className="pill" onClick={() => setPaste("")}>비우기</button>}
         </div>
+        {/* 손으로 쓰는 칸이 아니라 **받는 칸**이다. 안 적어 두면 15건을 직접 타이핑하려 든다. */}
+        <p className="note">
+          손으로 쓰는 칸이 아닙니다 — <Link href="/">인쇄 검수</Link>에서 <b>‘교정 목록 복사’</b>를 누르고 여기서
+          <b> 붙여넣기</b>만 하면 채워집니다. 칸을 열어 둔 것은 여러 건 중 <b>일부만 고르거나</b> 제안 문구를
+          손봐서 반영하고 싶을 때를 위해서입니다.
+        </p>
         <textarea ref={pasteRef} className="dc_ta" rows={10} value={paste} onChange={(e) => setPaste(e.target.value)}
-          placeholder={"검수 화면에서 복사한 글을 그대로 붙여 넣으세요.\n직접 적어도 됩니다 — 한 줄에 '쪽 | 원래 내용 | 수정할 내용'\n\n3 | 넓이 | 너비"} />
+          placeholder={"검수 화면에서 복사한 글을 그대로 붙여 넣으세요.\n\n고를 때만 손으로 고칩니다 — 한 줄에 '쪽 | 원래 내용 | 수정할 내용'\n3 | 넓이 | 너비"} />
         {parsed.skipped.length > 0 && (
           <ul className="dc_skipped">
             {parsed.skipped.map((s) => <li key={s.line}><b>{s.line}번째 줄</b> {s.why} — <code>{s.text}</code></li>)}
