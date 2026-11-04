@@ -12,16 +12,16 @@ import GuideSearch from "./guide-search";
 import { AgentProgress, QuestionCard } from "./agent-ui";
 import AgentsView, { AgentHealth } from "./agents-view";
 import { FINISHES, GROUPS, loadPapers, surface, type FinishId, type Paper, type PaperDb } from "@/lib/papers";
+import { CUSTOM, GROUPS as FORMATS, dims, match } from "@/lib/formats";
+import { measure, type Measured } from "@/lib/pagesize";
 import { assess, inputFrom, type Risk } from "@/lib/risk";
 import CopyFixes from "./copy-fixes";
+import { SessionBoot, SignInPanel, useSession } from "./sign-in";
 import { answerJob, createJob, isLocalOrch, ORCH_BUILT, orchBuiltSnapshot, orchestratorUp, orchUrl, setOrchUrl, subscribeOrch, toScreen, waitJob, type JobView } from "@/lib/agentClient";
 
 const LEVEL_LABEL = { check: "확인 필요", none: "해당 없음", na: "판단 불가" } as const;
 
 const SEV_LABEL: Record<Sev, string> = { high: "인쇄 위험", medium: "수정 권장", low: "확인 필요" };
-const SIZES: Record<string, [number, number]> = {
-  "A5 (148×210)": [148, 210], "A4 (210×297)": [210, 297], "B5 (176×250)": [176, 250], "직접 입력": [0, 0],
-};
 const SRC: Record<string, string> = { rule: "규칙", heuristic: "휴리스틱", proofread: "교정 에이전트" };
 
 /** 측정한 종이 흰색 "94.9, 2.0, -6.0" → [L,a,b]. 숫자 3개가 아니거나 범위를 벗어나면 null(그때는 보정하지 않는다) */
@@ -42,7 +42,7 @@ function Home() {
   const sp = useSearchParams();
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
-  const [size, setSize] = useState("A5 (148×210)");
+  const [size, setSize] = useState("A5 · 국판 (148×210)");
   const [w, setW] = useState(148);
   const [h, setH] = useState(210);
   const [bleed, setBleed] = useState(3);
@@ -57,6 +57,8 @@ function Home() {
   const [gsm, setGsm] = useState(150);
   const [paperColor, setPaperColor] = useState(true);
   const [whiteIn, setWhiteIn] = useState(""); // 측정한 종이 흰색 "L, a, b" (선택). 비워 두면 보정하지 않는다
+  const [read, setRead] = useState<Measured | null>(null);   // 파일에서 읽은 완성 크기·도련
+  const [readFail, setReadFail] = useState(false);
   const [risks, setRisks] = useState<(Risk & { hits: Hit[] })[]>([]);
   const [usedPaper, setUsedPaper] = useState<Paper | null>(null);
   const paper = db?.papers.find((p) => p.id === paperId) ?? null;
@@ -73,10 +75,9 @@ function Home() {
     const k = key === "auto" ? paper?.profile : key;
     if (k && db) setTac(db.profiles[k].tac);
   }
-  // 검사 방식: direct = 이 브라우저 안에서 바로, agent = 로컬 에이전트들이 A2A로 나눠 검사
-  // 주소의 ?mode=agent로 시작 모드를 기억한다(에이전트 모드로 열면 브라우저 임베딩 모델을 아예 불러오지 않는다)
-  // 공개 배포(에이전트가 다른 서버에 있는 경우)에서는 에이전트 검사를 기본으로 둔다.
-  // 그 서버에만 ICC 프로파일과 검색 모델이 있어서, 바로 검사는 사용자가 ICC를 올려야 색을 잴 수 있다.
+  // 검사 방식: agent = 에이전트들이 A2A로 나눠 검사(기본), direct = 이 브라우저 안에서 바로.
+  // 이 앱이 보여 주려는 것이 에이전트 협업이라 그 화면이 첫 화면이다. '바로 검사'는 `?mode=direct`로 간다.
+  // 기본이 에이전트인 덕이 하나 더 있다 — 첫 화면에서 브라우저 임베딩 모델(약 130MB)을 아예 내려받지 않는다.
   // 에이전트 주소. 저장해 둔 값이 있으면 그것을 쓴다(터널 주소는 켤 때마다 바뀌는데, 빌드 때 박힌 값은 재배포해야 바뀐다).
   // 저장된 값은 첫 그림을 그린 뒤에 읽는다. 처음부터 읽으면 서버가 그린 화면(저장소가 없으니 빌드 값)과
   // 브라우저가 그린 화면(저장된 값)이 달라져 hydration이 깨진다 — 주소를 한 번이라도 저장한 사람에게만 나던 오류다.
@@ -87,14 +88,15 @@ function Home() {
     if (!setOrchUrl(v)) { setErr("에이전트 주소는 http://127.0.0.1:8700 처럼 넣어 주세요(뒤에 경로는 빼고)."); return; }
     setErr(""); setAgentUp(null);   // 주소가 바뀌면 orch가 따라 바뀌고 건강 검사가 다시 돈다
   };
-  const [mode, setModeState] = useState<"direct" | "agent">(
-    sp.get("mode") === "agent" || (HOSTED && sp.get("mode") !== "direct") ? "agent" : "direct");
+  const [mode, setModeState] = useState<"direct" | "agent">(sp.get("mode") === "direct" ? "direct" : "agent");
   const [showAgents, setShowAgents] = useState(true); // '에이전트 검사'를 고르면 에이전트 탭 내용을 이 자리에 펼친다
   const setMode = (m: "direct" | "agent") => {
     setModeState(m);
     if (m === "agent") setShowAgents(true); // 누르면 에이전트 내용이 바로 보이게
-    router.replace(m === "agent" ? "/?mode=agent" : "/", { scroll: false });
+    router.replace(m === "direct" ? "/?mode=direct" : "/", { scroll: false });
   };
+  // 에이전트 검사는 파일을 남의 PC로 보내므로 주인이 있어야 한다. '바로 검사'는 로그인과 무관하다.
+  const me = useSession().account;
   const [agentUp, setAgentUp] = useState<boolean | null>(null);
   const [agentJob, setAgentJob] = useState<JobView | null>(null);
   const pdfData = useRef<Uint8Array | null>(null);
@@ -168,8 +170,25 @@ function Home() {
 
   function pickSize(v: string) {
     setSize(v);
-    const [a, b] = SIZES[v];
-    if (a) { setW(a); setH(b); }
+    const d = dims(v);
+    if (d) { setW(d[0]); setH(d[1]); }
+  }
+
+  /** 파일을 고르면 완성 크기·도련을 그 파일에서 읽어 칸을 채운다.
+   *  손으로 적던 칸이라 오타 한 번에 "페이지 크기가 설정과 다름"이 모든 쪽에 떴다. 값은 이미 파일 안에 있다.
+   *  사람이 적어 둔 값도 덮어쓴다 — 대신 무엇을 어디서 읽었는지 칸 아래에 적어, 틀렸으면 되돌릴 수 있게 한다. */
+  async function pickFile(f: File | null) {
+    setFile(f); setRead(null); setReadFail(false);
+    if (!f) return;
+    const m = await measure(f);
+    if (!m) { setReadFail(true); return; }   // 암호가 걸렸거나 깨진 파일. 검사 단계에서 제대로 된 오류가 난다
+    setRead(m);
+    setW(m.widthMm); setH(m.heightMm);
+    if (m.bleedMm !== null) setBleed(m.bleedMm);
+    const hit = match(m.widthMm, m.heightMm);
+    // 가로로 누운 파일은 '직접 입력'으로 둔다. 목록은 세로 기준이라, A4라고 적어 두면
+    // 그 줄을 다시 고르는 순간 210×297로 돌아가 모든 쪽이 크기 불일치로 뜬다.
+    setSize(hit && !hit.rotated ? hit.format.label : CUSTOM);
   }
 
   async function submit(e: FormEvent) {
@@ -223,7 +242,7 @@ function Home() {
       const { context_id } = await createJob(f, opts);
       await settle(await waitJob(context_id, setAgentJob));
     } catch (x) {
-      setErr(`에이전트 검사에 실패했습니다. 에이전트를 켰는지 확인하세요(agents/run_agents.py). (${x instanceof Error ? x.message : x})`);
+      setErr(`에이전트 검사에 실패했습니다. 에이전트가 켜져 있는지 확인하세요. (${x instanceof Error ? x.message : x})`);
       setBusy(false);
     }
   }
@@ -264,6 +283,7 @@ function Home() {
 
   return (
     <div className="common_wrap">
+      <SessionBoot />
       {mode === "direct" && !guide && !guideStatus.startsWith("가이드 검색 사용 불가") && <ModelLoadingScreen status={guideStatus} />}
       <header className="page_head">
         <h1>인쇄 검수</h1>
@@ -288,7 +308,7 @@ function Home() {
             : agentUp ? (HOSTED
               ? "에이전트가 나눠서 검사합니다. 파일은 에이전트 서버로 올라가고, 서버가 다시 뜨면 기록은 지워집니다. 아래에서 에이전트 상태와 소통 기록을 바로 볼 수 있습니다."
               : "에이전트가 나눠서 검사합니다. 파일은 이 PC의 에이전트에만 보냅니다. 아래에서 에이전트 상태와 소통 기록을 바로 볼 수 있습니다.")
-            : <span className="sev-high">{HOSTED ? "에이전트가 꺼져 있습니다. 에이전트를 돌리는 PC에서 켜야 이 모드를 쓸 수 있습니다. 그동안에는 ‘바로 검사’로 검사하세요." : <>에이전트가 꺼져 있습니다. <code>agents</code> 폴더에서 <code>python run_agents.py</code>로 켜세요.</>}</span>}
+            : <span className="sev-high">{HOSTED ? "에이전트가 꺼져 있습니다. 에이전트를 돌리는 PC에서 켜야 이 모드를 쓸 수 있습니다. 그동안에는 ‘바로 검사’로 검사하세요." : "에이전트가 꺼져 있습니다. 그동안에는 ‘바로 검사’로 검사하세요."}</span>}
         </span>
       </div>
 
@@ -320,15 +340,24 @@ function Home() {
         </section>
       )}
 
+      {mode === "agent" && !me && <SignInPanel what="에이전트 검사" />}
+
       <TermsPanel />
 
       <form className="upload panel" onSubmit={submit}>
-        <label>검수할 PDF
-          <input type="file" accept="application/pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+        <label className="wide">검수할 파일
+          <input type="file" accept="application/pdf" onChange={(e) => pickFile(e.target.files?.[0] ?? null)} />
+          {read && <ReadHint m={read} />}
+          {readFail && <span className="note">파일에서 크기를 읽지 못했습니다. 암호가 걸렸거나 깨진 PDF일 수 있습니다. 아래 칸을 직접 채워 주세요.</span>}
         </label>
         <label>완성 크기
           <select value={size} onChange={(e) => pickSize(e.target.value)}>
-            {Object.keys(SIZES).map((k) => <option key={k}>{k}</option>)}
+            {FORMATS.map((g) => (
+              <optgroup key={g.name} label={g.name}>
+                {g.items.map((f) => <option key={f.label}>{f.label}</option>)}
+              </optgroup>
+            ))}
+            <option>{CUSTOM}</option>
           </select>
         </label>
         <label>가로(mm)<input type="number" value={w} onChange={(e) => { setW(+e.target.value); setSize("직접 입력"); }} /></label>
@@ -389,7 +418,7 @@ function Home() {
         <label>총 잉크량 한도(%)<input type="number" value={tac} onChange={(e) => setTac(+e.target.value)} /></label>
         <label title="분광측색기로 잰 종이 흰색을 넣으면, 프로파일이 가정한 종이 대신 이 종이를 기준으로 삼습니다. 그 기준으로 인쇄 색을 옮겨 ΔE를 다시 잽니다. 비워 두면 보정하지 않습니다.">종이 흰색 측정값(Lab, 선택)
           <input type="text" inputMode="decimal" placeholder="예: 94.9, 2.0, -6.0" value={whiteIn} onChange={(e) => setWhiteIn(e.target.value)} disabled={!paperColor} /></label>
-        <button disabled={!file || busy || (!profile && !(mode === "agent" && paperId === "unknown")) || (mode === "agent" && !agentUp)}>{busy ? "검사 중…" : mode === "agent" ? "에이전트에 맡기기" : "검사 시작"}</button>
+        <button disabled={!file || busy || (!profile && !(mode === "agent" && paperId === "unknown")) || (mode === "agent" && (!agentUp || !me))}>{busy ? "검사 중…" : mode === "agent" ? "에이전트에 맡기기" : "검사 시작"}</button>
         {paper && profile && (
           <div className="paperpick">
             <span className="chip">{paper.group}</span><span className="chip">{surface(paper)}</span>
@@ -412,9 +441,10 @@ function Home() {
       {err && <div className="err">{err}</div>}
       {!res && !busy && !err && !agentJob && (
         <div className="empty">{mode === "direct"
-          ? "검수할 PDF를 고르고 ‘검사 시작’을 누르세요. 파일은 서버로 보내지 않습니다."
-          : HOSTED ? "검수할 PDF를 고르고 ‘에이전트에 맡기기’를 누르세요. 파일은 위 주소의 에이전트로 올라갑니다."
-            : "검수할 PDF를 고르고 ‘에이전트에 맡기기’를 누르세요. 파일은 이 PC의 에이전트에만 보냅니다."}</div>
+          ? "검수할 파일을 고르고 ‘검사 시작’을 누르세요. 파일은 서버로 보내지 않습니다."
+          : !me ? "구글로 로그인하면 ‘에이전트에 맡기기’를 쓸 수 있습니다. 로그인 없이 쓰려면 ‘바로 검사’를 고르세요."
+            : HOSTED ? "검수할 파일을 고르고 ‘에이전트에 맡기기’를 누르세요. 파일은 위 주소의 에이전트로 올라갑니다."
+              : "검수할 파일을 고르고 ‘에이전트에 맡기기’를 누르세요. 파일은 이 PC의 에이전트에만 보냅니다."}</div>
       )}
 
       {res && (
@@ -456,7 +486,9 @@ function Home() {
                   </div>
                 ))}
               </div>
-              <span className="note">위험도를 점수로 매기지 않습니다. 공개 자료에서 확인한 불량 원인이 이 파일과 이 종이에 해당하는지만 봅니다. 해당하면 근거와 함께 ‘확인 필요’로 적습니다. 확률이 아니라 사람이 확인할 거리입니다. 후가공(접지·제본·박·형압)은 PDF에 정보가 없습니다. 자동으로 검사하지 못하고 고른 값만 씁니다.</span>
+              <span className="note">위험도를 점수로 매기지 않습니다. 공개 자료에서 확인한 불량 원인이 이 파일과 이 종이에 해당하는지만 보고,
+                해당하면 근거와 함께 ‘확인 필요’로 적습니다. 확률이 아니라 사람이 확인할 거리입니다.</span>
+              <span className="note">후가공(접지·제본·박·형압)은 PDF에 정보가 없어 자동으로 검사하지 못합니다. 고른 값만 씁니다.</span>
             </div>
           )}
           <div className="ws">
@@ -508,8 +540,30 @@ function Home() {
           </div>
         </>
       )}
-      <div className="disclaimer">이 검수 결과는 인쇄소의 최종 승인과 사람의 교정을 대체하지 않습니다. 색상은 실제 인쇄 결과를 보장하지 않는 위험 예측입니다. 색 공간은 PDF 안의 정보를 읽은 값입니다. 이미지 매칭은 가로·세로 픽셀 수로 합니다. 그래서 같은 크기의 이미지가 여러 개면 틀릴 수 있습니다.</div>
+      <div className="disclaimer">
+        <p>이 검수 결과는 인쇄소의 최종 승인과 사람의 교정을 대체하지 않습니다. 색상은 실제 인쇄 결과를 보장하지 않는 위험 예측입니다.</p>
+        <p>계산에는 한계가 있습니다. 색 공간은 PDF 안의 정보를 읽은 값이고, 이미지 매칭은 가로·세로 픽셀 수로 합니다.
+          같은 크기의 이미지가 여러 개면 틀릴 수 있습니다.</p>
+      </div>
     </div>
+  );
+}
+
+/** 파일에서 읽은 값을 그 자리에 적는다. 자동으로 채운 칸은 어디서 온 값인지 보여야 되돌릴 수 있다. */
+function ReadHint({ m }: { m: Measured }) {
+  const hit = match(m.widthMm, m.heightMm);
+  const name = hit
+    ? (hit.rotated ? `${hit.format.label}를 가로로 누인 크기` : hit.format.label)
+    : "목록에 없는 크기 — ‘직접 입력’으로 두었습니다";
+  return (
+    <span className="note read_hint">
+      <b>파일에서 읽음</b> {m.pages}쪽 · {m.widthMm}×{m.heightMm}mm · {name}
+      {m.bleedMm !== null && <> · 도련 {m.bleedMm}mm</>}
+      {m.from === "MediaBox" && <>
+        {" "}— 재단선(TrimBox)이 없어 용지 크기를 그대로 넣었습니다. 도련이 섞인 값이면 완성 크기를 직접 고쳐 주세요.
+      </>}
+      {m.mixed && <> — 쪽마다 크기가 다릅니다. 1쪽 기준으로 채웠습니다.</>}
+    </span>
   );
 }
 

@@ -135,7 +135,14 @@ export default function SourcesPage() {
     <main className="common_wrap">
       <header className="page_head">
         <h1>출처</h1>
-        <p className="lead">이 앱이 쓴 자료를 전부 적었습니다 — 가이드의 근거 문헌, 색 프로파일과 계산 규격, 종이·인쇄소 데이터, 모델, 라이브러리, 원본 수정에 쓰는 편집 엔진, 개발자가 만든 것까지. 원문을 확인하지 못한 것은 그렇게 표시했습니다.<b> 이 앱은 모델을 직접 학습시키지 않았습니다.</b>공개 모델을 그대로 쓰고 무엇을 쓸지는 재서 골랐습니다(<a href="/help#eval">평가 측정표</a>).</p>
+        <p className="lead">
+          이 앱이 쓴 자료를 전부 적었습니다 — 가이드의 근거 문헌, 색 프로파일과 계산 규격, 종이·인쇄소 데이터, 모델,
+          라이브러리, 원본 수정에 쓰는 편집 엔진, 개발자가 만든 것까지. 원문을 확인하지 못한 것은 그렇게 표시했습니다.
+        </p>
+        <p className="lead">
+          <b>이 앱은 모델을 직접 학습시키지 않았습니다.</b> 공개 모델을 그대로 쓰고, 무엇을 쓸지는 재서
+          골랐습니다(<a href="/help#eval">평가 측정표</a>).
+        </p>
       </header>
 
       <Toc items={GROUPS.map((g) => ({ id: g.id, label: g.title.replace(/^\d+\.\s*/, "") }))} />

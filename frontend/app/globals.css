@@ -14,10 +14,10 @@ h1, h2, h3, h4 { margin: 0; }
 .RouteApp { min-height: 100vh; }
 .topbar { position: sticky; top: 0; z-index: 900; background: var(--white); border-bottom: 1px solid var(--borderSubtle); }
 .topbar_inner { display: flex; align-items: center; gap: 32px; padding: 0 64px; }
-/* 로고와 오른쪽 빈 칸이 같은 몫을 가져가야 가운데 메뉴가 화면 정중앙에 선다.
-   오른쪽에 있던 설명 문구를 지우면서 균형이 깨져, 그 자리를 빈 칸(::after)으로 대신한다 */
+/* 로고와 오른쪽 칸이 같은 몫을 가져가야 가운데 메뉴가 화면 정중앙에 선다.
+   오른쪽 칸에는 로그인한 계정이 들어가고, 로그인하지 않았으면 비어 있다(균형은 그대로다) */
 .brand { flex: 1; font-size: 2.0rem; font-weight: 700; color: var(--black); white-space: nowrap; }
-.topbar_inner::after { content: ""; flex: 1; }
+.topright { flex: 1; display: flex; justify-content: flex-end; min-width: 0; }
 /* 메뉴는 헤더 가운데에. 양옆 margin auto가 남는 자리를 똑같이 나눠 가진다 */
 .topmenu { display: flex; align-items: center; margin: 0 auto; }
 /* 메뉴 칸이 헤더 높이를 그대로 채운다. 호버 칸과 선택된 칸은 같은 상자(72px, 모서리 각짐) */
@@ -69,9 +69,16 @@ button.ghost { background: var(--white); color: var(--thema); }
 .note { color: var(--blackmute); font-size: 1.4rem; }
 .empty { padding: 64px 16px; text-align: center; color: var(--blackmute); font-size: 1.6rem; }
 .disclaimer { margin-top: 24px; padding-top: 16px; font-size: 1.4rem; color: var(--blackmute); border-top: 1px solid var(--borderLight); }
+.disclaimer p { margin: 0 0 6px; line-height: 170%; max-width: 100ch; }
+.disclaimer p:last-child { margin-bottom: 0; }
+/* 불량 점검 아래 안내는 두 덩어리로 나뉜다. 둘이 한 줄에 붙지 않게 각자 줄을 쓴다 */
+.risk > .note { display: block; line-height: 170%; }
+.risk > .note + .note { margin-top: 6px; }
 /* 주의 상자: 왼쪽 선 대신 붉은 면으로 알린다(파란 '그래서 고른 것' 상자와 같은 방식) */
 .warn { background: var(--redLight); color: var(--black); padding: 12px 16px; border-radius: 4px; font-size: 1.4rem; margin: 8px 0; }
 .warn b { color: var(--redBright); }
+.warn p { margin: 0 0 6px; line-height: 175%; }
+.warn p:last-child { margin-bottom: 0; }
 .noauto { display: inline-flex; align-items: center; font-size: 1.4rem; font-weight: 600; padding: 4px 8px; border-radius: 999px;
   background: var(--themaPoint); color: var(--thema); margin-left: 4px; vertical-align: middle; line-height: 100%; }
 .sev-high { color: var(--redBright); } .sev-medium { color: var(--purpleBright); } .sev-low { color: var(--greenBright); }
@@ -81,6 +88,10 @@ button.ghost { background: var(--white); color: var(--thema); }
 form.upload { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
 form.upload label { display: flex; flex-direction: column; gap: 4px; font-size: 1.4rem; color: var(--blacklight); }
 form.upload label.chk { flex-direction: row; align-items: center; gap: 8px; min-height: 40px; }
+/* 파일 칸은 '파일에서 읽음' 한 줄을 아래에 달고 있어서 한 줄을 통째로 쓴다 */
+form.upload label.wide { flex-basis: 100%; }
+.read_hint { font-size: 1.4rem; line-height: 160%; color: var(--blacklight); }
+.read_hint b { color: var(--thema); margin-right: 4px; }
 form.ask label { flex: 1; min-width: 240px; }
 form.ask input { width: 100%; padding: 12px 40px 12px 16px; }
 .answers { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px 16px; margin-bottom: 16px; }
@@ -288,9 +299,7 @@ mark.mk-term { background: var(--themaPoint); color: var(--black); font-weight: 
   .waterfall .wf_track { grid-column: 1 / -1; }
 }
 /* '왜 이렇게' 탭: 질문(details)마다 왜 → 어떻게 → 결과 → 주의 순서로 읽는다 */
-.qa_intro h2, .qa_more h2 { font-size: 1.8rem; margin-bottom: 8px; }
-.qa_intro ul { margin: 0; padding-left: 20px; font-size: 1.5rem; }
-.qa_intro li { margin-bottom: 6px; }
+.qa_more h2 { font-size: 1.8rem; margin-bottom: 8px; }
 .qa_group { font-size: 2.2rem; font-weight: 700; margin: 32px 0 12px; }
 .qa { background: var(--white); border: 1px solid var(--borderLight); border-radius: 4px; margin-bottom: 8px; }
 .qa[open] { border-color: var(--themaPoint); }
@@ -350,6 +359,9 @@ mark.mk-term { background: var(--themaPoint); color: var(--black); font-weight: 
 .aitem_head code { font-size: 1.4rem; color: var(--blacklight); }
 .aitem_head .note { font-size: 1.4rem; }
 .aitem_head .mark { color: var(--blackmute); }
+/* 목록이 아직 비었을 때 들어가는 안내 한 줄. 여백은 .aitem_head가 들고 있어서
+   머리 단추 없이 글만 넣으면 벽에 붙는다 — 같은 여백을 직접 준다 */
+.aitem > .note { display: block; padding: 12px 16px; font-size: 1.4rem; color: var(--blacklight); }
 .aitem .dot { width: 8px; height: 8px; border-radius: 999px; background: var(--borderStrong); flex: none; }
 .aitem .dot.on { background: var(--greenBright); }
 .aitem .dot.fake { background: var(--themaBright); }
@@ -427,6 +439,13 @@ mark.mk-term { background: var(--themaPoint); color: var(--black); font-weight: 
 .ev_bars li.pick .b_name { color: var(--thema); font-weight: 600; }
 .ev_bars .b_track { height: 10px; background: var(--bgMuted); border-radius: 999px; overflow: hidden; }
 .ev_bars .b_fill { display: block; height: 10px; background: var(--borderStrong); border-radius: 999px; }
+/* '왜 더 높은 값을 안 썼나' 같은 되묻기에 답하는 덩어리. 표 아래에 한 칸 들여 붙인다 */
+.ev_why { margin: 8px 0 0; padding: 12px 16px; background: var(--bgMuted); font-size: 1.4rem; line-height: 170%; max-width: 90ch; }
+.ev_why > b { display: block; margin-bottom: 6px; color: var(--black); }
+.ev_why ul { margin: 0; padding-left: 18px; }
+.ev_why li { margin-bottom: 6px; }
+.ev_why li:last-child { margin-bottom: 0; }
+.ev_why > .note { display: block; margin-top: 8px; }
 .ev_bars li.pick .b_fill { background: var(--thema); }
 .ev_bars .b_val { text-align: right; font-variant-numeric: tabular-nums; }
 .ev_list { margin: 0; padding-left: 20px; font-size: 1.4rem; }
@@ -447,7 +466,8 @@ mark.mk-term { background: var(--themaPoint); color: var(--black); font-weight: 
 /* 인쇄 검수 화면 안에 펼쳐지는 에이전트 영역(에이전트 탭과 같은 내용) */
 .agent_inline .gs_body { padding: 16px 16px 20px; background: var(--bgSurface); }
 .agent_inline .agent_side { position: static; }
-.ev_lead { font-size: 1.5rem; color: var(--blacklight); margin: 0 0 16px; max-width: 90ch; }
+.ev_lead { font-size: 1.5rem; color: var(--blacklight); margin: 0 0 8px; max-width: 90ch; line-height: 175%; }
+.ev_lead:last-of-type { margin-bottom: 16px; }
 /* 누를 수 있는 것은 호버가 분명히 보이게(연한 회색은 잘 안 보여서 한 단계 진하게), 글자색은 항상 같이 지정한다 */
 @media (hover: hover) {
   .ev_toc a:hover, .qa_more a:hover, .qa_body a:hover, .modebar a:hover { background: var(--themaLight); color: var(--thema); border-radius: 4px; }
@@ -501,7 +521,8 @@ mark.mk-term { background: var(--themaPoint); color: var(--black); font-weight: 
 /* ===== 다듬기 ===== */
 /* 1) 뱃지·칩·알약은 둥근 모서리를 쓰지 않는다 */
 .chip, .pill, .badge, .noauto, .ev_mark, .qa_tag, .card .src, .grank, .chip.grade, .pages .dot,
-.ev_table .chip, .qa_table .chip, .shoplist .chip { border-radius: 0; }
+.ev_table .chip, .qa_table .chip, .shoplist .chip,
+.ev_pick > b:first-child, .qa_body code, .qa_body mark, mark.mk-term, code { border-radius: 0; }
 .pill .count { border-radius: 0; }
 /* 2) 버튼 색은 한 가지(--thema #0071E3). 테두리도 같은 색, 호버하면 그 색으로 채우고 글자는 흰색 */
 button { border-color: var(--thema); }
@@ -557,6 +578,23 @@ input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, 
   .card:hover, .shoplist a:hover, button:hover, .pill:hover, .topmenu a:hover { border-radius: 0; }
 }
 .dot, .spinner { border-radius: 999px; }
+/* ===== 구글 로그인 ===== */
+/* 로그인이 필요한 화면 앞에 세우는 안내. 왜 필요한지를 읽히려고 글을 좁게 잡는다 */
+.signin { border-left: 3px solid var(--thema); }
+.signin > b { display: block; font-size: 1.8rem; margin-bottom: 8px; }
+.signin .note { max-width: 86ch; font-size: 1.4rem; line-height: 175%; margin: 0 0 8px; }
+.signin .warn { max-width: 86ch; }
+/* 단추는 구글이 iframe 안에 그린다. 자리만 비워 둔다 */
+.gbtn { margin-top: 4px; min-height: 40px; }
+/* 상단 막대의 계정 표시 */
+.acct { display: inline-flex; align-items: center; gap: 8px; font-size: 1.4rem; color: var(--blacklight); }
+.acct img { display: block; width: 24px; height: 24px; object-fit: cover; }
+.acct_no { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px;
+  background: var(--themaLight); color: var(--thema); font-weight: 700; }
+.acct b { color: var(--black); max-width: 18ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct button { padding: 2px 8px; font-size: 1.4rem; min-height: 24px; }
+@media (max-width: 768px) { .acct b { display: none; } }
+
 /* Q&A 안팎 여백을 24px로 맞춘다 */
 .qa > summary { padding: 24px; }
 .qa_body { padding: 24px; }

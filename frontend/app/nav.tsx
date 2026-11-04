@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
+import { AccountChip } from "./sign-in";
 
 const TABS = [
   { href: "/", label: "인쇄 검수" },
@@ -32,6 +33,8 @@ export default function Shell({ children }: { children: ReactNode }) {
               <Link key={t.href} href={t.href} className={path === t.href ? "on" : ""} onClick={() => setOpen(false)}>{t.label}</Link>
             ))}
           </nav>
+          {/* 오른쪽 칸. 로그인하지 않았으면 비어 있고, 그 빈 칸이 가운데 메뉴의 균형을 잡는다 */}
+          <div className="topright"><AccountChip /></div>
           <button type="button" className="icon_btn menu_btn" aria-label={open ? "메뉴 닫기" : "메뉴 열기"} aria-expanded={open}
             onClick={() => setOpen((o) => !o)}>{open ? "✕" : "☰"}</button>
         </div>

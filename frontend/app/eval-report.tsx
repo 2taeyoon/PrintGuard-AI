@@ -78,6 +78,7 @@ export default function EvalReport() {
   const models = s ? Object.keys(s.models) : [];
   const hybrid = s ? Object.entries(s.hybrid) : [];
   const bestW = hybrid.reduce<[string, number]>((b, [w, v]) => (v.mrr > b[1] ? [w, v.mrr] : b), ["", 0]);
+  const wPick = s?.hybrid[PICKED_W], wTop = s?.hybrid[bestW[0]];
   const prRows = pr ? Object.entries(pr.methods) : [];
   const prBest = Math.max(...prRows.map(([, m]) => m.f1), 0);
   // '그래서 무엇을 골랐나'를 표 위에 한 줄로 쓰기 위한 값들. 전부 산출물에서 계산한다(고정값을 적지 않는다).
@@ -93,7 +94,9 @@ export default function EvalReport() {
   return (
     <>
       <Head />
-      <p className="ev_lead">이 앱이 쓰는 설정은 검색 모델과 자르기, 가중치, 색 변환, 종이 흰색 보정, 교정 탐지기입니다. 각각을 무엇과 비교해서 골랐는지 전부 수치로 적었습니다. 화면의 숫자는 저장소의 평가 스크립트가 남긴 산출물을 그대로 읽은 값입니다. 다시 재면 이 화면도 같이 바뀝니다.</p>
+      <p className="ev_lead">이 앱이 고른 설정은 여섯입니다 — 검색 모델, 자르기, 가중치, 색 변환, 종이 흰색 보정, 교정 탐지기.
+        각각을 무엇과 비교해서 골랐는지 전부 수치로 적었습니다.</p>
+      <p className="ev_lead">화면의 숫자는 저장소의 평가 스크립트가 남긴 산출물을 그대로 읽은 값입니다. 다시 재면 이 화면도 같이 바뀝니다.</p>
 
       <Toc items={[{ id: "search", label: "가이드 검색" }, { id: "color", label: "색 변환 검증" }, { id: "profiles", label: "종이별 색 차이" },
         { id: "substrate", label: "종이 흰색 보정" }, { id: "proof", label: "교정 탐지기" }, { id: "notread", label: "재지 않은 것" }]} />
@@ -159,9 +162,30 @@ export default function EvalReport() {
               </li>
             ))}
           </ul>
-          <p className="note">가로축은 MRR@10이고 0.85부터 그렸습니다(차이가 작아서). 가장 높은 값은 {bestW[0]}({num(bestW[1], 3)})이지만
-            0.3~0.7 구간이 사실상 붙어 있어, 양쪽을 반씩 쓰는 0.5를 택했습니다. 개발용 질문으로 고른 가중치를 처음 보는 질문에 다시 재도
-            (dev {num(s.hybrid[PICKED_W]?.dev_mrr, 3)} / val {num(s.hybrid[PICKED_W]?.val_mrr, 3)}) 무너지지 않았습니다.</p>
+          <p className="note">가로축은 MRR@10이고 0.85부터 그렸습니다(차이가 작아서).</p>
+          {wPick && wTop && (
+            <div className="ev_why">
+              <b>왜 더 높은 {bestW[0]}이 아니라 {PICKED_W}인가</b>
+              <ul>
+                <li><b>차이가 질문 한 개보다 작습니다.</b> {bestW[0]}이 {num(bestW[1], 3)}, {PICKED_W}가 {num(wPick.mrr, 3)}로 차이는
+                  {" "}{num(bestW[1] - wPick.mrr, 3)}입니다. 질문 {s.n_questions}개에서 한 문제의 정답이 1위에서 2위로 내려가기만 해도
+                  {" "}{num(0.5 / s.n_questions, 3)}만큼 움직입니다. 그보다 작은 차이를 보고 고르면 질문을 하나 바꿀 때마다 답이 바뀝니다.</li>
+                {bestW[0] !== PICKED_W && (
+                  <li><b>고를 때 쓰는 쪽에서는 {PICKED_W}가 더 높았습니다.</b> 질문을 둘로 갈라 절반(dev)으로 고르고 나머지 절반(val)으로
+                    확인하는데, dev에서는 {PICKED_W}가 {num(wPick.dev_mrr, 3)}, {bestW[0]}이 {num(wTop.dev_mrr, 3)}였습니다.
+                    {" "}{bestW[0]}이 앞서는 것은 val({num(wTop.val_mrr, 3)} 대 {num(wPick.val_mrr, 3)})뿐입니다. val을 보고 고르면 그
+                    숫자는 더 이상 확인이 아닙니다.</li>
+                )}
+                <li><b>{PICKED_W}는 평평한 구간이고 {bestW[0]}은 봉우리 하나입니다.</b> 0.5·0.6·0.7이 셋째 자리까지 같은 값으로
+                  {" "}{num(wPick.mrr, 3)}인데, {bestW[0]}은 양옆(0.2 {num(s.hybrid["0.2"]?.mrr, 3)} · 0.4 {num(s.hybrid["0.4"]?.mrr, 3)})보다만
+                  높습니다. 넓은 구간의 가운데를 고르면 지식베이스가 늘거나 질문이 바뀌어도 값이 덜 흔들립니다.</li>
+                <li><b>단어 검색을 자르는 방식을 바꾸면 {bestW[0]}은 1위가 아닙니다.</b> 아래 표에서 형태소로 자르면 0.4~0.8이 더 높습니다.
+                  {bestW[0]}의 1위는 지금 조합에서만 나오는 값입니다.</li>
+              </ul>
+              <span className="note">덧붙여, 개발용 질문으로 고른 가중치를 처음 보는 질문에 다시 재도(dev {num(wPick.dev_mrr, 3)} /
+                val {num(wPick.val_mrr, 3)}) 무너지지 않았습니다.</span>
+            </div>
+          )}
 
           <h3>단어 검색을 어떻게 자를 것인가 (같은 가중치에서 MRR)</h3>
           <div className="scroll">
@@ -177,8 +201,7 @@ export default function EvalReport() {
               </tbody>
             </table>
           </div>
-          <div className="warn"><b>주의</b> 질문 {s.n_questions}개를 지식베이스를 쓴 사람이 직접 만들었습니다. 질문과 정답 문장이 단어를 공유해 단어 검색에 유리하고,
-            대부분 설정이 90% 안팎 천장에 붙습니다. 모델 사이 몇 %p 차이는 질문 한두 개로 뒤집힙니다. 구간이 겹치면 차이가 있다고 읽지 마세요.</div>
+          <div className="warn"><b>주의</b> 질문과 정답 문장이 단어를 공유해 단어 검색에 유리하고, 대부분 설정이 90% 안팎 입니다.</div>
         </Section>
       )}
 
@@ -187,7 +210,7 @@ export default function EvalReport() {
           lead="앱은 브라우저에서 색 변환(lcms-wasm)을 합니다. 같은 ICC 프로파일로 Python(Pillow의 LittleCMS)에서 다시 돌려 그 결과와 대조했습니다. 두 결과가 다르면 앱 계산을 믿을 수 없습니다.">
           {d.color_crosscheck && (
             <Pick>브라우저 색 변환을 그대로 씁니다. 두 구현의 평균 ΔE 차이가 {num(d.color_crosscheck.mean_abs_diff, 3)}로
-              눈에 보이는 기준(ΔE 2)의 1/10도 안 되기 때문입니다. 그래서 색 계산을 서버로 보내지 않고 기기 안에서 합니다.</Pick>
+              눈에 보이는 기준(ΔE 2)의 1/10도 안 됩니다. 색 계산을 서버로 보내지 않고 기기 안에서 하는 근거가 이것입니다.</Pick>
           )}
           {d.color_crosscheck && (
             <div className="ev_kpis">
@@ -199,7 +222,7 @@ export default function EvalReport() {
           )}
           {d.quant && <p className="note">사진 {d.quant.rows}장으로 16비트·8비트 양자화 영향도 쟀습니다 — 16비트 경로 최대 차이 {num(d.quant.max_diff16, 3)} ΔE,
             8비트 양자화 최대 차이 {num(d.quant.max_diff8, 4)} ΔE로 사실상 같습니다.</p>}
-          <div className="warn"><b>주의</b> 두 구현이 같다는 뜻이지 <b>실제 인쇄와 같다</b>는 뜻이 아닙니다. 실물 측색값과의 비교는 하지 않았습니다.</div>
+          <div className="warn"><b>주의</b> 두 구현이 같다는 뜻이지 <b>실제 인쇄와 같다</b>는 뜻이 아닙니다.</div>
         </Section>
       )}
 
@@ -226,7 +249,11 @@ export default function EvalReport() {
               </tbody>
             </table>
           </div>
-          <div className="warn"><b>주의</b>‘종이 색 포함’은 눈이 종이 흰색에 적응하는 효과를 빼 놓은 값입니다. 그래서 실제로 느끼는 차이보다 큰 상한에 가깝습니다. 브랜드 종이 454종은 이 12개 중 같은 등급 프로파일로 근사합니다. 광택 차이(아트지·스노우지)는 같은 프로파일을 쓰므로 반영되지 않습니다.</div>
+          <div className="warn">
+            <p><b>주의</b> ‘종이 색 포함’은 눈이 종이 흰색에 적응하는 효과를 빼 놓은 값이라, 실제로 느끼는 차이보다 큰 상한에 가깝습니다.</p>
+            <p>근사한 범위도 알아 두세요. 브랜드 종이 454종은 이 12개 중 같은 등급 프로파일로 근사합니다.
+              광택 차이(아트지·스노우지)는 같은 프로파일을 쓰므로 결과에 드러나지 않습니다.</p>
+          </div>
         </Section>
       )}
 
@@ -300,13 +327,19 @@ export default function EvalReport() {
               </tbody>
             </table>
           </div>
-          <div className="warn"><b>주의</b> 앞 다섯 방법의 띄어쓰기·율/률·사전에 있는 오용 100%는 <b>같은 규칙으로 넣고 같은 규칙으로 찾은 순환</b>이라 실력이 아닙니다. 방법끼리 비교할 수 있는 칸은 ‘사전에 없는 오용’과 ‘무작위 오타’입니다. LLM은 평가 틀을 모르고 쟀습니다. 다만 합성 문장이라 실제 원고보다 쉬웠을 여지가 있고 모델을 바꾸면 숫자도 바뀝니다. 기본값을 로컬 조합으로 둔 이유는 성능이 아니라 본문이 외부로 나가기 때문입니다.</div>
+          <div className="warn"><b>주의</b> 앞 다섯 방법의 띄어쓰기·율/률·사전에 있는 오용 100%는 <b>같은 규칙으로 넣고 같은 규칙으로 찾은 순환</b>이라 실력이 아닙니다. 다만 합성 문장이라 실제 원고보다 쉬웠을 여지가 있고 모델을 바꾸면 숫자도 바뀝니다. 기본값을 로컬 조합으로 둔 이유는 성능이 아니라 본문이 외부로 나가기 때문입니다.</div>
         </Section>
       )}
 
       <Section id="notread" title="6. 재지 않은 것" lead="평가에 넣지 못한 것들입니다. 없는 것을 있는 것처럼 적지 않으려고 따로 모았습니다.">
         <ul className="ev_list">
-          <li><b>실물 인쇄 측색</b> — 모든 색 수치는 프로파일 기준 계산값입니다. 실제로 찍어 재지 않았습니다.</li>
+          <li><b>실물 인쇄 측색</b> — 모든 색 수치는 프로파일 기준 계산값입니다. 실제로 찍어 재지 않았습니다.
+            <p className="note">재려면 세 가지를 해야 합니다.
+              ① 색 견본(IT8.7/4 같은 패치 묶음)을 <b>검사할 종이에 그 인쇄기로</b> 찍습니다.
+              ② 분광측색기(X-Rite i1Pro 같은 것)로 패치마다 Lab을 읽습니다.
+              ③ 같은 패치의 계산값과 ΔE를 비교합니다.</p>
+            <p className="note">측색기가 없으면 인쇄소에 측정 데이터를 요청하거나 측색 대행을 맡기는 길이 있습니다.
+              여기까지 하면 “이 화면의 ΔE가 실제보다 몇만큼 높게·낮게 나오는가”를 종이별로 적을 수 있고, 그 값을 보정에 쓸 수 있습니다.</p></li>
           <li><b>인쇄 불량 정답 데이터</b> — 공개 데이터셋을 찾지 못했습니다. 그래서 불량은 학습 모델로 예측하지 않고, 자료에서 확인한 원인이 해당하는지만 보여 줍니다. 어느 원인이 얼마나 더 위험한지는 재지 않았습니다.</li>
           <li><b>실제 사용자 질문·실제 원고</b> — 검색 질문과 교정 평가셋은 모두 제가 만들었습니다. 난이도가 실제와 얼마나 맞는지는 모릅니다.</li>
           <li><b>브랜드 종이 측정 프로파일</b>— 454종은 등급 프로파일로 근사했습니다. 종이 흰색을 측정해 넣을 때만 보정합니다.</li>

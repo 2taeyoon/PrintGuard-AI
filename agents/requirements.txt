@@ -13,6 +13,8 @@ onnxruntime==1.31.1           # guide의 e5-small 임베딩(브라우저와 같�
 tokenizers==0.23.3            # 같은 모델의 tokenizer.json
 huggingface-hub==2.3.0       # 모델 파일이 로컬에 없을 때(서버 배포) 내려받기
 mcp==2.3.0                    # MCP 서버(pg_agents/mcp_server.py). 1.x(FastMCP)에서도 돈다
+pyjwt==2.15.1                 # 구글 ID 토큰(RS256) 검증(pg_agents/google.py)
+cryptography==50.0.2          # pyjwt의 RS256 서명 확인에 필요
 pytest==9.1.1
 pytest-asyncio==1.4.1
 langsmith==0.14.12            # (선택) LANGSMITH_API_KEY를 사용자가 직접 넣었을 때만 쓴다

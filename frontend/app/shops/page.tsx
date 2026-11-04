@@ -132,11 +132,15 @@ export default function Shops() {
         </ul>
       </div>
       <div className="disclaimer">
-        출처: {src ? <>{src.name}, 전체 {src.rows.toLocaleString()}건 중 영업/정상 {src.status?.["영업/정상"]?.toLocaleString()}건, 좌표가 없거나 국외로 나온 {meta?.nocoord}건 제외</> : "불러오는 중"}.
-        좌표는 EPSG:5174를 WGS84로 바꾼 값입니다. 표본 80곳을 역지오코딩해 80곳 모두 주소와 같은 시군구에 찍히는 것을 확인했습니다.
-        1인 사업장은 개인정보 보호로 주소 번지가 *로 가려져 있습니다. 파주출판도시 협의회 목록(인쇄 업종 {meta?.sources[1]?.printing}곳) 중 {meta?.book_matched}곳은 인허가 데이터와 이름·도로명이 맞아 그 좌표로 표시합니다.
-        좌표를 도로 단위로 추정했던 {dropped}곳은 실제 그 자리에 업체가 있는지 확인할 수 없어(폐업·인허가 없음으로 확인된 곳 포함) 지도에서 뺐습니다.
-        지도 타일 © OpenStreetMap contributors.
+        <p>출처: {src ? <>{src.name}, 전체 {src.rows.toLocaleString()}건 중 영업/정상 {src.status?.["영업/정상"]?.toLocaleString()}건,
+          좌표가 없거나 국외로 나온 {meta?.nocoord}건 제외</> : "불러오는 중"}.</p>
+        <p>좌표는 EPSG:5174를 WGS84로 바꾼 값입니다. 표본 80곳을 역지오코딩해 80곳 모두 주소와 같은 시군구에 찍히는 것을 확인했습니다.</p>
+        <p>1인 사업장은 개인정보 보호로 주소 번지가 *로 가려져 있습니다.</p>
+        <p>파주출판도시 협의회 목록은 따로 맞춰 보았습니다. 인쇄 업종 {meta?.sources[1]?.printing}곳 가운데
+          {" "}{meta?.book_matched}곳이 인허가 데이터와 이름·도로명이 맞아 그 좌표로 표시합니다.</p>
+        <p>좌표를 도로 단위로 추정했던 {dropped}곳은 지도에서 뺐습니다. 실제 그 자리에 업체가 있는지 확인할 수
+          없어서입니다(폐업·인허가 없음으로 확인된 곳 포함).</p>
+        <p>지도 타일 © OpenStreetMap contributors.</p>
       </div>
     </main>
   );

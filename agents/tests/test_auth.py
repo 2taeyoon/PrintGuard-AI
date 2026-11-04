@@ -115,18 +115,7 @@ def test_bearer_parsing():
 
 
 # ---------- 오케스트레이터 ----------
-def test_session_endpoint_issues_usable_token():
-    with TestClient(app) as c:
-        r = c.post("/auth/session")
-        assert r.status_code == 200
-        data = r.json()["data"]
-        claims = verify(data["token"])
-        assert claims and claims.kind == "browser" and data["expires_in"] > 0
-        # 받은 토큰으로 바로 의뢰를 넣을 수 있다
-        h = {"Authorization": f"Bearer {data['token']}"}
-        job = c.post("/jobs", files={"file": ("a.pdf", PDF, "application/pdf")}, data={"options": "{}"}, headers=h)
-        assert job.status_code == 200
-        assert c.get("/jobs", headers=h).json()["data"]
+# 토큰을 내주는 쪽(구글 로그인)은 tests/test_google.py에서 본다. 여기서는 토큰 자체만 본다.
 
 
 def test_no_token_sees_nothing_but_bad_token_says_so():
