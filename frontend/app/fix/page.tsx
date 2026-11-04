@@ -59,6 +59,75 @@ function useBlob(ctx: string | null, name: string | null) {
   return got && got.key === key ? got.url : null;
 }
 
+/** 눌러서 복사하는 명령 한 줄. 연결 안내는 '읽고 따라 치는' 것이 아니라 '복사해서 붙여넣는' 것이어야 한다. */
+function Cmd({ children, note }: { children: string; note?: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <div className="cmd">
+      <code>{children}</code>
+      <button type="button" className="pill" onClick={() => {
+        navigator.clipboard.writeText(children).then(() => {
+          setDone(true);
+          setTimeout(() => setDone(false), 2000);
+        }, () => undefined);
+      }}>{done ? "복사함" : "복사"}</button>
+      {note && <span className="note">{note}</span>}
+    </div>
+  );
+}
+
+/** 연결이 안 될 때 **무엇을 하면 되는지**를 순서대로. 이유마다 짚을 곳이 다르다:
+ *  오케스트레이터가 옛 버전인가 / 에이전트가 안 떴나 / CLI가 없나. */
+function SetupGuide({ reason, hint, orch }: { reason: string; hint?: string; orch: string }) {
+  // 할 일이 전혀 다른 네 경우를 가른다. '연결 안 됨'으로 뭉뚱그리면 아무도 고치지 못한다.
+  const cliMissing = /찾을 수 없|실행할 수 없|PG_DESIGNCRAFT_CLI/.test(reason);
+  const noRoute = /^404\b|\b404 —/.test(reason);
+  const unreachable = /Failed to fetch|NetworkError|Load failed|ERR_|timeout|시간이 초과/i.test(reason);
+  const step = cliMissing ? 3 : noRoute || unreachable ? 2 : /대답하지 않습니다|꺼져/.test(reason) ? 2 : 0;
+
+  return (
+    <div className="dc_setup">
+      <p className="warn">
+        {cliMissing && <><b>designcraft-cli가 그 PC에 없습니다.</b> 아래 1번으로 설치해 주세요.</>}
+        {!cliMissing && unreachable && <><b>에이전트에 닿지 못했습니다.</b> <code>{orch}</code>가 응답하지 않습니다 — 아래 2번으로 켜 주세요.</>}
+        {!cliMissing && !unreachable && noRoute && <><b>에이전트가 옛 버전입니다.</b> 이 기능이 생기기 전에 켠 것이라 이 주소를 모릅니다 — 아래 2번으로 다시 켜 주세요.</>}
+        {!cliMissing && !unreachable && !noRoute && <>{reason || "연결하지 못했습니다."}</>}
+      </p>
+
+      <p className="note">
+        MCP는 <b>stdin/stdout으로만</b> 말합니다. 브라우저가 직접 부를 수 없어서, <b>에이전트를 돌리는 그 PC</b>에
+        <code>designcraft-cli</code>가 있어야 합니다. 지금 보고 있는 에이전트 주소는 <code>{orch}</code>입니다.
+      </p>
+
+      <ol className="dc_steps">
+        <li className={step === 3 ? "on" : ""}>
+          <b>DesignCraft CLI 설치</b> — 저장소 폴더에서 한 번만. 관리자 권한이 필요 없고, 받는 데 몇 분 걸립니다.
+          <Cmd note="릴리스를 받아 체크섬을 맞춰 보고 CLI만 꺼내 둡니다">
+            powershell -ExecutionPolicy Bypass -File deploy\install_designcraft.ps1
+          </Cmd>
+          <span className="note">
+            직접 받으셔도 됩니다 — <a href="https://github.com/storytold/designcraft/releases/latest" target="_blank" rel="noreferrer">릴리스</a>의
+            Windows portable zip 안에 있는 <code>designcraft-cli.exe</code>를
+            <code>%LOCALAPPDATA%\Programs\ArtCraft\DesignCraft\</code>에 두면 앱이 알아서 찾습니다.
+            다른 곳에 두었으면 <code>agents/.env</code>에 <code>PG_DESIGNCRAFT_CLI=경로</code>를 적습니다.
+          </span>
+        </li>
+        <li className={step === 2 ? "on" : ""}>
+          <b>에이전트 다시 켜기</b> — 설치한 뒤에는 꼭 다시 켜야 합니다(켤 때 CLI를 찾습니다).
+          <Cmd note="저장소 루트에서. 창은 그대로 두세요">conda activate dev; python agents\run_agents.py</Cmd>
+          <span className="note">포트가 <b>10개</b>(8700~8709) 떠야 정상입니다.</span>
+        </li>
+        <li>
+          <b>위 ‘다시 확인’ 누르기</b> — 서버 이름과 도구 수가 뜨면 끝입니다.
+        </li>
+      </ol>
+
+      {hint && <p className="note">{hint}</p>}
+      <p className="note">자세한 설명은 <Link href="/help">도움말</Link>에 있습니다.</p>
+    </div>
+  );
+}
+
 /** 한 쪽의 전후 비교. 1쪽만 그리면 여러 쪽짜리에서 정작 바뀐 쪽을 못 본다. */
 function Compare({ ctx, shot }: { ctx: string; shot: { page: number; before: string; after: string } }) {
   const before = useBlob(ctx, shot.before);
@@ -106,7 +175,13 @@ export default function FixPage() {
   // 상태를 효과 안에서 바로 바꾸지 않는다(연쇄 렌더). 전부 약속이 끝난 뒤에 바꾼다.
   const check = useCallback(
     () => mcpStatus()
-      .then(setMcp, (e: unknown) => setMcp({ available: false, reason: e instanceof Error ? e.message : String(e) }))
+      .then(setMcp, (e: unknown) => {
+        // 404는 '꺼짐'이 아니라 **오케스트레이터가 이 기능을 모른다**는 뜻이다. 옛 버전으로 켜 둔 것이다.
+        const m = e instanceof Error ? e.message : String(e);
+        setMcp(/^404\b/.test(m)
+          ? { available: false, reason: "404 — 에이전트가 이 기능을 모릅니다(이 기능이 생기기 전 버전으로 켜져 있습니다)." }
+          : { available: false, reason: m });
+      })
       .finally(() => setMcpBusy(false)),
     [],
   );
@@ -157,7 +232,9 @@ export default function FixPage() {
           <button type="button" className="pill" onClick={recheck} disabled={mcpBusy}>다시 확인</button>
           <span className="note">에이전트 주소: {orch}{isLocalOrch(orch) ? " (이 PC)" : ""}</span>
         </div>
-        {mcp?.available ? (
+        {mcp?.available === false && <SetupGuide reason={mcp.reason ?? ""} hint={mcp.hint} orch={orch} />}
+        {mcp === null && <div className="dc_why"><p>확인 중입니다.</p></div>}
+        {mcp?.available && (
           <>
             <div className="dc_kv">
               <span className="chip">서버<b>{mcp.server} {mcp.server_version}</b></span>
@@ -171,15 +248,6 @@ export default function FixPage() {
             </button>
             {showTools && <div className="dc_tools">{mcp.tools?.map((t) => <code key={t}>{t}</code>)}</div>}
           </>
-        ) : (
-          <div className="dc_why">
-            <p>{mcp?.reason ?? "확인 중입니다."}</p>
-            {mcp?.hint && <p className="note">{mcp.hint}</p>}
-            <p className="note">
-              MCP는 stdin/stdout으로만 말합니다. 그래서 브라우저가 직접 부를 수 없고, 에이전트를 돌리는 PC에
-              <code>designcraft-cli</code>가 깔려 있어야 합니다. 설치는 <Link href="/help">도움말</Link>을 보세요.
-            </p>
-          </div>
         )}
       </section>
 
@@ -187,8 +255,19 @@ export default function FixPage() {
       <section className="panel dc_src">
         <div className="dc_head">
           <strong>2. 원본 파일</strong>
-          <span className="note">{ACCEPT.replaceAll(",", " ")} — PDF는 받지 않습니다</span>
         </div>
+        {/* 무엇을 올릴 수 있고 무엇을 돌려받는지는 **고르기 전에** 알아야 한다.
+            올린 뒤 경고로만 알려 주면 INDD 쓰는 사람은 이미 기대가 어긋난 뒤다. */}
+        <table className="dc_formats">
+          <thead><tr><th>올리는 파일</th><th>열기</th><th>돌려받는 것</th></tr></thead>
+          <tbody>
+            <tr><td><code>.idml</code></td><td>O</td><td>고친 <b>PDF + IDML</b></td></tr>
+            <tr><td><code>.designcraft</code></td><td>O</td><td>고친 <b>PDF + .designcraft</b></td></tr>
+            <tr><td><code>.indd</code> <code>.indt</code></td><td>O</td>
+              <td>고친 <b>PDF + IDML</b> — <b>INDD로는 돌려드리지 못합니다</b>(DesignCraft가 INDD 내보내기를 지원하지 않습니다)</td></tr>
+            <tr className="no"><td><code>.pdf</code></td><td>✕</td><td>받지 않습니다 — PDF는 글자를 집을 수 없습니다</td></tr>
+          </tbody>
+        </table>
         <div className="dc_row">
           <input type="file" accept={ACCEPT} disabled={!mcp?.available || srcBusy}
             onChange={(e) => { const f = e.target.files?.[0] ?? null; setFile(f); if (f) void upload(f); }} />
@@ -208,7 +287,7 @@ export default function FixPage() {
 
             {!src.roundtrip && (
               <p className="warn">
-                이 형식은 <b>같은 형식으로 돌려드릴 수 없습니다.</b> INDD로는 내보내지 못해서, 고친 뒤에는 PDF와 IDML로 받습니다.
+                읽기는 됐습니다. 다만 <b>INDD로는 돌려드리지 못합니다</b> — 고친 뒤에는 PDF와 IDML로 받습니다.
                 올리신 원본은 그대로 두고 건드리지 않습니다.
               </p>
             )}

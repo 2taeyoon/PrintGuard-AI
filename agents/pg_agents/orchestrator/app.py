@@ -301,9 +301,14 @@ def _dc_owned(ctx: str, client: str) -> dict[str, Any]:
 
 @app.get("/designcraft/status")
 async def dc_status() -> dict[str, Any]:
-    """MCP가 연결되는지. 화면에 그대로 띄운다 — 안 되면 왜 안 되는지도 같이 온다."""
+    """MCP가 연결되는지. 안 되는 이유를 **고칠 수 있는 말로** 돌려준다 — 에이전트가 안 떴는지,
+    떴는데 CLI가 없는지는 할 일이 전혀 다르다. 둘을 '연결 안 됨'으로 뭉뚱그리면 아무도 못 고친다."""
     r = await _ask("designcraft", "mcp_status", "ctx_dc_status", {})
-    return {"data": r.get("output") or {"available": False, "reason": "designcraft 에이전트가 꺼져 있습니다"},
+    if r.get("status") == "completed" and r.get("output"):
+        return {"data": r["output"], "meta": {"status": r["status"]}}
+    return {"data": {"available": False,
+                     "reason": "원본 수정 에이전트(8709)가 대답하지 않습니다. 에이전트가 안 떴거나 옛 버전입니다.",
+                     "hint": "에이전트를 돌리는 PC에서 다시 켜 주세요: conda activate dev; python agents/run_agents.py"},
             "meta": {"status": r.get("status")}}
 
 
