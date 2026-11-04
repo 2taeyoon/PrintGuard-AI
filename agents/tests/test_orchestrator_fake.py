@@ -12,6 +12,15 @@ from pg_agents.orchestrator.app import app  # noqa: E402
 PDF = b"%PDF-1.4\n% fake\n"
 
 
+KEY = "test-browser"
+
+
+def client(key: str = KEY) -> TestClient:
+    """의뢰의 주인은 브라우저가 들고 오는 열쇠(X-PG-Client)로 가린다. 열쇠 없이 부르면 404가 맞다.
+    그래서 테스트도 실제 브라우저처럼 열쇠를 달고 부른다."""
+    return TestClient(app, headers={"X-PG-Client": key})
+
+
 def wait(c, ctx, until, timeout=5):
     t = time.time()
     while time.time() - t < timeout:
@@ -23,7 +32,7 @@ def wait(c, ctx, until, timeout=5):
 
 
 def test_job_flow_with_input_required():
-    with TestClient(app) as c:
+    with client() as c:
         r = c.post("/jobs", files={"file": ("a.pdf", PDF, "application/pdf")}, data={"options": json.dumps({"finish": "unknown"})}).json()["data"]
         j = wait(c, r["context_id"], {"input-required"})
         assert j["question"]["field"] == "finish" and j["question"]["agent"] == "paper"
@@ -36,7 +45,7 @@ def test_job_flow_with_input_required():
 
 
 def test_idempotent_same_pdf_same_options():
-    with TestClient(app) as c:
+    with client() as c:
         opts = {"finish": "none", "paper_id": "art"}
         a = c.post("/jobs", files={"file": ("a.pdf", PDF + b"x", "application/pdf")}, data={"options": json.dumps(opts)}).json()["data"]
         b = c.post("/jobs", files={"file": ("a.pdf", PDF + b"x", "application/pdf")}, data={"options": json.dumps(opts)}).json()["data"]
@@ -44,13 +53,13 @@ def test_idempotent_same_pdf_same_options():
 
 
 def test_rejects_non_pdf():
-    with TestClient(app) as c:
+    with client() as c:
         assert c.post("/jobs", files={"file": ("a.txt", b"hello", "text/plain")}).status_code == 400
 
 
 def test_partial_job_is_not_reused():
     from pg_agents.orchestrator.app import JOBS
-    with TestClient(app) as c:
+    with client() as c:
         opts = {"finish": "none", "paper_id": "snow"}
         a = c.post("/jobs", files={"file": ("a.pdf", PDF + b"p", "application/pdf")}, data={"options": json.dumps(opts)}).json()["data"]
         wait(c, a["context_id"], {"completed", "completed_partial"})
@@ -60,7 +69,7 @@ def test_partial_job_is_not_reused():
 
 
 def test_unknown_paper_asks_then_runs_color_with_choice():
-    with TestClient(app) as c:
+    with client() as c:
         opts = {"finish": "none", "paper_id": "unknown"}
         r = c.post("/jobs", files={"file": ("a.pdf", PDF + b"u", "application/pdf")}, data={"options": json.dumps(opts)}).json()["data"]
         j = wait(c, r["context_id"], {"input-required"})
@@ -80,3 +89,20 @@ def test_color_input_passes_measured_paper_white_only_when_given():
     assert "substrate_white" not in _color(Job(options={"paper_id": "art"}, **base))
     white = [95.0, 1.0, -5.0]
     assert _color(Job(options={"paper_id": "art", "substrate_white": white}, **base))["substrate_white"] == white
+
+
+def test_other_browser_cannot_see_or_answer_my_job():
+    """열쇠가 다르면 남의 의뢰는 없는 것처럼 보여야 한다(목록·상세·답·로그 모두)."""
+    with client("alice") as a:
+        r = a.post("/jobs", files={"file": ("a.pdf", PDF + b"iso", "application/pdf")},
+                   data={"options": json.dumps({"finish": "unknown"})}).json()["data"]
+        ctx = r["context_id"]
+        wait(a, ctx, {"input-required"})
+        assert a.get(f"/jobs/{ctx}").status_code == 200
+    with client("bob") as b:
+        assert b.get(f"/jobs/{ctx}").status_code == 404
+        assert b.post(f"/jobs/{ctx}/answer", json={"value": "none"}).status_code == 404
+        assert b.get("/jobs").json()["data"] == []
+        assert b.get("/logs", params={"context_id": ctx}).json()["data"] == []
+    with client() as c:  # 또 다른 열쇠에도 안 보인다
+        assert c.get(f"/jobs/{ctx}").status_code == 404

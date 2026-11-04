@@ -563,3 +563,58 @@ input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, 
 .brand { display: inline-flex; align-items: center; gap: 8px; }
 .brand img { display: block; width: 32px; height: 32px; }
 @media (max-width: 768px) { .brand img { width: 28px; height: 28px; } }
+
+/* ---- 검수 결과 복사 (화면 1) ---- */
+.copyfix { margin: 12px 0; }
+.copyfix_head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.copyfix_head strong { font-size: 1.7rem; margin-right: 4px; }
+.copyfix_text { width: 100%; margin-top: 12px; padding: 12px; border: 1px solid var(--borderLight); border-radius: 4px;
+  background: var(--bgMuted); color: var(--black); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.4rem; line-height: 1.7; resize: vertical; }
+.copyfix .note { display: block; margin-top: 8px; }
+
+/* ---- 인디자인 원본 수정 (화면 2) ---- */
+.dc_head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+.dc_head strong { font-size: 1.8rem; }
+.dc_head .badge { margin-left: 0; }
+.dc_head .badge.ok { background: var(--themaLight); color: var(--thema); }
+.dc_head .badge.off { background: var(--redLight); color: var(--redBright); }
+.dc_kv { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+.dc_row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.dc_row input[type="file"] { font-size: 1.5rem; }
+.dc_why p { font-size: 1.5rem; margin: 4px 0; }
+.dc_why code, .dc_log code, .dc_skipped code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--bgMuted); padding: 1px 6px; border-radius: 3px; font-size: 1.4rem; }
+.dc_tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+.dc_tools code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1.3rem;
+  background: var(--bgMuted); color: var(--blacklight); padding: 3px 8px; border-radius: 999px; }
+
+.dc_issues { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.dc_issues li { display: grid; grid-template-columns: 160px auto 1fr; gap: 8px; align-items: baseline;
+  padding: 8px 12px; border-radius: 4px; background: var(--bgMuted); font-size: 1.5rem; }
+.dc_issues li.sev-high { background: var(--redLight); }
+.dc_issues .dc_msg { color: var(--blacklight); font-size: 1.4rem; overflow-wrap: anywhere; }
+.dc_warnbox { margin: 8px 0; font-size: 1.4rem; color: var(--blacklight); }
+.dc_warnbox summary { cursor: pointer; }
+.dc_warnbox ul { margin: 8px 0 0 16px; }
+.dc_shot { display: block; max-width: 360px; width: 100%; margin: 12px 0 0; border: 1px solid var(--borderLight); border-radius: 4px; }
+
+.dc_ta { width: 100%; padding: 12px; border: 1px solid var(--borderLight); border-radius: 4px; background: var(--white);
+  color: var(--black); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1.4rem; line-height: 1.8; resize: vertical; }
+.dc_skipped { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 1.4rem; }
+.dc_skipped li { padding: 6px 12px; border-radius: 4px; background: var(--redLight); }
+
+.dc_compare { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+.dc_compare figure { margin: 0; }
+.dc_compare figcaption { font-size: 1.5rem; font-weight: 600; margin-bottom: 6px; }
+.dc_compare img { width: 100%; border: 1px solid var(--borderLight); border-radius: 4px; background: var(--white); }
+.dc_sub { font-size: 1.7rem; margin: 20px 0 8px; }
+.dc_log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.dc_log li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; padding: 8px 12px; border-radius: 4px; font-size: 1.5rem; }
+.dc_log li.ok { background: var(--bgMuted); }
+.dc_log li.bad { background: var(--redLight); }
+.dc_log del { color: var(--blackmute); }
+.dc_log ins { color: var(--thema); font-weight: 600; text-decoration: none; }
+.dc_log .arrow { color: var(--blackmute); }
+.dc_log .why { color: var(--redBright); font-size: 1.4rem; }
+.dc_log .note { margin-left: auto; }

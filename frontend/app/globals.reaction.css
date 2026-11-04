@@ -49,6 +49,9 @@
   .ev_sec, .qa_body { padding-left: 16px; padding-right: 16px; }
   .gs_head, .gs_body { padding-left: 16px; padding-right: 16px; }
   .cm_md { font-size: 1.4rem; }
+  .dc_issues li { grid-template-columns: 1fr; gap: 2px; }
+  .dc_compare { grid-template-columns: 1fr; }
+  .dc_log .note { margin-left: 0; flex-basis: 100%; }
 }
 @media (max-width: 640px) {
   .common_wrap { padding: 16px 16px 32px; }

@@ -1,6 +1,7 @@
 // 에이전트 모드: 로컬 오케스트레이터(agents/, 기본 http://127.0.0.1:8700)에 검수를 맡기고 결과를 앱 화면 형식으로 바꾼다.
 // 바로 검사 모드(브라우저 안에서만)와 화면은 같고, 계산은 각 에이전트가 한다.
 import type { Analysis, Issue } from "./analyze";
+import type { Fix } from "./fixlist";
 import type { Hit } from "./guide";
 import type { Risk } from "./risk";
 
@@ -123,6 +124,8 @@ export function toScreen(v: JobView): { analysis: Analysis; risks: (Risk & { hit
     key: s.key, id: 0, kind: "typo", severity: s.kind === "typo" || s.kind === "llm" ? "low" : "medium", page: s.page,
     title: `${s.kind_label}: '${s.original}' → '${s.suggestion}'`, detail: `${s.reason} (탐지: ${s.source === "rules" ? "규칙" : s.source === "kiwi_typo" ? "Kiwi 오타 모델" : s.source})`,
     fix: "원본 파일에서 직접 고치세요. 자동으로 고치지 않습니다.", rect: s.rect, source: "proofread" as const, heat: undefined,
+    // 제목 문자열로 녹여 버리지 않고 따로 들고 간다 — 인디자인 원본 수정이 이 두 값으로 글자를 찾는다
+    edit: { original: s.original, suggestion: s.suggestion },
   })) as unknown as (Issue & { key: string })[];
   const all = [...base.map((it) => ({ ...it, heat: undefined })), ...colorIssues.map((it) => ({ ...it, heat: it.heat ? { w: it.heat.w, h: it.heat.h, rgba: b64(it.heat.rgba) } : undefined })), ...proof];
   const order = { high: 0, medium: 1, low: 2 } as const;
@@ -163,3 +166,44 @@ export type AgentReply = { status: string; outcome: string | null; output: Recor
 const post = async <T,>(path: string, body?: unknown, headers: Record<string, string> = {}) =>
   j<T>(await fetch(`${orchUrl()}${path}`, { method: "POST", headers: H({ "Content-Type": "application/json", ...headers }), body: JSON.stringify(body ?? {}) }));
 export const compileReport = (ctx: string) => post<AgentReply>(`/jobs/${ctx}/report`);
+
+// ---- 인디자인 원본 수정(DesignCraft MCP). 검수는 PDF로 하지만 고칠 수 있는 것은 원본뿐이다 ----
+export type McpStatus = {
+  available: boolean; reason?: string; hint?: string; cli?: string | null; version?: string; mode?: string;
+  protocol?: string; server?: string; server_version?: string; tools?: string[];
+};
+export const mcpStatus = async () => j<McpStatus>(await fetch(`${orchUrl()}/designcraft/status`, { headers: H() }));
+
+export type PreflightIssue = { severity: string; kind: string; message: string; page: number | null };
+export type SourceView = {
+  context_id: string; filename: string; pages: number; roundtrip: boolean; pdf_ref: string;
+  stories: { id: number; length: number; overset: boolean; pages: number[]; preview: string }[];
+  preflight: PreflightIssue[]; missing_fonts: string[]; open_warnings: string[];
+  paragraph_styles: number; swatches: number; png: string;
+};
+
+/** 원본을 올리고 바로 들여다본다(쪽·스토리·preflight + 검수용 PDF). */
+export async function uploadSource(file: File): Promise<SourceView> {
+  const fd = new FormData();
+  fd.append("file", file);
+  return j<SourceView>(await fetch(`${orchUrl()}/designcraft/source`, { method: "POST", headers: H(), body: fd }));
+}
+
+export type ApplyResult = {
+  applied: { key?: string; page: number | null; original: string; suggestion: string; story: number; at: [number, number] }[];
+  failed: { key?: string; page: number | null; original: string; suggestion: string; reason: string }[];
+  pdf_ref: string; source_out: string | null; roundtrip: boolean;
+  before_png: string; after_png: string; preflight_after: PreflightIssue[];
+};
+export const applyFixes = (ctx: string, fixes: Fix[]) =>
+  post<AgentReply>(`/designcraft/${ctx}/apply`, { fixes });
+
+/** 작업 폴더의 결과물 주소(전후 PNG, 고친 PDF/IDML). 주인만 받을 수 있다. */
+export const dcFileUrl = (ctx: string, name: string) => `${orchUrl()}/designcraft/${ctx}/file/${encodeURIComponent(name)}`;
+
+/** 이미지·파일은 <img src>로 바로 못 건다 — 열쇠 헤더가 필요해서 받아서 blob URL로 바꾼다. */
+export async function dcFileBlob(ctx: string, name: string): Promise<string> {
+  const r = await fetch(dcFileUrl(ctx, name), { headers: H() });
+  if (!r.ok) throw new Error(`${name}을 받지 못했습니다(${r.status})`);
+  return URL.createObjectURL(await r.blob());
+}

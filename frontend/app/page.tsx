@@ -13,6 +13,7 @@ import { AgentProgress, QuestionCard } from "./agent-ui";
 import AgentsView, { AgentHealth } from "./agents-view";
 import { FINISHES, GROUPS, loadPapers, surface, type FinishId, type Paper, type PaperDb } from "@/lib/papers";
 import { assess, inputFrom, type Risk } from "@/lib/risk";
+import CopyFixes from "./copy-fixes";
 import { answerJob, createJob, isLocalOrch, ORCH_BUILT, orchBuiltSnapshot, orchestratorUp, orchUrl, setOrchUrl, subscribeOrch, toScreen, waitJob, type JobView } from "@/lib/agentClient";
 
 const LEVEL_LABEL = { check: "확인 필요", none: "해당 없음", na: "판단 불가" } as const;
@@ -427,6 +428,7 @@ function Home() {
             <label className="chip heatsw"><input type="checkbox" checked={showHeat} onChange={(e) => setShowHeat(e.target.checked)} /> 색 차이 지도(ΔE00&gt;5)</label>
             <span className="note">{mode === "agent" ? "오탈자는 교정 에이전트(규칙+Kiwi)가 제안만 합니다. 자동으로 고치지 않습니다." : "AI 문맥 교정(LLM)은 연결하지 않았습니다. 표기·수치 검사는 규칙 기반입니다."}</span>
           </div>
+          <CopyFixes issues={res.issues} filename={res.filename} mode={mode} />
           {res.colorReport && (
             <div className="summary colorrep panel">
               <strong>인쇄 색 차이 ({res.colorReport.profile || "선택한 프로파일"})</strong>

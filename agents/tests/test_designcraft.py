@@ -1,0 +1,166 @@
+"""designcraft 에이전트: 쪽 매핑, 입력 검증, MCP 가두기.
+
+designcraft-cli가 깔려 있을 때만 도는 시험은 따로 표시해 둔다(없으면 건너뛴다).
+깔려 있지 않아도 도는 시험이 더 많다 — 쪽 매핑과 입력 검증은 MCP 없이 확인할 수 있다.
+"""
+import asyncio
+from datetime import timedelta
+from pathlib import Path
+
+import pytest
+
+from pg_agents.contracts import AgentRequest, RequestMeta, now_utc
+from pg_agents.designcraft import agent as dc
+from pg_agents.designcraft.mcp_client import Mcp, McpError, cli_path
+
+HAVE_CLI = cli_path() is not None
+needs_cli = pytest.mark.skipif(not HAVE_CLI, reason="designcraft-cli가 없다")
+
+
+def meta(ctx="ctx_dc_test"):
+    return RequestMeta(context_id=ctx, token="mock:orchestrator", deadline=now_utc() + timedelta(minutes=5))
+
+
+# ---------- 쪽 매핑 ----------
+def test_story_pages_follows_nested_items():
+    """프레임은 그룹 안에 중첩된다. 자식 bounds는 부모 기준이라 그대로 쓰면 엉뚱한 쪽이 나온다 —
+    쪽은 최상위 조상에서 한 번 정하고 아래로 물려줘야 한다."""
+    doc = {
+        "spreads": [{
+            "index": 0,
+            "pages": [{"index": 0, "bounds": [0, 0, 300, 500]}, {"index": 1, "bounds": [300, 0, 600, 500]}],
+            "items": [
+                {"id": 1, "bounds": [10, 10, 100, 100], "children": [{"id": 2, "bounds": [-900, -900, -800, -800]}]},
+                {"id": 3, "bounds": [310, 10, 500, 100]},
+            ],
+        }],
+        "stories": [{"id": 10, "frames": [2]}, {"id": 11, "frames": [3]}, {"id": 12, "frames": [99]}],
+    }
+    pages = dc._story_pages(doc)
+    assert pages[10] == {1}, "그룹 자식은 부모의 쪽을 물려받는다(자기 bounds로 재지 않는다)"
+    assert pages[11] == {2}, "오른쪽 쪽에 놓인 프레임은 2쪽"
+    assert pages[12] == set(), "문서에 없는 프레임만 가진 스토리는 쪽이 없다"
+
+
+def test_story_pages_handles_threaded_story_across_pages():
+    doc = {
+        "spreads": [{"index": 0, "pages": [{"index": 0, "bounds": [0, 0, 300, 500]}, {"index": 1, "bounds": [300, 0, 600, 500]}],
+                     "items": [{"id": 1, "bounds": [10, 10, 100, 100]}, {"id": 2, "bounds": [310, 10, 400, 100]}]}],
+        "stories": [{"id": 7, "frames": [1, 2]}],
+    }
+    assert dc._story_pages(doc)[7] == {1, 2}
+
+
+def test_story_pages_survives_missing_bounds_and_pages():
+    """엔진이 bounds를 안 줄 수도 있다. 그래도 죽지 않고 첫 쪽으로 둔다."""
+    doc = {"spreads": [{"index": 0, "pages": [{"index": 0, "bounds": [0, 0, 300, 500]}], "items": [{"id": 1}]},
+                       {"index": 1, "pages": [], "items": [{"id": 2, "bounds": [0, 0, 1, 1]}]}],
+           "stories": [{"id": 5, "frames": [1, 2]}]}
+    assert dc._story_pages(doc)[5] == {1}  # 쪽이 없는 스프레드의 프레임은 빠진다
+
+
+# ---------- 입력 검증 ----------
+@pytest.mark.parametrize("name", ["a.pdf", "a.docx", "noext", ""])
+def test_rejects_formats_it_cannot_edit(name):
+    """PDF는 일부러 막는다 — 열려도 글자를 못 고치므로 받아 두면 거짓 기대만 준다."""
+    with pytest.raises(ValueError, match="열 수 없는 형식"):
+        dc._src_path("a" * 64, name)
+
+
+def test_missing_source_says_so():
+    with pytest.raises(FileNotFoundError):
+        dc._src_path("f" * 64, "gone.idml")
+
+
+def test_apply_fixes_rejects_empty_list():
+    r = asyncio.run(dc.apply_fixes(AgentRequest(meta=meta(), skill="apply_fixes",
+                                                input={"src_ref": "a" * 64, "filename": "a.idml", "fixes": []})))
+    assert r["status"] == "rejected" and r["outcome"] == "INVALID_INPUT"
+
+
+def test_roundtrip_only_for_formats_that_export_back():
+    """INDD는 읽기만 된다 — 같은 형식으로 돌려줄 수 없다는 것을 카드와 코드가 같이 알고 있어야 한다."""
+    assert ".idml" in dc.ROUNDTRIP and ".designcraft" in dc.ROUNDTRIP
+    assert ".indd" not in dc.ROUNDTRIP and ".indt" not in dc.ROUNDTRIP
+    assert ".indd" in dc.OPENABLE and ".pdf" not in dc.OPENABLE
+
+
+def test_card_grades():
+    g = {s.id: s.grade for s in dc.CARD.skills}
+    assert g == {"mcp_status": "read", "inspect_source": "read", "apply_fixes": "A"}
+    apply = next(s for s in dc.CARD.skills if s.id == "apply_fixes")
+    assert apply.allowed_requesters == ["orchestrator"], "파일을 쓰는 skill은 오케스트레이터만 부를 수 있다"
+
+
+# ---------- MCP 가두기 ----------
+def test_mcp_refuses_to_start_unconfined(tmp_path):
+    """가두지 않은 MCP는 띄우지 않는다. 플래그가 없으면 디스크 전체가 열린다."""
+    with pytest.raises(McpError, match="읽기·쓰기 폴더"):
+        Mcp(read_roots=[tmp_path], write_roots=[])
+    with pytest.raises(McpError, match="읽기·쓰기 폴더"):
+        Mcp(read_roots=[], write_roots=[tmp_path])
+
+
+@needs_cli
+def test_probe_reports_tools():
+    from pg_agents.designcraft.mcp_client import probe
+    p = probe()
+    assert p["available"] is True, p.get("reason")
+    assert "execute" in p["tools"] and "inspect_document" in p["tools"]
+
+
+@needs_cli
+def test_mcp_write_outside_the_root_is_refused(tmp_path):
+    """작업 폴더 밖으로는 못 쓴다. 이게 뚫리면 에이전트가 이 PC의 아무 파일이나 덮어쓴다."""
+    work, outside = tmp_path / "work", tmp_path / "outside"
+    work.mkdir(), outside.mkdir()
+    with Mcp(read_roots=[work], write_roots=[work]) as m:
+        m.tool("new_document", {"preset": "A4"})
+        m.ex("file.exportPdf", path=str(work / "ok.pdf"))          # 안쪽은 된다
+        assert (work / "ok.pdf").exists()
+        with pytest.raises(McpError):                               # 바깥은 거절
+            m.ex("file.exportPdf", path=str(outside / "no.pdf"))
+    assert not (outside / "no.pdf").exists()
+
+
+@needs_cli
+def test_apply_fixes_engine_refinds_after_each_edit(tmp_path):
+    """한글은 글자당 3바이트다. 앞을 고치면 뒤 오프셋이 밀리는데, 한 건마다 다시 찾으므로 따라와야 한다."""
+    src = tmp_path / "t.designcraft"
+    with Mcp(read_roots=[tmp_path], write_roots=[tmp_path]) as m:
+        m.tool("new_document", {"preset": "A4", "margins": 36})
+        r = m.ex("frame.create", rect=[36, 36, 520, 200], content="text", text="alpha and beta and gamma")
+        m.tool("set_story_text", {"story": r["story"], "text": "alpha and beta and gamma"})
+        m.ex("file.saveAs", path=str(src))
+    fixes = [{"key": "1", "original": "alpha", "suggestion": "가나다라마"},   # 5자 → 15바이트 (+10)
+             {"key": "2", "original": "gamma", "suggestion": "감마"},         # 뒤쪽 — 밀린 위치를 찾아야 한다
+             {"key": "3", "original": "없는말", "suggestion": "x"}]
+    out = tmp_path / "out"
+    out.mkdir()
+    res = dc._apply_blocking(src, ".designcraft", out, fixes)
+    assert [a["key"] for a in res["applied"]] == ["1", "2"]
+    assert [f["key"] for f in res["failed"]] == ["3"]
+    assert "찾지 못했" in res["failed"][0]["reason"]
+    assert (out / res["before_png"]).exists() and (out / res["after_png"]).exists()
+    assert Path(res["pdf_path"]).exists()
+
+
+@needs_cli
+def test_apply_fixes_refuses_ambiguous_and_wrong_page(tmp_path):
+    """같은 문구가 여러 군데면 찍지 않고 실패로 남긴다 — 추측해서 고치면 조용히 틀린다."""
+    src = tmp_path / "t.designcraft"
+    with Mcp(read_roots=[tmp_path], write_roots=[tmp_path]) as m:
+        m.tool("new_document", {"preset": "A4", "margins": 36})
+        r = m.ex("frame.create", rect=[36, 36, 520, 200], content="text", text="x")
+        m.tool("set_story_text", {"story": r["story"], "text": "같은말 그리고 같은말"})
+        m.ex("file.saveAs", path=str(src))
+    out = tmp_path / "out"
+    out.mkdir()
+    res = dc._apply_blocking(src, ".designcraft", out, [
+        {"key": "dup", "original": "같은말", "suggestion": "다른말"},
+        {"key": "pg", "page": 9, "original": "그리고", "suggestion": "및"},
+    ])
+    assert res["applied"] == []
+    why = {f["key"]: f["reason"] for f in res["failed"]}
+    assert "2군데" in why["dup"]
+    assert "9쪽에는 없습니다" in why["pg"]
