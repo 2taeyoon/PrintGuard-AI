@@ -174,6 +174,24 @@ cwd는 `agents/`여야 합니다. 읽기 도구 8개와 쓰기 도구 1개(보�
 | `.indd` · `.indt` | **받지 않습니다** | — INDD로 돌려줄 수 없어서입니다. IDML로 내보내 올립니다 |
 | `.pdf` | — | 받지 않습니다(고칠 수 없어서) |
 
+### 무엇을 올리나 — 파일 하나보다 폴더
+
+IDML은 **사진을 링크로만** 들고 있습니다. 파일 하나만 올리면 인쇄용 사진이 따라오지 않아
+`끊긴 이미지 링크`가 뜨고, 내보낸 PDF에서도 사진이 빠집니다. 화면에 보이는 그림은 IDML이
+품고 있는 저해상 미리보기라 인쇄에는 못 씁니다.
+
+InDesign에서 **파일 → 패키지**로 만든 폴더를 통째로 올리면 그대로 열립니다.
+
+```
+내 잡지 폴더/
+  magazine.idml
+  Links/              ← 사진. DesignCraft가 IDML 옆이나 이 폴더에서 찾는다
+    cover.jpg
+  Document fonts/     ← 글꼴. 있으면 대체 글꼴 문제도 사라진다
+```
+
+글자 교정만 하고 고친 IDML만 받으실 거면 파일 하나로도 충분합니다.
+
 ### 설치
 
 [DesignCraft](https://github.com/storytold/designcraft)의 `designcraft-cli`가 **에이전트를 돌리는 PC에**

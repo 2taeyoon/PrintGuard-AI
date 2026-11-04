@@ -74,16 +74,36 @@ CARD = AgentCard.model_validate({
 
 # ---------- 공통 ----------
 def _src_path(src_ref: str, filename: str) -> tuple[Path, str]:
-    """저장해 둔 원본의 경로와 확장자. 확장자가 중요하다 — DesignCraft가 이걸로 가져오기 방식을 고른다."""
+    """올린 것 안의 문서 경로와 확장자.
+
+    업로드는 파일 하나든 폴더째든 **SRC/<토큰>/ 폴더 하나로** 풀려 있다. `filename`은 그 안에서의
+    상대 경로다(`Links/`나 `Document fonts/`가 옆에 있으면 DesignCraft가 알아서 읽는다).
+    확장자가 중요하다 — DesignCraft가 이걸로 가져오기 방식을 고른다.
+    """
     ext = Path(filename or "").suffix.lower()
     if ext in REFUSED:
         raise ValueError(REFUSED[ext])
     if ext not in OPENABLE:
         raise ValueError(f"열 수 없는 형식입니다: {ext or '(확장자 없음)'} — {', '.join(sorted(OPENABLE))}만 됩니다")
-    p = SRC / f"{src_ref}{ext}"
-    if not p.exists():
+    root = (SRC / src_ref).resolve()
+    p = (root / filename).resolve()
+    if root not in p.parents and p != root:   # 토큰 폴더 밖은 열지 않는다
+        raise ValueError("올린 폴더 밖의 파일은 열지 않습니다")
+    if not p.is_file():
+        p = SRC / f"{src_ref}{ext}"           # 옛 방식(파일 하나를 sha 이름으로 둔 것)도 받아 준다
+    if not p.is_file():
         raise FileNotFoundError("올린 원본을 찾을 수 없습니다(다시 올려 주세요)")
     return p, ext
+
+
+def _pkg_root(src: Path) -> Path:
+    """읽기를 열어 줄 폴더. 올린 묶음의 뿌리(SRC/<토큰>)까지 열어야 `Links/`와 `Document fonts/`가
+    닿는다 — 문서가 하위 폴더에 들어 있는 패키지가 흔하다. SRC 자체(남의 업로드까지)는 열지 않는다."""
+    p = src.parent.resolve()
+    root = SRC.resolve()
+    while p.parent != root and root in p.parents:
+        p = p.parent
+    return p
 
 
 def _job_dir(context_id: str) -> Path:
@@ -150,7 +170,7 @@ async def mcp_status(_: AgentRequest) -> dict[str, Any]:
 def _inspect_blocking(src: Path, ext: str, out: Path) -> dict[str, Any]:
     # 읽기는 원본이 있는 폴더와 작업 폴더만, 쓰기는 작업 폴더만. 원본 폴더까지 쓰기로 열면
     # 교정이 올린 파일 자체를 덮어쓸 수 있다 — 되돌릴 것이 없어진다.
-    with Mcp(read_roots=[src.parent, out], write_roots=[out]) as m:
+    with Mcp(read_roots=[_pkg_root(src), out], write_roots=[out]) as m:
         warn = _open(m, src, ext)
         doc = m.tool("inspect_document")
         pf = m.ex("preflight.run", minPpi=150) or {}
@@ -241,7 +261,7 @@ def _shot(m: Mcp, page: int, path: Path) -> bool:
 def _apply_blocking(src: Path, ext: str, out: Path, fixes: list[dict[str, Any]]) -> dict[str, Any]:
     applied: list[dict[str, Any]] = []
     failed: list[dict[str, Any]] = []
-    with Mcp(read_roots=[src.parent, out], write_roots=[out]) as m:
+    with Mcp(read_roots=[_pkg_root(src), out], write_roots=[out]) as m:
         _open(m, src, ext)
         doc = m.tool("inspect_document")
         pages = _story_pages(doc)

@@ -197,3 +197,27 @@ def test_shots_follow_the_pages_that_change(tmp_path):
     assert res["shots_total"] == 1
     for s in res["shots"]:
         assert (out / s["before"]).exists() and (out / s["after"]).exists()
+
+
+def test_src_path_finds_the_document_inside_an_uploaded_folder(tmp_path, monkeypatch):
+    """업로드는 파일 하나든 폴더째든 SRC/<토큰>/ 하나로 풀린다. 그 안의 상대 경로로 문서를 찾는다."""
+    src = tmp_path / "src"
+    monkeypatch.setattr(dc, "SRC", src)
+    pkg = src / "tok123" / "내 잡지"
+    (pkg / "Links").mkdir(parents=True)
+    (pkg / "magazine.idml").write_bytes(b"x")
+    (pkg / "Links" / "photo.jpg").write_bytes(b"x")
+    p, ext = dc._src_path("tok123", "내 잡지/magazine.idml")
+    assert p == (pkg / "magazine.idml").resolve() and ext == ".idml"
+    # 읽기 루트는 묶음의 뿌리여야 Links/가 닿는다
+    assert dc._pkg_root(p) == (src / "tok123").resolve()
+
+
+def test_src_path_refuses_escaping_the_upload_folder(tmp_path, monkeypatch):
+    """브라우저가 주는 상대 경로는 손댈 수 있다. 토큰 폴더 밖은 열지 않는다."""
+    src = tmp_path / "src"
+    monkeypatch.setattr(dc, "SRC", src)
+    (src / "tok").mkdir(parents=True)
+    (src / "secret.idml").write_bytes(b"x")
+    with pytest.raises((ValueError, FileNotFoundError)):
+        dc._src_path("tok", "../secret.idml")

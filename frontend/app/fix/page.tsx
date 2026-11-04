@@ -154,7 +154,7 @@ export default function FixPage() {
   const [mcp, setMcp] = useState<McpStatus | null>(null);
   const [mcpBusy, setMcpBusy] = useState(true);
 
-  const [file, setFile] = useState<File | null>(null);
+  const [picked, setPicked] = useState<File[]>([]);
   const [src, setSrc] = useState<SourceView | null>(null);
   const [srcBusy, setSrcBusy] = useState(false);
   const [showPre, setShowPre] = useState(true);
@@ -185,9 +185,9 @@ export default function FixPage() {
   useEffect(() => { void check(); }, [check, orch]);
   const recheck = () => { setMcpBusy(true); void check(); };  // 버튼에서는 바로 바꿔도 된다
 
-  async function upload(f: File) {
+  async function upload(fs: File[]) {
     setSrcBusy(true); setErr(""); setSrc(null); setResult(null);
-    try { setSrc(await uploadSource(f)); } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    try { setSrc(await uploadSource(fs)); } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     setSrcBusy(false);
   }
 
@@ -270,11 +270,32 @@ export default function FixPage() {
             <tr className="no"><td><code>.pdf</code></td><td>✕</td><td>받지 않습니다 — PDF는 글자를 집을 수 없습니다</td></tr>
           </tbody>
         </table>
-        <div className="dc_row">
-          <input type="file" accept={ACCEPT} disabled={!mcp?.available || srcBusy}
-            onChange={(e) => { const f = e.target.files?.[0] ?? null; setFile(f); if (f) void upload(f); }} />
+        <p className="pick_why">
+          <span className="okbadge">폴더째 올리시는 편이 좋습니다</span>
+          IDML은 사진을 <b>링크로만</b> 들고 있습니다. 파일 하나만 올리면 인쇄용 사진이 따라오지 않아 ‘끊긴 이미지 링크’가 뜨고,
+          내보낸 PDF에서도 사진이 빠집니다. InDesign에서 <b>파일 → 패키지</b>로 만든 폴더를 통째로 올리면
+          옆의 <code>Links</code> 사진과 <code>Document fonts</code> 글꼴까지 같이 올라가 그대로 열립니다.
+        </p>
+
+        <div className="dc_pick">
+          <label className="pick">
+            <b>폴더 올리기</b>
+            <span className="note">사진·글꼴까지 — 권장</span>
+            {/* webkitdirectory는 React 타입에 없어서 속성으로 직접 준다 */}
+            <input type="file" disabled={!mcp?.available || srcBusy}
+              ref={(el) => { if (el) { el.setAttribute("webkitdirectory", ""); el.setAttribute("directory", ""); } }}
+              onChange={(e) => { const fs = e.target.files; if (fs?.length) { setPicked(Array.from(fs)); void upload(Array.from(fs)); } }} />
+          </label>
+          <label className="pick">
+            <b>파일 하나만</b>
+            <span className="note">글자 교정만 할 때</span>
+            <input type="file" accept={ACCEPT} disabled={!mcp?.available || srcBusy}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) { setPicked([f]); void upload([f]); } }} />
+          </label>
           {srcBusy && <span className="badge">여는 중…</span>}
-          {file && src && <button type="button" className="pill" onClick={() => void upload(file)} disabled={srcBusy}>다시 열기</button>}
+          {picked.length > 0 && src && (
+            <button type="button" className="pill" onClick={() => void upload(picked)} disabled={srcBusy}>다시 열기</button>
+          )}
         </div>
 
         {src && (
@@ -285,8 +306,16 @@ export default function FixPage() {
               <span className="chip">글 덩어리<b>{src.stories.length}</b></span>
               <span className="chip">단락 스타일<b>{src.paragraph_styles}</b></span>
               <span className="chip">넘친 글<b>{src.stories.filter((s) => s.overset).length}</b></span>
+              {(src.uploaded_files ?? 1) > 1 && <span className="chip">올린 파일<b>{src.uploaded_files}</b></span>}
             </div>
 
+            {src.preflight.some((i) => i.kind === "missingLink") && (
+              <p className="warn">
+                <b>사진 링크가 끊겼습니다.</b> IDML 파일만 올려서 그렇습니다 — 사진은 그 파일 안에 없습니다.
+                지금 보이는 그림은 IDML이 품고 있는 <b>저해상 미리보기</b>라서, 이대로 내보낸 PDF는 인쇄에 쓸 수 없습니다.
+                글자 교정만 하실 거면 그대로 두셔도 되고, 쓸 PDF가 필요하면 <b>패키지 폴더를 통째로</b> 올려 주세요.
+              </p>
+            )}
             {src.missing_fonts.length > 0 && (
               <p className="warn">
                 <b>이 PC에 없는 글꼴 {src.missing_fonts.length}개</b>: {src.missing_fonts.join(", ")} — 대체 글꼴로 열렸습니다.
