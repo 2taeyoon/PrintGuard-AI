@@ -301,7 +301,11 @@ mark.mk-term { background: var(--themaPoint); color: var(--black); font-weight: 
 .qa > summary::after { content: "＋"; margin-left: auto; color: var(--blackmute); font-weight: 400; }
 .qa[open] > summary::after { content: "－"; }
 .qa_body { padding: 0 24px 20px 60px; font-size: 1.5rem; }
-.qa_body p { margin: 0 0 10px; max-width: 86ch; }
+.qa_body p { margin: 0 0 10px; }
+/* 뱃지가 붙은 문단: 뱃지와 글을 한 줄에. 글 폭은 재지 않는다(읽는 폭보다 뱃지 줄맞춤이 먼저다) */
+.qa_p { display: flex; justify-content: flex-start; align-items: center; gap: 8px; }
+.qa_p > .qa_tag { flex: none; margin-right: 0; }
+.qa_p > span { min-width: 0; }
 .qa_body h3 { font-size: 1.6rem; margin: 16px 0 4px; }
 .qa_body .note { font-size: 1.4rem; }
 .qa_body .warn { margin-top: 12px; font-size: 1.4rem; }

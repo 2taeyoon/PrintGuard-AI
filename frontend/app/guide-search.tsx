@@ -2,14 +2,15 @@
 
 // 인쇄 가이드 검색 — 검수 화면 맨 위에서 쓴다. 바로 검사 모드는 브라우저 안의 모델로, 에이전트 모드는 guide 에이전트로 찾는다.
 // 어느 쪽이든 답을 지어내지 않고 가이드 원문 절을 그대로 보여 준다.
-import { FormEvent, useState } from "react";
+import React, { FormEvent, useState } from "react";
 import type { Guide, Hit } from "@/lib/guide";
 import { searchGuideViaAgent } from "@/lib/agentClient";
 import { GuideResult } from "./guide-ui";
 
 const EXAMPLES = ["도련은 몇 mm로 잡아야 해?", "흰 글자가 출력에서 사라지는 이유는?", "뒷묻음은 왜 생겨?", "리치 블랙은 언제 써?"];
 
-export default function GuideSearch({ guide, mode, ready }: { guide: Guide | null; mode: "direct" | "agent"; ready: boolean }) {
+export default function GuideSearch({ guide, mode, ready, badge }:
+  { guide: Guide | null; mode: "direct" | "agent"; ready: boolean; badge?: React.ReactNode }) {
   const [q, setQ] = useState("");
   const [asked, setAsked] = useState("");
   const [hits, setHits] = useState<Hit[] | null>(null);
@@ -34,6 +35,7 @@ export default function GuideSearch({ guide, mode, ready }: { guide: Guide | nul
     <section className="gsearch panel open">
       <div className="gs_head">
         <b>인쇄 가이드 찾아보기</b>
+        {badge}
         <span className="note">판형과 색, 파일, 종이, 불량에 관한 가이드에서 질문과 가까운 항목을 찾습니다. 답을 지어내지 않고 원문을 보여 줍니다.</span>
       </div>
       <div className="gs_body">

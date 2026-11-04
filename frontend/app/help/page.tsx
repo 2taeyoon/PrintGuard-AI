@@ -30,9 +30,14 @@ function QA({ q, children }: { q: string; children: React.ReactNode }) {
     </details>
   );
 }
-const Why = ({ children }: { children: React.ReactNode }) => <p><b className="qa_tag">왜</b>{children}</p>;
-const How = ({ children }: { children: React.ReactNode }) => <p><b className="qa_tag">어떻게</b>{children}</p>;
-const Result = ({ children }: { children: React.ReactNode }) => <p><b className="qa_tag ok">결과</b>{children}</p>;
+/* 뱃지와 글을 한 줄에 세운다. 글은 한 덩어리로 감싸야 한다 — 그러지 않으면 안쪽 <b>·<code>가
+   저마다 flex 항목이 되어 줄바꿈 없이 옆으로 늘어선다. */
+const Tagged = ({ tag, ok, children }: { tag: string; ok?: boolean; children: React.ReactNode }) => (
+  <p className="qa_p"><b className={`qa_tag${ok ? " ok" : ""}`}>{tag}</b><span>{children}</span></p>
+);
+const Why = ({ children }: { children: React.ReactNode }) => <Tagged tag="왜">{children}</Tagged>;
+const How = ({ children }: { children: React.ReactNode }) => <Tagged tag="어떻게">{children}</Tagged>;
+const Result = ({ children }: { children: React.ReactNode }) => <Tagged tag="결과" ok>{children}</Tagged>;
 const Care = ({ children }: { children: React.ReactNode }) => <div className="warn"><b>주의</b> {children}</div>;
 
 /** 실제 화면 캡처. 글로만 설명하면 와닿지 않는 부분에만 붙인다 */
@@ -240,22 +245,17 @@ export default function WhyPage() {
         <Care>사람 승인 토큰은 흉내 모드(목) 값(<code>human:&lt;이름&gt;</code>)이며 실제 로그인이 아닙니다. 쓸 일이 생기면 진짜 로그인으로 바꿔야 합니다.</Care>
       </QA>
 
-      <QA q="외부 LLM 도구(MCP)가 이 앱을 쓸 수 있다고 하는데, 승인도 대신할 수 있나요?">
-        <Why>밖의 LLM에게 검사는 맡기더라도 사람이 쥐고 있어야 할 결정은 넘기지 않아야 합니다.</Why>
-        <How>MCP 서버는 요청자 이름이 <code>mcp</code>로 고정되고, 각 에이전트 카드가 <code>mcp</code>에게 열어 둔 skill만 부를 수 있습니다. 읽기 도구 7개와 쓰기 도구 1개(보고서 A)를 내보냅니다. 쓰기는 안전 관문을 거칩니다.</How>
-        <Result><b>승인 도구는 아예 만들지 않았습니다.</b>사람 승인이 필요한 등급은 승인 대기(review_id)만 돌려줍니다. 승인은 사람이 웹 화면에서 합니다. 결과에서 색 차이 지도 같은 큰 값은 뺍니다. PDF 본문도 기본으로는 넣지 않습니다(필요할 때만 명시적으로).</Result>
-      </QA>
-
       <h2 className="qa_group">내 파일은 어디로 가나</h2>
 
-      <QA q="PDF가 서버로 올라가나요? 외부로 나가는 것이 있나요?">
-        <Result><b>바로 검사 모드는 아무것도 나가지 않습니다.</b>PDF 해석·색 변환·검색 모델이 모두 브라우저 안에서 돕니다. 종이·인쇄소 데이터도 이 앱이 들고 있는 파일입니다.</Result>
-        <Result><b>에이전트 검사 모드도 내 컴퓨터 안입니다.</b> 에이전트는 127.0.0.1에서만 돕니다. PDF는 로컬 폴더에 저장되고 에이전트끼리는 파일 내용 대신 해시(pdf_ref)만 주고받습니다.</Result>
-        <Result><b>원본 수정에 올린 편집 파일도 마찬가지입니다.</b> 폴더째 올려도 그 PC의 작업 폴더에만 풀립니다. DesignCraft는 <b>그 폴더 밖을 읽지도 쓰지도 못하게</b> 가둬 놓고 띄웁니다(<code>--automation-read-root</code>·<code>--write-root</code>). 고친 PDF와 편집 파일도 같은 폴더에 생기고, 받아 가는 것은 그 브라우저의 열쇠를 가진 사람뿐입니다.</Result>
+      <QA q="올린 파일이 서버로 가나요? 외부로 나가는 것이 있나요?">
+        <Result><b>바로 검사 — 아무 데도 가지 않습니다.</b> PDF 해석·색 변환·검색 모델이 모두 <b>보시는 분의 브라우저 안</b>에서 돕니다. 종이·인쇄소 데이터도 이 앱이 들고 있는 파일이라 받아 갈 것이 없습니다.</Result>
+        <Result><b>에이전트 검사 — 만든 사람의 PC로 갑니다.</b> 에이전트는 서버를 빌리지 않고 <b>개발자 PC에서</b> 돕니다(<code>127.0.0.1</code>에서만 듣고, 바깥에는 Cloudflare 터널로 창구 하나만 엽니다).
+          올린 파일은 <b>그 PC의 폴더</b>에 저장되고, 에이전트끼리는 파일 내용 대신 해시(<code>pdf_ref</code>)만 주고받습니다. 서버가 다시 뜨면 의뢰 목록은 지워집니다.</Result>
+        <Result><b>원본 수정에 올린 편집 파일도 같은 PC입니다.</b> 폴더째 올려도 그 PC의 작업 폴더에만 풀립니다. DesignCraft는 <b>그 폴더 밖을 읽지도 쓰지도 못하게</b> 가둬 놓고 띄웁니다(<code>--automation-read-root</code>·<code>--write-root</code>). 고친 PDF와 편집 파일도 같은 폴더에 생기고, 받아 가는 것은 그 브라우저의 열쇠를 가진 사람뿐입니다.</Result>
         <Result>선택 기능 두 개만 밖으로 나갑니다 — <b>LLM 교정</b>을 켜면 교정할 본문이 Gemini API로 가고(기본 꺼짐),
           <b>LangSmith 추적</b>을 켜면 에이전트·소요 시간·관문 결정만 갑니다(본문·입력값은 공통 로그에 애초에 남기지 않아 나갈 것이 없습니다).</Result>
         <Shot w={1273} h={869} src="/shots/langsmith-trace.png" alt="LangSmith에 올라간 의뢰 추적 화면"
-          caption="LangSmith로 내보냈을 때 올라가는 것 전부 — 에이전트·skill 이름과 걸린 시간, 관문 결정 수, 로그 줄 수뿐입니다. 입력에는 의뢰 번호(context_id)만 있고 PDF 본문이나 검사 입력값은 없습니다." />
+          caption="LangSmith로 내보냈을 때 올라가는 것 전부 — 에이전트·skill 이름과 걸린 시간, 관문 결정 수, 로그 줄 수뿐입니다. 입력에는 의뢰 번호(context_id)만 있고 파일 본문이나 검사 입력값은 없습니다. 이 캡처는 앞선 판에서 찍은 것이라 지금은 없는 인쇄소(shop) 에이전트가 보입니다 — 나가는 항목의 종류는 그대로입니다." />
       </QA>
 
       {/* 측정표 전체(옛 '평가' 탭)를 같은 화면에 이어 붙인다 */}

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import {
-  applyFixes, dcFileBlob, isLocalOrch, mcpStatus, orchBuiltSnapshot, orchUrl, subscribeOrch, uploadSource,
+  applyFixes, dcFileBlob, mcpStatus, orchBuiltSnapshot, orchUrl, subscribeOrch, uploadSource,
   type ApplyResult, type McpStatus, type PreflightIssue, type SourceView,
 } from "@/lib/agentClient";
 import { parseFixText } from "@/lib/fixlist";
@@ -235,7 +235,6 @@ export default function FixPage() {
           <strong>1. DesignCraft MCP 연결</strong>
           <span className={`badge ${mcp?.available ? "ok" : "off"}`}>{mcpBusy ? "확인 중…" : mcp?.available ? "연결됨" : "연결 안 됨"}</span>
           <button type="button" className="pill" onClick={recheck} disabled={mcpBusy}>다시 확인</button>
-          <span className="note">에이전트 주소: {orch}{isLocalOrch(orch) ? " (이 PC)" : ""}</span>
         </div>
         {mcp?.available === false && <SetupGuide reason={mcp.reason ?? ""} orch={orch} />}
         {mcp === null && <div className="dc_why"><p>확인 중입니다.</p></div>}
