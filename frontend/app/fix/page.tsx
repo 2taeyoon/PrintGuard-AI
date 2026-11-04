@@ -9,6 +9,7 @@ import {
 } from "@/lib/agentClient";
 import { parseFixText } from "@/lib/fixlist";
 import { GsMark } from "../gs-mark";
+import { SessionBoot, SignInPanel, useSession } from "../sign-in";
 
 const SEV: Record<string, string> = { error: "오류", warning: "경고" };
 // DesignCraft preflight가 내는 종류를 우리말로. 모르는 종류는 영문 그대로 둔다(숨기면 왜 걸렸는지 알 수 없다).
@@ -95,7 +96,7 @@ function SetupGuide({ reason, orch }: { reason: string; orch: string }) {
       </p>
 
       <p className="note">
-        MCP는 <b>stdin/stdout으로만</b> 말합니다. 브라우저가 직접 부를 수 없어서, <b>에이전트를 돌리는 그 PC</b>에
+        MCP는 <b>stdin/stdout으로만</b> 말합니다. 브라우저가 직접 부를 수 없어서, <b>에이전트를 돌리는 그 PC</b>에{" "}
         <code>designcraft-cli</code>가 있어야 합니다. 지금 보고 있는 에이전트 주소는 <code>{orch}</code>입니다.
       </p>
 
@@ -107,7 +108,7 @@ function SetupGuide({ reason, orch }: { reason: string; orch: string }) {
           </Cmd>
           <span className="note">
             직접 받으셔도 됩니다 — <a href="https://github.com/storytold/designcraft/releases/latest" target="_blank" rel="noreferrer">릴리스</a>의
-            Windows portable zip 안에 있는 <code>designcraft-cli.exe</code>를
+            Windows portable zip 안에 있는 <code>designcraft-cli.exe</code>를{" "}
             <code>%LOCALAPPDATA%\Programs\ArtCraft\DesignCraft\</code>에 두면 앱이 알아서 찾습니다.
             다른 곳에 두었으면 <code>agents/.env</code>에 <code>PG_DESIGNCRAFT_CLI=경로</code>를 적습니다.
           </span>
@@ -146,10 +147,12 @@ function DirectConnect() {
         그래서 PrintGuard는 두 폴더가 없으면 MCP를 <b>아예 띄우지 않습니다</b>.
       </p>
       <p className="note">
-        직접 붙이면 이 화면이 하던 것들은 빠집니다 — 같은 글자가 여러 쪽에 있을 때 <b>쪽으로 가리기</b>,
-        한 건 고칠 때마다 <b>다시 찾기</b>(한글은 한 자가 3바이트라 한 번 바꾸면 뒤쪽 위치가 모두 밀립니다),
-        항목별 실패 이유, 승인 관문, 고친 뒤 재검사. 한두 건이면 직접 붙이는 편이 빠르고,
-        검수 결과를 그대로 반영할 때는 아래 2·3·4가 안전합니다.
+        직접 붙이면 이 화면이 하던 것들은 빠집니다. 같은 글자가 여러 쪽에 있을 때 <b>쪽으로 가리기</b>,
+        한 건 고칠 때마다 <b>다시 찾기</b>, 항목별 실패 이유, 승인 관문, 고친 뒤 재검사 다섯입니다.
+        (한글은 한 자가 3바이트라, 한 번 바꾸면 뒤쪽 위치가 모두 밀립니다. 그래서 건마다 다시 찾습니다.)
+      </p>
+      <p className="note">
+        한두 건이면 직접 붙이는 편이 빠릅니다. 검수 결과를 그대로 반영할 때는 아래 2·3·4가 안전합니다.
       </p>
     </details>
   );
@@ -214,6 +217,8 @@ export default function FixPage() {
   useEffect(() => { void check(); }, [check, orch]);
   const recheck = () => { setMcpBusy(true); void check(); };  // 버튼에서는 바로 바꿔도 된다
 
+  const me = useSession().account;
+
   async function upload(fs: File[]) {
     setSrcBusy(true); setErr(""); setSrc(null); setResult(null);
     try { setSrc(await uploadSource(fs)); } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
@@ -241,6 +246,7 @@ export default function FixPage() {
 
   return (
     <main className="common_wrap">
+      <SessionBoot />
       <div className="page_head">
         <h1>원본 수정</h1>
         <p className="lead">
@@ -257,6 +263,9 @@ export default function FixPage() {
           내보내 올려 주세요.
         </p>
       </div>
+
+      {/* 올린 편집 파일도 에이전트를 돌리는 PC에 저장된다. 그래서 여기도 주인이 있어야 한다 */}
+      {!me && <SignInPanel what="원본 수정" />}
 
       {/* 1. 연결 상태 */}
       <section className="panel dc_mcp">
@@ -318,19 +327,19 @@ export default function FixPage() {
             <b>폴더 올리기</b>
             <span className="note">사진·글꼴까지 — 권장</span>
             {/* webkitdirectory는 React 타입에 없어서 속성으로 직접 준다 */}
-            <input type="file" disabled={!mcp?.available || srcBusy}
+            <input type="file" disabled={!mcp?.available || srcBusy || !me}
               ref={(el) => { if (el) { el.setAttribute("webkitdirectory", ""); el.setAttribute("directory", ""); } }}
               onChange={(e) => { const fs = e.target.files; if (fs?.length) { setPicked(Array.from(fs)); void upload(Array.from(fs)); } }} />
           </label>
           <label className="pick">
             <b>파일 하나만</b>
             <span className="note">글자 교정만 할 때</span>
-            <input type="file" accept={ACCEPT} disabled={!mcp?.available || srcBusy}
+            <input type="file" accept={ACCEPT} disabled={!mcp?.available || srcBusy || !me}
               onChange={(e) => { const f = e.target.files?.[0]; if (f) { setPicked([f]); void upload([f]); } }} />
           </label>
           {srcBusy && <span className="badge">여는 중…</span>}
           {picked.length > 0 && src && (
-            <button type="button" className="pill" onClick={() => void upload(picked)} disabled={srcBusy}>다시 열기</button>
+            <button type="button" className="pill" onClick={() => void upload(picked)} disabled={srcBusy || !me}>다시 열기</button>
           )}
         </div>
 
@@ -398,8 +407,8 @@ export default function FixPage() {
         </div>
         {/* 손으로 쓰는 칸이 아니라 **받는 칸**이다. 안 적어 두면 15건을 직접 타이핑하려 든다. */}
         <p className="note">
-          손으로 쓰는 칸이 아닙니다 — <Link href="/">인쇄 검수</Link>에서 <b>‘교정 목록 복사’</b>를 누르고 여기서
-          <b> 붙여넣기</b>만 하면 채워집니다. 칸을 열어 둔 것은 여러 건 중 <b>일부만 고르거나</b> 제안 문구를
+          손으로 쓰는 칸이 아닙니다 — <Link href="/">인쇄 검수</Link>에서 <b>‘교정 목록 복사’</b>를 누르고 여기서{" "}
+          <b>붙여넣기</b>만 하면 채워집니다. 칸을 열어 둔 것은 여러 건 중 <b>일부만 고르거나</b> 제안 문구를
           손봐서 반영하고 싶을 때를 위해서입니다.
         </p>
         <textarea ref={pasteRef} className="dc_ta" rows={10} value={paste} onChange={(e) => setPaste(e.target.value)}
@@ -415,7 +424,7 @@ export default function FixPage() {
       <section className="panel dc_run">
         <div className="dc_head">
           <strong>4. 반영하고 내보내기</strong>
-          <button type="button" className="pill on" disabled={!ctx || !parsed.fixes.length || runBusy || !mcp?.available} onClick={() => void run()}>
+          <button type="button" className="pill on" disabled={!ctx || !parsed.fixes.length || runBusy || !mcp?.available || !me} onClick={() => void run()}>
             {runBusy ? "반영 중…" : `교정 ${parsed.fixes.length}건 반영`}
           </button>
           {!ctx && <span className="note">먼저 원본을 올려 주세요.</span>}
@@ -477,7 +486,7 @@ export default function FixPage() {
             <h3 className="dc_sub">고친 뒤 원본 검사</h3>
             <IssueRows rows={result.preflight_after} empty="남은 문제가 없습니다." />
             <p className="note">
-              교정이 새 문제를 만들 수 있습니다. 한글을 라틴 글꼴 자리에 넣으면 <b>없는 글자(글리프)</b>가 되고, 글이 길어지면
+              교정이 새 문제를 만들 수 있습니다. 한글을 라틴 글꼴 자리에 넣으면 <b>없는 글자(글리프)</b>가 되고, 글이 길어지면{" "}
               <b>넘침</b>이 생깁니다. 그래서 고친 뒤에 한 번 더 검사합니다.
             </p>
           </>

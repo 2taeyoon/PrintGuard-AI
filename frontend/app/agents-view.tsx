@@ -4,6 +4,7 @@
 // '인쇄 검수'에서 에이전트 검사 모드를 고르면 이 화면이 그 자리에 펼쳐진다(따로 된 탭은 없앴다).
 import { useEffect, useState } from "react";
 import { getTrace, listAgents, listJobs, listLogs, orchestratorUp, type AgentInfo, type JobRow, type LogRow, type Trace } from "@/lib/agentClient";
+import { useSession } from "./sign-in";
 import { agentLabel, jobNo, skillLabel, SkillName, statusLabel } from "./agent-ui";
 
 const KIND: Record<string, string> = {
@@ -122,6 +123,7 @@ export default function AgentsView({ initialCtx = "", showWarn = true }: { initi
   const [logs, setLogs] = useState<LogRow[]>([]);
   const [trace, setTrace] = useState<Trace | null>(null);
   const [opened, setOpened] = useState<string[]>([]); // 처음에는 모두 접혀 있고, 각각 따로 열고 닫는다
+  const me = useSession().account?.email ?? "";
   const toggle = (name: string) => setOpened((o) => (o.includes(name) ? o.filter((x) => x !== name) : [...o, name]));
 
   // 렌더 중에 바로 맞춘다(권장 방식). 사용자가 직접 고른 뒤에는 initialCtx가 그대로라 건드리지 않는다.
@@ -131,6 +133,8 @@ export default function AgentsView({ initialCtx = "", showWarn = true }: { initi
     if (initialCtx) setCtx(initialCtx);
   }
 
+  // 에이전트 목록은 로그인과 상관없다 — 누가 무엇을 할 수 있는지(skill·등급)는 공개 정보다.
+  // 내 의뢰와 내 소통 기록은 주인이 있어야 하므로 로그인한 뒤에만 가져온다.
   useEffect(() => {
     let alive = true;
     const tick = async () => {
@@ -138,16 +142,20 @@ export default function AgentsView({ initialCtx = "", showWarn = true }: { initi
       if (!alive) return;
       setUp(ok);
       if (!ok) return;
-      const [a, js] = await Promise.all([listAgents(), listJobs()]);
+      const a = await listAgents();
       if (!alive) return;
-      setAgents(a); setJobs(js);
+      setAgents(a);
+      if (!me) { setJobs([]); setLogs([]); setTrace(null); return; }
+      const js = await listJobs();
+      if (!alive) return;
+      setJobs(js);
       setLogs(await listLogs(ctx || undefined));
       setTrace(ctx ? await getTrace(ctx) : null);  // 추적은 의뢰를 하나 고를 때만(전체 워터폴은 뜻이 없다)
     };
-    tick();
-    const t = setInterval(tick, 2000);
+    void tick().catch(() => undefined);   // 터널이 끊기거나 로그인이 만료되면 다음 차례에 다시 해 본다
+    const t = setInterval(() => void tick().catch(() => undefined), 2000);
     return () => { alive = false; clearInterval(t); };
-  }, [ctx]);
+  }, [ctx, me]);
 
   const list = Object.entries(agents).sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b));
   const inPlan = list.filter(([n]) => IN_PLAN.has(n.replace("(fake)", "")));
@@ -156,7 +164,8 @@ export default function AgentsView({ initialCtx = "", showWarn = true }: { initi
 
   return (
     <>
-      {showWarn && up === false && <div className="warn">에이전트에 연결할 수 없습니다. <code>agents</code> 폴더에서 <code>python run_agents.py</code>로 켜세요.</div>}
+      {showWarn && up === false && <div className="warn">에이전트에 연결할 수 없습니다.</div>}
+      {up && !me && <div className="note">의뢰 목록과 소통 기록은 로그인한 뒤에 보입니다. 아래 에이전트 목록은 로그인과 상관없이 그대로 보여 줍니다.</div>}
 
       <div className="agent_layout">
         {/* 왼쪽: 에이전트 목록 */}

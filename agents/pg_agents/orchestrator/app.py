@@ -6,6 +6,8 @@
 - POST /jobs/{context_id}/answer  {"value": …}    → input-required 답
 - GET  /agents                                     → Agent Card 레지스트리와 상태
 - GET  /logs?context_id=…                          → 공통 로그(에이전트 소통 탭)
+- GET  /auth/config                                → 로그인 단추를 그리는 데 필요한 구글 클라이언트 ID
+- POST /auth/google  {"credential": …}             → 구글 ID 토큰 → 이 앱의 세션 토큰
 
 PG_FAKE_AGENTS=1이면 부서 에이전트 대신 프로세스 안의 가짜 응답으로 돈다(시연·테스트용).
 """
@@ -27,7 +29,8 @@ from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadF
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from ..auth import Claims, bearer, mint, verify
+from .. import google
+from ..auth import Claims, bearer, mint, secret, verify
 from ..client import call_agent, new_meta
 from ..common_log import log_event, query
 from ..config import CORS_ORIGIN_REGEX, DC_OUT, PORTS, SRC, STORE, agent_url, ensure_dirs, set_agent_name
@@ -81,14 +84,17 @@ async def registry() -> dict[str, dict[str, Any]]:
 # 소통 기록이 그대로 보이고, 남의 질문에 대신 답까지 할 수 있다. 그래서 요청마다 **서버가 발급해
 # 서명한** 토큰을 받고, 그 안의 subject가 맞는 의뢰만 돌려준다(`pg_agents.auth` 참조).
 #
-# 전에는 브라우저가 스스로 만든 값(X-PG-Client)을 그대로 믿었다. 서버가 발급하지 않으니 기한도
-# 회수도 없고, 브라우저는 그것을 localStorage에 영구히 두어야 했다. 지금은 `POST /auth/session`이
-# 기한 있는 토큰을 내주고, 브라우저는 탭이 살아 있는 동안만 들고 있는다.
+# 주인이 누구인지는 **구글 로그인**으로 정한다. 토큰을 두 겹으로 쓰는 이유는 `pg_agents.google`에
+# 적어 두었다 — 요약하면 구글 토큰은 로그인하는 순간 한 번만 보고, 그 뒤로는 이 앱이 서명한
+# 토큰 하나로 브라우저와 MCP를 같은 길에서 검사한다.
 #
-# 로그인은 아니다 — 누구인지는 묻지도 담지도 않는다. 세션을 새로 받으면 지난 의뢰는 다시 못 본다.
+# 여기까지 온 과정: ① 브라우저가 스스로 만든 값(X-PG-Client)을 믿었다 → 기한도 회수도 없었다.
+# ② 서버가 익명 세션을 발급했다(`POST /auth/session`) → 기한은 생겼지만 '누구'는 여전히 없어서
+# 탭을 닫으면 지난 의뢰를 본인도 못 찾았다. ③ 지금은 구글 계정이 주인이라, 다시 로그인하면
+# 같은 사람으로 돌아온다. 그래서 브라우저가 토큰을 어디에도 저장할 필요가 없다.
 Auth = Header(None, alias="Authorization")
 SESSION_HOURS = max(0.1, float(os.environ.get("PG_SESSION_HOURS", "12")))
-# 세션을 무한정 받을 수 있으면 토큰을 바꿔 가며 MAX_ACTIVE를 넘길 수 있다. 발급 자체를 IP로 막는다.
+# 로그인을 무한정 시도할 수 있으면 구글 공개키 확인을 그만큼 돌리게 된다. 발급 자체를 IP로 막는다.
 MAX_SESSIONS_PER_IP = max(1, int(os.environ.get("PG_MAX_SESSIONS_PER_IP", "60")))
 SESSION_WINDOW = 3600.0
 _minted: dict[str, list[float]] = {}
@@ -102,7 +108,7 @@ def _claims(header: str | None) -> Claims | None:
         return None
     c = verify(raw)
     if c is None:
-        raise HTTPException(401, "세션이 만료되었거나 토큰이 올바르지 않습니다. 세션을 새로 받아 주세요")
+        raise HTTPException(401, "로그인이 만료되었거나 토큰이 올바르지 않습니다. 다시 로그인해 주세요")
     return c
 
 
@@ -122,25 +128,48 @@ def _writer(header: str | None) -> Claims:
     return c
 
 
-@app.post("/auth/session")
-async def session(request: Request) -> dict[str, Any]:
-    """브라우저에 익명 세션 토큰을 내준다. 로그인이 아니다 — 누구인지는 묻지 않는다.
-
-    하는 일은 "이 세션이 넣은 의뢰만 이 세션에 보인다"뿐이고, 전과 달라진 것은 **서버가 발급하고
-    기한이 있다**는 점이다. 브라우저는 이 값을 탭이 살아 있는 동안만 들고 있으면 된다.
-    """
+def _too_often(request: Request) -> None:
     ip = (request.client.host if request.client else "?") or "?"
     now = time.time()
     seen = [t for t in _minted.get(ip, []) if now - t < SESSION_WINDOW]
     if len(seen) >= MAX_SESSIONS_PER_IP:
-        raise HTTPException(429, "세션을 너무 자주 받았습니다. 잠시 뒤에 다시 해 주세요")
+        raise HTTPException(429, "로그인을 너무 자주 했습니다. 잠시 뒤에 다시 해 주세요")
     seen.append(now)
     _minted[ip] = seen
     if len(_minted) > 4096:  # 오래된 IP는 버린다(메모리가 쌓이기만 하는 것을 막는다)
         for k in [k for k, v in _minted.items() if not v or now - max(v) > SESSION_WINDOW]:
             _minted.pop(k, None)
-    return {"data": {"token": mint("browser", hours=SESSION_HOURS),
-                     "expires_in": int(SESSION_HOURS * 3600)}, "meta": {}}
+
+
+@app.get("/auth/config")
+async def auth_config() -> dict[str, Any]:
+    """브라우저가 로그인 단추를 그리기 전에 묻는다. 클라이언트 ID는 비밀이 아니다 —
+    화면에 들고 다녀야 하는 값이라 숨길 수 없고, 숨겨서 얻는 것도 없다.
+
+    왜 이 값을 에이전트가 들고 있나 — 앱은 한 번 배포해 두고 에이전트는 사람마다 자기 PC에서
+    켠다. 클라이언트 ID를 앱에 박아 두면 다른 사람이 자기 에이전트를 쓸 때 ID를 못 바꾼다."""
+    return {"data": {"google_client_id": google.client_id()}, "meta": {}}
+
+
+@app.post("/auth/google")
+async def auth_google(body: dict[str, Any], request: Request) -> dict[str, Any]:
+    """구글 로그인 결과(ID 토큰)를 확인하고 이 앱의 세션 토큰으로 바꿔 준다.
+
+    주인 이름으로는 구글 번호(sub)를 그대로 쓰지 않고 **비밀로 해시한 값**을 쓴다. 의뢰 기록과
+    로그에 남는 값이라, 새면 그 사람의 구글 계정 번호가 같이 새기 때문이다. 비밀 파일을 지우면
+    해시가 통째로 바뀌어 지난 토큰이 전부 무효가 된다(그것이 회수 수단이다).
+    """
+    if not google.client_id():
+        raise HTTPException(503, "이 에이전트에 구글 클라이언트 ID가 없습니다. 에이전트를 돌리는 쪽에서 "
+                                 "PG_GOOGLE_CLIENT_ID를 넣고 다시 켜야 합니다")
+    _too_often(request)
+    u = google.verify(str(body.get("credential") or ""))
+    if u is None:
+        raise HTTPException(401, "구글 로그인을 확인하지 못했습니다. 다시 로그인해 주세요")
+    sub = hashlib.sha256(secret() + b"google:" + u.sub.encode()).hexdigest()[:32]
+    return {"data": {"token": mint("browser", subject=sub, hours=SESSION_HOURS, label=u.email[:40]),
+                     "expires_in": int(SESSION_HOURS * 3600),
+                     "email": u.email, "name": u.name, "picture": u.picture}, "meta": {}}
 
 
 def _mine(client: str) -> set[str]:
@@ -410,7 +439,7 @@ async def dc_source(files: list[UploadFile] = File(...), paths: str = Form("[]")
     set_agent_name(NAME)
     who = _who(authorization)
     if not who:
-        raise HTTPException(401, "세션 토큰이 없습니다. 화면을 새로 고치면 다시 받습니다")
+        raise HTTPException(401, "로그인이 필요합니다. 구글로 로그인한 뒤 다시 올려 주세요")
     if len(files) > MAX_SOURCE_FILES:
         raise HTTPException(413, f"파일이 너무 많습니다(최대 {MAX_SOURCE_FILES}개)")
     try:
