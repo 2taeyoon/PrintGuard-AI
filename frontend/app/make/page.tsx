@@ -16,7 +16,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { createDocument, dcFileBlob, mcpStatus, type MadeDoc, type McpStatus } from "@/lib/agentClient";
 import { CUSTOM, GROUPS as FORMATS, dims } from "@/lib/formats";
-import { DirectConnect, IssueRows, SetupGuide, useBlob } from "../dc-shared";
+import { DirectConnect, FontNotice, IssueRows, SetupGuide, useBlob } from "../dc-shared";
 import { GsMark } from "../gs-mark";
 import { SignInNote } from "../sign-in";
 
@@ -227,12 +227,9 @@ export default function MakePage() {
             <GsMark open={showPre} /> 만든 문서 검사(preflight) {made.preflight.length}건
           </button>
           {showPre && <IssueRows rows={made.preflight} empty="만든 문서에서 발견된 문제가 없습니다." />}
-          {made.missing_fonts.length > 0 && (
-            <p className="warn">
-              <b>이 PC에 없는 글꼴 {made.missing_fonts.length}개</b>: {made.missing_fonts.join(", ")} — 대체 글꼴로 열렸습니다.
-              글자 너비가 달라져 줄바꿈이 다르게 보일 수 있습니다.
-            </p>
-          )}
+          {/* 글꼴은 우리가 골라 만들었으니 없을 일이 드물다. 그래도 한글이 없는 글꼴로 짜였으면
+              글자가 PDF에 안 찍히므로 같은 화면으로 알려 준다. 패키지 안내는 해당 없다. */}
+          <FontNotice s={made} advise={false} />
         </section>
       )}
     </main>

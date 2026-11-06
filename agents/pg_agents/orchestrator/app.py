@@ -503,7 +503,7 @@ async def dc_source(files: list[UploadFile] = File(...), paths: str = Form("[]")
     """편집 파일을 올린다. **파일 하나도 되고 폴더째도 된다.**
 
     IDML은 사진을 링크로만 들고 있어서 파일 하나만 올리면 인쇄용 사진이 빠진다. 폴더로 주면
-    DesignCraft가 IDML 옆이나 `Links/`에서 사진을 찾고, `Document fonts/`가 있으면 글꼴도 읽는다.
+    DesignCraft가 IDML 옆이나 `Links/`에서 사진을 찾고, `Document Fonts/`가 있으면 글꼴도 읽는다(설치하지 않고 그 폴더에서만).
     그래서 올라온 것을 **폴더 하나로 풀어** 두고 그 안에서 문서를 찾는다(하나만 올려도 같다).
     """
     set_agent_name(NAME)
