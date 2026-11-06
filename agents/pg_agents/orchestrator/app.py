@@ -31,7 +31,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from .. import google
-from ..auth import Claims, bearer, mint, secret, verify
+from ..auth import Claims, bearer, mint, secret, tool_subject, verify
 from ..client import call_agent, new_meta
 from ..common_log import log_event, query
 from ..config import CORS_ORIGIN_REGEX, DC_OUT, PORTS, SRC, STORE, agent_url, ensure_dirs, set_agent_name
@@ -635,7 +635,11 @@ async def dc_create(body: dict[str, Any], authorization: str | None = Auth) -> d
         raise HTTPException(429, "만든 문서가 너무 많습니다. 잠시 뒤에 다시 해 주세요")
     ensure_dirs()
     ctx = f"ctx_dc_{secrets.token_hex(12)}"
-    log_event(ctx, "dc_create_opened", source=NAME, payload={"start": str(body.get("start") or "blank")})
+    # 무엇을 폈는지 같이 적는다. 따라 보는 칸이 '무엇을 만들기 시작했다'를 말하려면 이게 있어야 한다.
+    log_event(ctx, "dc_create_opened", source=NAME,
+              payload={"start": str(body.get("start") or "blank"),
+                       "width_mm": body.get("width_mm"), "height_mm": body.get("height_mm"),
+                       "pages": body.get("pages"), "facing": bool(body.get("facing"))})
     r = await _ask("designcraft", "create_document", ctx, body)
     if r.get("status") != "completed":
         raise HTTPException(502, (((r.get("output") or {}).get("reason") or (r.get("output") or {}).get("message"))
@@ -746,6 +750,68 @@ def _watchable(ctx: str) -> dict[str, Any]:
     return j
 
 
+# 이 PC에서 왔는가. 번호 없이 '클로드가 지금 만들고 있는 것'을 보여 줄지를 이것으로 가른다.
+#
+# 왜 이것으로 충분한가. stdio로 띄운 MCP 서버(클로드·커서)는 **띄운 사람이 주인**이고, 그 주인
+# 이름은 서명 비밀에서 뽑은 고정값이다(`tool_subject`). 그 서버가 도는 PC와 이 오케스트레이터가
+# 도는 PC는 같다. 그러니 그 PC의 브라우저 앞에 앉은 사람은 그 도구를 쓰는 사람 본인이다 —
+# 그 사람에게 '내 클로드가 방금 무엇을 만들었나'를 가리는 것은 지키는 것이 아니라 막는 것이다.
+#
+# 바깥에서 들어온 요청에는 이 문이 안 열린다. 오케스트레이터를 밖으로 내놓더라도 남의 문서가
+# 흘러나가지 않는다 — 그쪽은 번호를 들고 와야 한다.
+LOCAL_HOSTS = {"127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"}
+
+
+def _at_this_pc(request: Request) -> bool:
+    return bool(request.client) and (request.client.host or "") in LOCAL_HOSTS
+
+
+def _visible(who: str, here: bool) -> set[str]:
+    """글로 따라 볼 수 있는 문서들. 내 것 + (이 PC라면) 이 PC의 도구가 만든 것."""
+    tool = tool_subject() if here else None
+    return {c for c, j in DCJOBS.items()
+            if (who and (j.get("client") == who or who in (j.get("also") or [])))
+            or (tool and j.get("client") == tool)}
+
+
+# 따라 보기에 실어 보내는 기록. 걸음(dc_step) 말고도 '무엇이 시작됐나'를 같이 보내야
+# 채팅처럼 읽힌다 — 걸음만 있으면 어느 문서의 걸음인지 모른 채 줄만 쌓인다.
+# 가져가기(dc_adopted)는 뺀다 — 화면이 문서를 따라갈 때마다 남는 줄이라, 보여 주면
+# '내가 보는 중'이라는 말만 채팅에 쌓인다.
+FEED_KINDS = {"dc_step", "dc_create_opened", "dc_source_opened", "dc_asked"}
+FEED_MAX = 400
+
+
+@app.get("/designcraft/feed")
+async def dc_feed(request: Request, after: int = 0, authorization: str | None = Auth) -> dict[str, Any]:
+    """**번호 없이** 지금 무슨 일이 일어나고 있는지. 화면이 되풀이해 물어 채팅처럼 쌓는다.
+
+    번호를 넣어야만 보이던 것이 문제였다. 그 번호는 클로드의 답에만 찍히므로, 보려면 매번
+    복사해 와야 했다. 정작 보고 싶은 것은 '지금 뭐 하고 있나' 하나다.
+
+    `after`는 마지막으로 받은 줄 번호다. 그보다 뒤엣것만 돌려준다 — 0.9초마다 200줄을 통째로
+    다시 보내면 브라우저가 매번 같은 것을 다시 그린다.
+    """
+    who = _who(authorization)
+    if not who:
+        raise HTTPException(401, "로그인이 필요합니다")
+    seen = _visible(who, _at_this_pc(request))
+    if not seen:
+        return {"data": {"rows": [], "docs": {}, "next": after}, "meta": {}}
+    rows = [r for r in query(limit=FEED_MAX, contexts=seen)
+            if r["kind"] in FEED_KINDS and r["id"] > after]
+    docs = {c: {"filename": j.get("filename"), "made": bool(j.get("made")),
+                "pages": (j.get("inspect") or {}).get("pages"),
+                "width_mm": j.get("width_mm"), "height_mm": j.get("height_mm"),
+                "mine": j.get("client") == who or who in (j.get("also") or []),
+                "created": j.get("created")}
+            for c, j in DCJOBS.items() if c in seen}
+    return {"data": {"rows": [{"id": r["id"], "at": r["at"], "ctx": r["context_id"],
+                               "kind": r["kind"], "payload": r["payload"]} for r in rows],
+                     "docs": docs,
+                     "next": rows[-1]["id"] if rows else after}, "meta": {}}
+
+
 @app.get("/designcraft/{ctx}/watch")
 async def dc_watch(ctx: str, authorization: str | None = Auth) -> dict[str, Any]:
     """지금 그 문서가 어떻게 생겼고, 에이전트가 무엇을 하고 있는지."""
@@ -817,6 +883,9 @@ async def dc_compose(ctx: str, body: dict[str, Any], authorization: str | None =
         raise HTTPException(400, "무엇을 만들지 적어 주세요")
     if len(request) > 2000:
         raise HTTPException(413, "부탁이 너무 깁니다(2000자까지)")
+    # 부탁한 말을 남긴다. 따라 보는 칸에서 이게 사람 쪽 말이 된다 — 한 일만 늘어놓으면
+    # 무엇을 시켜서 그렇게 된 것인지가 어디에도 안 남는다.
+    log_event(ctx, "dc_asked", source=NAME, payload={"text": request[:500]})
     ins = j.get("inspect") or {}
     r = await _ask("designcraft", "compose", ctx, {
         "request": request, "pages": ins.get("pages"),

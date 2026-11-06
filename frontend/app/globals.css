@@ -584,7 +584,8 @@ small, .pcard small { font-size: 1.4rem; }
 .agent_side, .map, .shoplist a, .viewer, .sheet, .qa, .qa > summary::before, .ev_kpis div, .qa_shot img,
 .box, .question, .loading_box, .progress, .progress span, .b_track, .b_fill, .wf_track, .wf_bar,
 input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, .ap_steps li,
-.planbox, .livebox, .planlist li, .didlist li, .dc_fontlist li, .dc_cmd { border-radius: 0; }
+.planbox, .livebox, .planlist li, .didlist li, .dc_fontlist li, .dc_cmd,
+.chat, .chat_doc, .msg { border-radius: 0; }
 @media (hover: hover) {
   .ev_toc a:hover, .qa_more a:hover, .qa_body a:hover, .modebar a:hover, .src_name a:hover,
   .card:hover, .shoplist a:hover, button:hover, .pill:hover, .topmenu a:hover { border-radius: 0; }
@@ -709,6 +710,37 @@ input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, 
 /* 에이전트가 하는 일 따라 보기 */
 .dc_watch .dc_row { margin: 8px 0; }
 .dc_watch .dc_row input[type="text"] { min-width: 320px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+/* 에이전트가 하는 일 — 채팅방처럼 쌓인다.
+   한 일이 시간 순으로 붙고, 새 줄이 붙으면 아래로 따라 내려간다. 사람이 말로 부탁한 것은
+   오른쪽에 붙어 누가 시킨 일인지 보인다. 모서리는 각지게 둔다(이 앱의 규칙이다). */
+.chat { margin: 12px 0 0; padding: 12px; max-height: 420px; overflow-y: auto;
+  background: var(--bgSurface); border: 1px solid var(--borderSubtle);
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.chat_empty { padding: 24px 12px; text-align: center; }
+.chat_empty p { margin: 4px 0; }
+/* 방 이름 — 새 문서가 시작된 자리 */
+.chat_doc { display: flex; flex-wrap: wrap; align-items: center; align-self: stretch; gap: 8px; margin: 10px 0 2px;
+  padding: 8px 12px; background: var(--white); border-left: 3px solid var(--borderStrong); font-size: 1.5rem; }
+.chat_doc.on { border-left-color: var(--thema); }
+.chat_doc .note { font-size: 1.4rem; }
+.chat_doc time { font-size: 1.2rem; color: var(--blackmute); white-space: nowrap; }
+.dc_num { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1.3rem;
+  padding: 4px 8px; background: var(--bgMuted); border: 1px solid var(--borderSubtle); }
+.chat_doc:first-child { margin-top: 0; }
+/* 말풍선 한 줄 */
+.msg { display: flex; align-items: baseline; gap: 10px; max-width: 86%;
+  padding: 7px 12px; background: var(--white); border-left: 3px solid var(--borderLight); font-size: 1.5rem; }
+.msg_body { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; min-width: 0; }
+.msg time { font-size: 1.2rem; color: var(--blackmute); white-space: nowrap; }
+.chat_empty { align-self: stretch; }
+.msg.bad { border-left-color: var(--redBright); background: var(--redLight); }
+.msg.bad b { color: var(--redBright); }
+/* 사람이 시킨 말 */
+.msg.me { align-self: flex-end; background: var(--themaLight); border-left: none;
+  border-right: 3px solid var(--thema); }
+.msg.me b { font-weight: 500; white-space: pre-wrap; }
+@media (max-width: 700px) { .msg { max-width: 100%; } }
 /* 왼쪽은 쪽 그림(폭이 정해져 있다), 오른쪽은 글이다. 왼쪽을 비율로 주면 그림이 400px에서
    멈추는 바람에 빈 자리가 남는다. */
 .watchgrid { display: grid; grid-template-columns: minmax(0, 400px) minmax(0, 1fr); gap: 20px; margin-top: 12px; align-items: start; }

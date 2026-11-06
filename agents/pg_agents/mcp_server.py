@@ -30,7 +30,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
-import hashlib
 import json
 import os
 import time
@@ -46,7 +45,7 @@ except ModuleNotFoundError:  # mcp 1.x
     from mcp.server.fastmcp import FastMCP as McpServer
     from mcp.server.fastmcp.exceptions import ToolError
 
-from .auth import mint, secret, verify
+from .auth import mint, tool_subject, verify
 from .client import call_agent, new_meta
 from .config import agent_url, ensure_dirs, load_env_files, set_agent_name
 from .contracts import AgentRequest
@@ -141,8 +140,7 @@ def _token() -> str:
             f"오케스트레이터가 다른 PC({agent_url('orchestrator')})인데 토큰이 없습니다. "
             "에이전트를 돌리는 PC에서 `python -m pg_agents.mktoken --label <이름>`으로 받아 "
             "이 클라이언트의 PG_TOKEN에 넣어 주세요")
-    sub = hashlib.sha256(secret() + b"mcp-local").hexdigest()[:32]
-    return mint("mcp", subject=sub, hours=1, write=True, label="mcp-local")
+    return mint("mcp", subject=tool_subject(), hours=1, write=True, label="mcp-local")
 
 
 # ---------- 공통 ----------

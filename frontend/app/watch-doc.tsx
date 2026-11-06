@@ -1,176 +1,210 @@
 "use client";
 
-// 에이전트가 하는 일을 **글로** 따라 보고, 그 문서를 그대로 인쇄 검수로 넘기는 칸.
+// 에이전트가 하는 일이 **채팅방처럼** 쌓이는 칸. 그리고 그 문서를 그대로 인쇄 검수로 넘기는 칸.
 //
-// 전에는 이 자리에 DesignCraft 웹 편집기를 띄웠다. 걷어냈다 — 그 편집기는 브라우저 안에서 혼자
-// 돌아서 바깥에서 조종할 수도, 들여다볼 수도 없다(글루 JS에 `postMessage`도 `WebSocket`도 없다.
-// 찾아봤다). 손으로 만드는 자리를 하나 더 둔다고 에이전트가 하는 일이 보이지는 않았다.
+// 전에는 문서 번호를 붙여 넣어야 보였다. 그 번호는 클로드의 답에만 찍히므로 매번 거기서 복사해
+// 와야 했는데, 정작 보고 싶은 것은 '지금 뭐 하고 있나' 하나다. 번호를 묻는 칸이 그 사이를 막고
+// 있었다. 그래서 **아무것도 넣지 않아도** 이 PC에서 일어나는 일이 그냥 흘러나오게 했다
+// (서버가 이 PC에서 온 요청에만 열어 준다 — `GET /designcraft/feed`).
 //
-// 그래서 **에이전트 쪽만 남긴다.** 클로드·커서가 MCP로 문서를 만들면 걸음마다 기록이 쌓이고,
-// 이 칸이 그것을 되풀이해 물어 한 줄씩 적는다. 명령 이름이 아니라 하는 일로 적는다
-// (`frame.create` → '글 넣기 “ATELIER”'). 아래 칸에서는 그 문서를 검수로 넘기고 파일로 받는다.
+// 쌓는 방식이 채팅과 같다. 새 문서가 시작되면 방 이름처럼 한 줄 긋고, 그 아래로 한 일이
+// 한 줄씩 붙는다. 사람이 말로 부탁한 것(`compose`)은 오른쪽에 붙어 누가 시킨 일인지 보인다.
+// 명령 이름이 아니라 하는 일로 적는다 — `frame.create`·`type.char`·`text.insert` 세 줄이
+// '글 넣기 “ATELIER”' 한 줄이 된다(엔진에서 글 하나를 넣는 일은 명령 세 개다).
 //
-// 번호로 여는 이유. MCP로 만든 문서는 그 도구(클로드)가 주인이라 브라우저와 다르다.
-// `ctx_dc_` 뒤 24자리는 난수이고 그 번호는 만든 사람의 도구에만 찍히므로, 번호를 들고 왔다는 것을
-// '내가 만든 것'으로 본다 — 공유 링크와 같은 세기다. 번호는 `localStorage`에 둔다. 열쇠가 아니라
-// '어느 문서를 보고 있었나'일 뿐이고, 잃어도 다시 붙여 넣으면 된다.
+// 아래 칸은 **보고 있는 그 문서**를 받고 검수로 넘긴다. 새 일이 시작되면 저절로 그쪽을 따라가고,
+// 누르면 그 문서에 머문다. 받으려면 주인이어야 해서, 보는 순간 조용히 주인으로 올라선다
+// (`/adopt` — 원래 주인은 그대로 남는다).
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
-  adoptDoc, dcFileBlob, myDocs, watchDoc, watchShot,
-  type SourceView, type Watch,
+  adoptDoc, dcFileBlob, watchFeed, watchShot,
+  type FeedDoc, type FeedRow, type SourceView,
 } from "@/lib/agentClient";
 import { readable } from "@/lib/engineText";
 import { FontNotice, IssueRows } from "./dc-shared";
 
-const KEY = "pg.watch.ctx";
 /** 한 걸음이 끝날 때마다 한 줄이 는다. 너무 느리게 물으면 여러 줄이 한꺼번에 쏟아진다. */
 const EVERY = 900;
+/** 들고 있을 줄 수. 오래된 것부터 버린다 — 한나절 켜 두면 끝없이 쌓인다. */
+const KEEP = 400;
 
-type Doc = SourceView & { made: boolean };
+/** 가져온 문서. `shots`는 고치고 나면 생기는 쪽 그림 목록이다(갓 만든 것은 `png` 한 장뿐이다). */
+type Doc = SourceView & { made: boolean; shots?: string[] };
+/** 화면에 뿌릴 한 줄. `room`이면 방 이름(새 문서가 시작된 자리). */
+type Msg = {
+  id: number; ctx: string; at: string;
+  room?: string; mine?: boolean; what: string; detail: string; command: string; error: string;
+};
+
+const clock = (at: string) => {
+  const d = new Date(at);
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+};
+
+/** 끝말고는 조용히 넘기는 걸음들. '저장합니다'까지 말풍선으로 띄우면 한 일이 묻힌다. */
+const QUIET: Record<string, string> = {
+  "문서를 엽니다": "문서를 열었습니다",
+  "저장합니다": "저장했습니다",
+  "그림을 뽑습니다": "쪽 그림을 뽑았습니다",
+};
 
 export default function WatchDoc() {
   const router = useRouter();
-  const [ctx, setCtx] = useState("");
-  const [typed, setTyped] = useState("");
-  const [w, setW] = useState<Watch | null>(null);
+  const [rows, setRows] = useState<FeedRow[]>([]);
+  const [docs, setDocs] = useState<Record<string, FeedDoc>>({});
   const [doc, setDoc] = useState<Doc | null>(null);
-  const [mine, setMine] = useState<{ context_id: string; filename: string }[]>([]);
+  const [chosen, setChosen] = useState("");    // 사람이 직접 고른 문서
+  const [pinned, setPinned] = useState(false); // 그 자리에 머물러 있는가
   const [err, setErr] = useState("");
   const [shot, setShot] = useState<string | null>(null);
   const [page, setPage] = useState(1);
-  const end = useRef<HTMLLIElement | null>(null);
-  const lastShot = useRef<string>("");
+  const [copied, setCopied] = useState(false);
+  const after = useRef(0);
+  const end = useRef<HTMLDivElement | null>(null);
+  const lastShot = useRef("");
   const lastFresh = useRef("");
 
-  // 보던 번호를 기억한다. 새로 고칠 때마다 다시 붙여 넣게 하면 쓸 수가 없다.
+  // 되풀이해 묻는다. 받은 것은 **덧붙인다** — 매번 통째로 다시 받으면 보던 자리가 흔들린다.
   useEffect(() => {
     let alive = true;
-    // 효과 본체에서 바로 상태를 바꾸지 않는다(연쇄 렌더). 저장소는 바깥 세상이므로 한 박자 뒤에 읽는다.
-    void Promise.resolve().then(() => {
-      if (!alive) return;
-      try {
-        const v = localStorage.getItem(KEY);
-        if (v) { setCtx(v); setTyped(v); }
-      } catch { /* 저장을 막아 둔 브라우저 */ }
-    });
-    myDocs().then((r) => { if (alive) setMine(r); }).catch(() => { /* 내 것이 없을 수도 있다 */ });
-    return () => { alive = false; };
-  }, []);
-
-  const open = useCallback((id: string) => {
-    const v = id.trim();
-    setCtx(v); setTyped(v); setErr(""); setW(null); setDoc(null); setShot(null); setPage(1);
-    lastShot.current = "";
-    lastFresh.current = "";
-    try { if (v) localStorage.setItem(KEY, v); else localStorage.removeItem(KEY); } catch { /* 막힌 브라우저 */ }
-  }, []);
-
-  // 보고 있는 동안 되풀이해 묻는다. 걸음이 끝나도 계속 묻는다 — 클로드가 이어서 더 고칠 수 있다.
-  useEffect(() => {
-    if (!ctx) return;
-    let alive = true;
-    const tick = () => watchDoc(ctx)
-      .then((r) => { if (alive) { setW(r); setErr(""); } })
-      .catch((e: unknown) => {
+    const tick = () => watchFeed(after.current)
+      .then((f) => {
         if (!alive) return;
-        const m = e instanceof Error ? e.message : String(e);
-        setErr(m);
-        // 그 번호가 없어졌으면 아래 칸도 비운다. 없다고 말하면서 그 문서를 그대로 보여 주면
-        // 받기·검수 단추가 안 듣는 이유를 알 수가 없다(에이전트를 다시 켜면 이렇게 된다).
-        if (m.startsWith("404")) { setW(null); setDoc(null); setShot(null); }
-      });
+        setErr("");
+        setDocs((old) => ({ ...old, ...f.docs }));
+        if (f.rows.length) {
+          after.current = f.next;
+          setRows((old) => [...old, ...f.rows].slice(-KEEP));
+        }
+      })
+      .catch((e: unknown) => { if (alive) setErr(e instanceof Error ? e.message : String(e)); });
     tick();
     const t = setInterval(tick, EVERY);
     return () => { alive = false; clearInterval(t); };
-  }, [ctx]);
+  }, []);
 
-  // 쪽 그림은 바뀐 것이 있을 때만 다시 받는다.
-  const shots = w?.shots ?? [];
-  const name = shots[Math.min(page, shots.length) - 1] ?? null;
-  const stamp = `${name}|${w?.steps?.length ?? 0}`;
-  useEffect(() => {
-    if (!ctx || !name || stamp === lastShot.current) return;
-    lastShot.current = stamp;
-    let dead: string | null = null;
-    watchShot(ctx, name).then((u) => { setShot((old) => { dead = old; return u; }); })
-      .catch(() => { /* 아직 안 그려졌을 수 있다 */ })
-      .finally(() => { if (dead) setTimeout(() => URL.revokeObjectURL(dead!), 1000); });
-  }, [ctx, name, stamp]);
-
-  useEffect(() => { end.current?.scrollIntoView({ block: "nearest" }); }, [w?.steps?.length]);
-
-  /** 걸음을 사람이 읽는 줄로.
-   *
-   *  엔진에서 글 하나를 넣는 일은 명령 세 개다(상자 → 글자 모양 → 글). 세 줄로 적으면
-   *  '글 넣기 “ATELIER”' 한 번이 무슨 일인지 안 보인다. 그래서 한 줄로 합친다.
-   *
-   *  기록에는 '넣는 중'(무엇을 넣는지)과 '넣었습니다'(엔진이 돌려준 번호)가 따로 쌓인다.
-   *  뒤쪽은 **적지 않는다** — `id 7 · story 8`은 엔진이 자기 안에서 쓰는 번호이고,
-   *  무슨 일을 하고 있는지와는 상관이 없다. 무엇을 했는지는 앞쪽에 다 들어 있다.
-   *
-   *  '문서를 엽니다'·'저장합니다'처럼 명령이 없는 걸음은 그 자리에 그대로 둔다 — 순서가
-   *  뒤집히면 무엇 다음에 무엇을 했는지를 잃는다. */
-  const rows = (() => {
-    const all = w?.steps ?? [];
-    const out: { id: number; what: string; detail: string; command: string; error: string }[] = [];
-    let run: typeof all = [];
+  // 한 줄씩 들어온 기록을 사람이 읽는 말로. 명령은 묶어서 한 줄로 만든다.
+  const msgs = useMemo<Msg[]>(() => {
+    const out: Msg[] = [];
+    let room = "";
+    let run: FeedRow[] = [];
     const flush = () => {
       if (!run.length) return;
       const batch = run;
       run = [];
-      for (const row of readable(batch.map((r) => ({ command: r.payload.command ?? "", params: r.payload.params ?? {} })))) {
-        const got = row.idx.map((k) => batch[k]).filter(Boolean);
+      for (const line of readable(batch.map((r) => ({ command: r.payload.command ?? "", params: r.payload.params ?? {} })))) {
+        const got = line.idx.map((k) => batch[k]).filter(Boolean);
+        const first = got[0] ?? batch[0];
         out.push({
-          id: got[0]?.id ?? out.length,
-          what: row.what,
-          detail: row.detail,
-          command: row.cmds.join(" · "),
+          id: first.id, ctx: first.ctx, at: first.at,
+          what: line.what, detail: line.detail, command: line.cmds.join(" · "),
           error: got.map((r) => r.payload.error).filter(Boolean).join(" ") || "",
         });
       }
     };
-    for (const r of all) {
+    for (const r of rows) {
       const p = r.payload;
-      if (p.phase === "넣었습니다") continue;
+      const same = r.ctx === room && !(r.kind === "dc_create_opened" || r.kind === "dc_source_opened");
+      if (!same) flush();
+      const push = (m: Omit<Msg, "id" | "ctx" | "at">) =>
+        out.push({ id: r.id, ctx: r.ctx, at: r.at, ...m });
+
+      if (!same) {
+        // 방 이름. 어느 문서의 일인지 모르면 줄만 쌓인다.
+        const d = docs[r.ctx];
+        const size = p.width_mm && p.height_mm ? `${p.width_mm}×${p.height_mm}mm` : "";
+        push({
+          room: d?.filename || "문서",
+          what: r.kind === "dc_source_opened" ? "올린 파일을 열었습니다"
+            : r.kind === "dc_create_opened" ? (p.start === "sample" ? "샘플 잡지로 시작했습니다" : "새 문서를 폈습니다")
+              : "이어서 작업합니다",
+          detail: [size, p.pages ? `${p.pages}쪽` : "", p.doc ?? ""].filter(Boolean).join(" · "),
+          command: "", error: "",
+        });
+        room = r.ctx;
+        if (r.kind === "dc_create_opened" || r.kind === "dc_source_opened") continue;
+      }
+
+      if (r.kind === "dc_asked") {
+        flush();
+        push({ mine: true, what: p.text ?? "", detail: "", command: "", error: "" });
+        continue;
+      }
+      if (r.kind !== "dc_step") continue;
+      if (p.phase === "넣었습니다") continue;      // '넣는 중'과 같은 일이다. 두 번 적지 않는다
       if (p.command) { run.push(r); continue; }
       flush();
-      out.push({ id: r.id, what: p.phase, detail: "", command: "", error: p.error ?? "" });
+      if (p.phase === "끝") {
+        push({
+          what: "다 했습니다",
+          detail: [p.total ? `${p.total}걸음` : "", p.pages ? `${p.pages}쪽` : "",
+            p.items ? `넣은 것 ${p.items}개` : ""].filter(Boolean).join(" · "),
+          command: "", error: "",
+        });
+      } else if (p.phase === "멈춤") {
+        push({ what: "멈췄습니다", detail: "아무것도 저장하지 않았습니다", command: "", error: p.error ?? "" });
+      } else {
+        push({ what: QUIET[p.phase] ?? p.phase, detail: "", command: "", error: "" });
+      }
     }
     flush();
     return out;
-  })();
-  const steps = w?.steps ?? [];
-  const last = steps[steps.length - 1]?.payload;
-  const busy = !!last && last.phase !== "끝" && last.phase !== "멈춤";
-  const at = Math.max(0, ...steps.map((r) => r.payload.at ?? 0));
-  const total = Math.max(0, ...steps.map((r) => r.payload.total ?? 0));
+  }, [rows, docs]);
 
-  // 번호를 열면 그 문서를 **내 쪽으로 가져온다.** 이걸 해야 파일을 받고 검수로 넘길 수 있다
-  // (지켜보기만으로는 걸음과 쪽 그림까지다). 원래 주인은 그대로 남아 이어서 고칠 수 있다.
-  //
-  // 한 걸음이 끝날 때마다 다시 가져온다. 한 번만 가져오면 **아래 칸이 옛날 문서를 말한다** —
-  // 클로드가 뒤이어 고쳐 놓았는데 '검사 0건'이 그대로 붙어 있으면 그게 더 나쁘다.
-  const fresh = busy ? "" : `${ctx}|${steps.length}`;
+  // 마지막 걸음이 '끝'이 아니면 아직 돌고 있다. 기록이 끊긴 지 오래면 멈춘 것으로 본다.
+  const lastStep = [...rows].reverse().find((r) => r.kind === "dc_step")?.payload;
+  const busy = !!lastStep && lastStep.phase !== "끝" && lastStep.phase !== "멈춤";
+  const live = rows.length ? rows[rows.length - 1].ctx : "";
+
+  // 아래 칸이 보는 문서. **새 일이 시작되면 저절로 그쪽을 따라간다** — 번호를 지운 자리에
+  // 다시 '무엇을 고르세요'를 놓으면 아무것도 나아지지 않는다. 사람이 고르면 그때부터 머문다.
+  // 상태로 두지 않고 계산한다(효과 안에서 상태를 바꾸면 한 박자 늦게 그려진다).
+  const pick = pinned && chosen ? chosen : (live || chosen);
+
+  // 고른 것만 바꾼다. 다시 받아 오는 일은 아래 두 효과가 알아서 한다 — 그 둘이 보는 꼬리표에
+  // 고른 문서가 들어 있어서, 문서가 바뀌면 꼬리표가 바뀐다.
+  const open = useCallback((ctx: string) => {
+    setChosen(ctx); setPinned(true); setShot(null); setPage(1);
+  }, []);
+
+  // 보고 있는 문서를 **내 쪽으로 가져온다.** 이걸 해야 파일을 받고 검수로 넘길 수 있다.
+  // 걸음이 끝날 때마다 다시 가져온다 — 한 번만 가져오면 아래 칸이 옛날 문서를 말한다.
+  const mark = busy ? "" : `${pick}|${rows.length}`;
   useEffect(() => {
-    if (!ctx || !fresh || fresh === lastFresh.current) return;
-    lastFresh.current = fresh;
+    if (!pick || !mark || mark === lastFresh.current) return;
+    lastFresh.current = mark;
     let alive = true;
-    adoptDoc(ctx)
+    adoptDoc(pick)
       .then((d) => { if (alive) setDoc(d); })
-      .catch((e: unknown) => { if (alive) setErr(e instanceof Error ? e.message : String(e)); });
-    myDocs().then((r) => { if (alive) setMine(r); }).catch(() => { /* 목록은 없어도 된다 */ });
+      .catch(() => { if (alive) setDoc(null); });
     return () => { alive = false; };
-  }, [ctx, fresh]);
+  }, [pick, mark]);
+
+  // 쪽 그림은 바뀐 것이 있을 때만 다시 받는다.
+  const shots = doc?.shots?.length ? doc.shots : (doc?.png ? [doc.png] : []);
+  const name = shots[Math.min(page, shots.length) - 1] ?? null;
+  const stamp = `${pick}|${name}|${rows.length}`;
+  useEffect(() => {
+    if (!pick || !name || stamp === lastShot.current) return;
+    lastShot.current = stamp;
+    let dead: string | null = null;
+    watchShot(pick, name).then((u) => { setShot((old) => { dead = old; return u; }); })
+      .catch(() => { /* 아직 안 그려졌을 수 있다 */ })
+      .finally(() => { if (dead) setTimeout(() => URL.revokeObjectURL(dead!), 1000); });
+  }, [pick, name, stamp]);
+
+  // 새 줄이 붙으면 아래로 따라 내려간다(채팅과 같다).
+  useEffect(() => { end.current?.scrollIntoView({ block: "nearest" }); }, [msgs.length]);
 
   /** 결과물 받기. 고친 뒤와 갓 만든 뒤의 파일 이름이 달라서 있는 쪽을 쓴다. */
   const dl = async (names: string[], as: string) => {
     for (const n of names) {
       try {
-        const u = await dcFileBlob(ctx, n);
+        const u = await dcFileBlob(pick, n);
         const a = document.createElement("a");
         a.href = u; a.download = as; a.click();
         setTimeout(() => URL.revokeObjectURL(u), 10_000);
@@ -180,81 +214,92 @@ export default function WatchDoc() {
     setErr(`${as}를 받지 못했습니다. 아직 저장된 파일이 없습니다.`);
   };
 
+  const recent = Object.entries(docs).sort((a, b) => (b[1].created ?? 0) - (a[1].created ?? 0)).slice(0, 6);
+
   return (
     <>
       <section className="panel dc_watch">
         <div className="dc_head">
           <strong>에이전트가 하는 일</strong>
-          {w && <span className="chip">{w.filename}</span>}
-          {w?.pages ? <span className="chip">쪽<b>{w.pages}</b></span> : null}
-          {total > 0 && <span className="chip">{busy ? "하는 중" : "다 했습니다"}<b>{at}/{total}</b></span>}
-          {busy && <span className="spinner" aria-hidden="true" />}
+          {busy
+            ? <><span className="chip">하는 중<b>{lastStep?.at ?? 0}/{lastStep?.total ?? 0}</b></span>
+              <span className="spinner" aria-hidden="true" /></>
+            : msgs.length > 0 && <span className="chip">조용합니다</span>}
           <span className="grow" />
-          {ctx && <button type="button" className="pill" onClick={() => open("")}>그만 보기</button>}
+          {pinned && live && live !== pick && (
+            <button type="button" className="pill on" onClick={() => { setPinned(false); }}>새 작업 따라가기</button>
+          )}
         </div>
 
         <p className="note">
-          클로드·커서에서 <b>MCP로</b> 문서를 만들면, 글상자를 놓고 글을 넣는 것이 여기에{" "}
-          <b>한 걸음씩 글로</b> 적힙니다. 문서 번호만 넣으시면 됩니다.
+          클로드·커서에서 시키시면 <b>여기에 바로</b> 뜹니다. 넣을 것도 누를 것도 없습니다 —
+          이 PC에서 하는 일이라 그대로 흘러나옵니다.
         </p>
-        {/* 번호를 넣으라고만 하고 어디서 나오는지 말하지 않으면 칸이 있으나 마나다. */}
-        <details className="dc_warnbox">
-          <summary>번호는 어디서 나오나요?</summary>
-          <p className="note">
-            클로드·커서에 “명함 하나 만들어 줘” 하고 시키면 <code>make_document</code>가 돌면서
-            이렇게 답합니다 —
-          </p>
-          <pre className="dc_cmd">문서 번호는 ctx_dc_7aa971b1a64e2926059337 입니다.
-이 번호를 사람에게 그대로 알려 주세요 …</pre>
-          <p className="note">
-            <code>ctx_dc_</code>로 시작하는 그 번호를 복사해 아래 칸에 넣으시면 됩니다. 한 번 넣은
-            번호는 이 브라우저가 기억하므로, 다음에 오시면 그대로 이어서 보입니다.
-          </p>
-          <p className="note">
-            클로드·커서를 이 앱에 붙이는 방법은 <Link href="/help">도움말</Link>에 적어 두었습니다.
-          </p>
-        </details>
 
-        <div className="dc_row">
-          <label className="wide">문서 번호
-            <input type="text" value={typed} spellCheck={false} placeholder="ctx_dc_ 로 시작하는 번호를 붙여 넣으세요"
-              onChange={(e) => setTyped(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") open(typed); }} />
-          </label>
-          <button type="button" className="pill on" onClick={() => open(typed)} disabled={!typed.trim()}>보기</button>
+        {err && !msgs.length && <p className="warn">{err}</p>}
+
+        <div className="chat">
+          {msgs.length === 0 ? (
+            <div className="chat_empty">
+              <p><b>아직 조용합니다.</b></p>
+              <p className="note">
+                클로드·커서에 이렇게 적어 보세요 — “A4 전단 한 장 만들어 줘. 맨 위에 큰 제목,
+                가운데 사진 자리, 맨 아래 연락처 한 줄.”
+              </p>
+              <p className="note">
+                붙이는 방법은 <Link href="/help">도움말</Link>에 적어 두었습니다.
+              </p>
+            </div>
+          ) : msgs.map((m) => (
+            m.room ? (
+              <div key={m.id} className={`chat_doc${m.ctx === pick ? " on" : ""}`}>
+                <b>{m.room}</b>
+                <span className="note">{m.what}{m.detail && ` · ${m.detail}`}</span>
+                {/* 새로 만든 문서는 이름이 다 같다('새 문서.idml'). 시각이 없으면 어느 것인지 모른다. */}
+                <time dateTime={m.at}>{clock(m.at)}</time>
+                <span className="grow" />
+                <button type="button" className="pill" onClick={() => open(m.ctx)}>
+                  {m.ctx === pick ? "보는 중" : "이 문서 보기"}
+                </button>
+              </div>
+            ) : (
+              <div key={m.id} className={`msg${m.mine ? " me" : ""}${m.error ? " bad" : ""}`}>
+                <div className="msg_body">
+                  <b>{m.what}</b>
+                  {m.detail && <span className="pl_detail">{m.detail}</span>}
+                  {m.error && <span className="pl_detail">{m.error}</span>}
+                  {m.command && <span className="pl_cmds">{m.command}</span>}
+                </div>
+                <time dateTime={m.at}>{clock(m.at)}</time>
+              </div>
+            )
+          ))}
+          <div ref={end} aria-hidden="true" />
         </div>
-        {mine.length > 0 && (
+
+        {recent.length > 1 && (
           <div className="dc_row">
-            <span className="note">최근에 본 문서:</span>
-            {mine.slice(0, 5).map((m) => (
-              <button key={m.context_id} type="button" className={`pill${ctx === m.context_id ? " on" : ""}`}
-                onClick={() => open(m.context_id)}>{m.filename}</button>
+            <span className="note">문서 고르기:</span>
+            {recent.map(([c, d]) => (
+              <button key={c} type="button" className={`pill${c === pick ? " on" : ""}`}
+                onClick={() => open(c)}>{d.filename}</button>
             ))}
           </div>
         )}
 
-        {err && <p className="warn">{err.startsWith("404") ? "그 번호로 된 문서가 없습니다. 번호를 다시 확인해 주세요." : err}</p>}
-
-        {ctx && !err && (
-          rows.length === 0
-            ? <div className="empty">아직 한 일이 없습니다. 클로드·커서에서 시키시면 여기에 적힙니다.</div>
-            : (
-              <ol className="livelist watchlist">
-                {rows.map((r) => (
-                  <li key={r.id} className={r.error ? "bad" : ""}>
-                    <b>{r.what}</b>
-                    {r.detail && <span className="pl_detail">{r.detail}</span>}
-                    {r.command && <span className="pl_cmds">{r.command}</span>}
-                    {r.error && <span className="pl_detail">{r.error}</span>}
-                  </li>
-                ))}
-                <li ref={end} aria-hidden="true" className="live_end" />
-              </ol>
-            )
-        )}
+        {/* 다른 PC에서 만든 것이라면 이 길로 연다. 흔한 경우가 아니라 접어 둔다. */}
+        <details className="dc_warnbox">
+          <summary>다른 PC에서 만든 문서를 보려면</summary>
+          <p className="note">
+            위 목록은 <b>이 PC에서</b> 하는 일만 보여 줍니다. 에이전트가 다른 PC에 있다면 그 문서의
+            번호가 있어야 합니다 — 클로드가 <code>make_document</code>로 만들 때 답에 적어 줍니다
+            (<code>ctx_dc_</code>로 시작합니다).
+          </p>
+          <NumberBox onOpen={open} />
+        </details>
       </section>
 
-      {/* 만든 문서. 여기서 끝이 아니라 검수로 이어진다 — 만들어 놓고 못 넘기면 반쪽이다. */}
+      {/* 보고 있는 그 문서. 만들어 놓고 못 넘기면 반쪽이다. */}
       {doc && (
         <section className="panel dc_run">
           <div className="dc_head">
@@ -274,6 +319,17 @@ export default function WatchDoc() {
             검수로 넘기면 글꼴·도련·해상도·색·오탈자를 검사합니다. 고칠 것이 있으면{" "}
             <b>이 문서에 반영할지 물어봅니다</b>. 받은 인디자인 파일은 그대로 열어 이어서 작업해도 됩니다.
           </p>
+          {/* 이어서 시키려면 클로드에게 이 번호를 줘야 한다 — 'ctx_dc_… 이어서 고쳐 줘'. */}
+          <div className="dc_row">
+            <span className="note">이 문서 번호</span>
+            <code className="dc_num">{doc.context_id}</code>
+            <button type="button" className="pill" onClick={() => {
+              navigator.clipboard.writeText(doc.context_id).then(() => setCopied(true), () => undefined);
+              setTimeout(() => setCopied(false), 2000);
+            }}>{copied ? "복사함" : "복사"}</button>
+            <span className="note">클로드에게 주면 <b>이 문서를 이어서</b> 고칩니다.</span>
+          </div>
+          {err && <p className="warn">{err}</p>}
 
           <div className="watchgrid">
             <div>
@@ -301,5 +357,20 @@ export default function WatchDoc() {
         </section>
       )}
     </>
+  );
+}
+
+/** 번호로 여는 칸. 흔한 길이 아니어서 접어 두었다. */
+function NumberBox({ onOpen }: { onOpen: (ctx: string) => void }) {
+  const [typed, setTyped] = useState("");
+  return (
+    <div className="dc_row">
+      <label className="wide">문서 번호
+        <input type="text" value={typed} spellCheck={false} placeholder="ctx_dc_ 로 시작하는 번호"
+          onChange={(e) => setTyped(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && typed.trim()) onOpen(typed.trim()); }} />
+      </label>
+      <button type="button" className="pill on" onClick={() => onOpen(typed.trim())} disabled={!typed.trim()}>보기</button>
+    </div>
   );
 }
