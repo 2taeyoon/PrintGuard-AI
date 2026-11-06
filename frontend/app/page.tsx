@@ -70,8 +70,7 @@ function Home() {
   const [srcBusy, setSrcBusy] = useState(!!srcParam);
   // 고른 것을 지울 때 input의 value까지 비우려면 손잡이가 필요하다
   const pdfRef = useRef<HTMLInputElement>(null);
-  const idmlRef = useRef<HTMLInputElement>(null);
-  const pkgRef = useRef<HTMLInputElement | null>(null);
+  const idmlRef = useRef<HTMLInputElement | null>(null);
   const [risks, setRisks] = useState<(Risk & { hits: Hit[] })[]>([]);
   const [usedPaper, setUsedPaper] = useState<Paper | null>(null);
   const paper = db?.papers.find((p) => p.id === paperId) ?? null;
@@ -228,7 +227,7 @@ function Home() {
   /** 고른 것을 지운다. 잠그기만 해 두면 잘못 고른 사람이 새로 고치기 말고는 길이 없다.
    *  input의 `value`까지 비워야 한다 — 같은 파일을 다시 골라도 `change`가 안 나기 때문이다. */
   function clearPick() {
-    for (const r of [pdfRef, idmlRef, pkgRef]) if (r.current) r.current.value = "";
+    for (const r of [pdfRef, idmlRef]) if (r.current) r.current.value = "";
     setFile(null); setRead(null); setReadFail(false); setSrcCtx(""); setSrcInfo(null); setErr("");
   }
 
@@ -404,6 +403,7 @@ function Home() {
             onChange={(e) => pickFile(e.target.files?.[0] ?? null)} />
           <span className="note">
             검수까지 됩니다. <b>원본은 고치지 못합니다</b> — PDF에서는 글자를 집을 수 없습니다.
+            고치는 데까지 가시려면 아래에 <b>인디자인 패키지 폴더</b>를 올려 주세요.
           </span>
         </div>
 
@@ -411,29 +411,25 @@ function Home() {
             글꼴도 빠진 채로 검수하게 된다. 그래서 파일 하나와 패키지 폴더를 **둘 다** 받는다 —
             `webkitdirectory`가 걸린 칸은 폴더만 고를 수 있어서, 칸 하나로는 둘을 다 받지 못한다. */}
         <div className={`wide filepick${picked === "pdf" ? " locked" : ""}`}>
-          <span className="fp_title" id="pick_idml_l">검수할 IDML 파일
+          <span className="fp_title" id="pick_idml_l">검수할 인디자인 작업 — <b>패키지 폴더째</b>
             {picked === "pdf" && <span className="chip">PDF를 고르셨습니다</span>}
           </span>
-          <div className="fp_two">
-            <input id="pick_idml" aria-labelledby="pick_idml_l" type="file" accept=".idml,.designcraft"
-              ref={idmlRef} disabled={srcBusy || picked === "pdf"}
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) void openSource([f]); }} />
-            <span className="fp_or">또는 패키지 폴더째</span>
-            {/* webkitdirectory는 React 타입에 없어서 속성으로 직접 준다 */}
-            <input id="pick_pkg" aria-label="검수할 IDML 파일 — 패키지 폴더째" type="file"
-              disabled={srcBusy || picked === "pdf"}
-              ref={(el) => { pkgRef.current = el; if (el) { el.setAttribute("webkitdirectory", ""); el.setAttribute("directory", ""); } }}
-              onChange={(e) => { const fs = e.target.files; if (fs?.length) void openSource(Array.from(fs)); }} />
-          </div>
+          {/* 파일 하나만 받던 길을 없앴다. IDML은 사진을 링크로만, 글꼴을 이름으로만 들고 있어서
+              파일 하나로는 **인쇄용 사진도 글꼴도 빠진 채** 검수하게 된다 — 넘침·줄바꿈·해상도가
+              원본과 다르게 나오는데, 그 수치를 보고 인쇄를 결정하면 안 된다. 폴더째만 받는다.
+              (webkitdirectory는 React 타입에 없어서 속성으로 직접 준다) */}
+          <input id="pick_idml" aria-labelledby="pick_idml_l" type="file"
+            disabled={srcBusy || picked === "pdf"}
+            ref={(el) => { idmlRef.current = el; if (el) { el.setAttribute("webkitdirectory", ""); el.setAttribute("directory", ""); } }}
+            onChange={(e) => { const fs = e.target.files; if (fs?.length) void openSource(Array.from(fs)); }} />
           <span className="note">
-            검수가 끝나면 <b>교정을 원본에 반영할지 묻고 고칩니다.</b> 고치는 것은 파일 하나로도 되고,
-            돌려드리는 IDML에는 원래 글꼴 이름이 그대로 남습니다.
+            InDesign에서 <b>파일 → 패키지</b>로 폴더를 만든 뒤 <b>그 폴더를 통째로</b> 골라 주세요.
+            안에 든 <code>Links</code> 사진과 <code>Document Fonts</code> 글꼴까지 같이 올라가야{" "}
+            <b>보시는 결과가 실제 인쇄물과 같아집니다.</b>
           </span>
           <span className="note">
-            다만 <b>검수 결과를 원본대로 보시려면 폴더째가 맞습니다</b> — InDesign의 <b>파일 → 패키지</b>로
-            만든 폴더를 올리면 옆의 <code>Links</code> 사진과 <code>Document Fonts</code> 글꼴까지 같이 올라갑니다.
-            파일 하나만 올리면 인쇄용 사진이 따라오지 않고 글꼴도 이 PC에 있는 것으로 대체되어,{" "}
-            <b>넘침·줄바꿈·해상도가 원본과 다르게 나옵니다.</b>
+            검수가 끝나면 <b>고칠 것을 원본에 반영할지 묻고 고쳐 드립니다.</b> 올리신 파일은 그대로 두고
+            사본을 내드리며, 그 사본에는 원래 글꼴 이름이 그대로 남습니다.
           </span>
         </div>
 

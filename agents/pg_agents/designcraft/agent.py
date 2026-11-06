@@ -96,7 +96,7 @@ CARD = AgentCard.model_validate({
         {"id": "compose", "description": "말로 부탁한 것을 엔진 명령으로 짜 준다(짜 주기만 하고 고치지는 않는다)", "grade": "read",
          "allowed_requesters": ["orchestrator"],
          "input_schema": {"request": "만들고 싶은 것을 사람 말로", "pages": "number", "width_mm": "number",
-                          "height_mm": "number", "facing": "boolean",
+                          "height_mm": "number", "facing": "boolean", "margin_mm": "number", "bleed_mm": "number",
                           "assets": "[{name, path}] 올려 둔 그림(그 경로만 file.place에 쓸 수 있다)"},
          "output_schema": {"available": "boolean (LLM 열쇠가 없으면 false)", "commands": "[{command, params}]",
                            "says": "무엇을 하려는지 사람 말로", "dropped": "허용 목록에 없어 버린 명령"}},
@@ -508,6 +508,14 @@ async def apply_fixes(req: AgentRequest) -> dict[str, Any]:
                          "data_summary": f"교정 {n + bad}건 중 {n}건 반영, {bad}건 실패"}}
 
 
+MM = 72 / 25.4          # 1mm는 몇 pt인가. DesignCraft의 길이는 전부 pt다
+MAX_NEW_PAGES = max(1, int(os.environ.get("PG_DESIGNCRAFT_MAX_PAGES", "64")))
+# 새 문서의 기본 글꼴(Source Serif 4)에는 **한글이 없다.** 그대로 두면 넣은 글이 PDF에 한 자도
+# 찍히지 않고 preflight에 '없는 글자'만 쌓인다. 한글이 섞여 있으면 글꼴을 바꿔 준다.
+KO_FONT = os.environ.get("PG_DESIGNCRAFT_KO_FONT", "Malgun Gothic")
+DEFAULT_FONT = "Source Serif 4"
+
+
 # ---------- 말로 부탁하기 ----------
 # 명령 547개를 펼쳐 놓으면 할 수 있는 일은 많아지지만, 처음 온 사람은 무엇을 눌러야 할지 모른다.
 # 그래서 **말로 부탁하는 길**을 둔다. LLM이 명령을 짜고, 사람이 보고 승낙하면 엔진이 적용한다.
@@ -525,34 +533,92 @@ COMPOSE_OK = (
     "object.fill", "object.stroke", "swatch.create", "table.insert", "table.setCell",
     "layout.pages.insert", "layout.marginsAndColumns", "object.qrCode",
     "style.paragraph.create", "style.paragraph.apply", "style.character.create",
-    "type.fillWithPlaceholder", "object.textFrameOptions", "text.thread",
+    # object.textFrameOptions는 뺐다 — 고른 것이 무엇이냐에 따라 '지금은 쓸 수 없다'로 막히는데,
+    # 한 명령이 막히면 그 단계가 통째로 없던 일이 된다(전부 아니면 전무). 흔한 실패였다.
+    "type.fillWithPlaceholder", "text.thread",
     "transform.move", "transform.scale", "transform.rotate", "object.arrange",
     "layer.new", "variables.define", "variables.insert", "toc.generate",
 )
 COMPOSE_MAX = max(1, int(os.environ.get("PG_DESIGNCRAFT_COMPOSE_MAX", "20")))
 
 
+def _box(doc: dict[str, Any]) -> dict[str, float]:
+    """쪽의 생김새를 pt로. **여백 안쪽 상자**까지 미리 계산해 준다 —
+    이걸 안 주면 LLM이 쪽 크기만 보고 좌표를 찍어 여백을 넘기고 서로 겹친다."""
+    w = float(doc.get("width_mm") or 0) * MM
+    h = float(doc.get("height_mm") or 0) * MM
+    m = float(doc.get("margin_mm") or 0) * MM
+    b = float(doc.get("bleed_mm") or 0) * MM
+    return {"w": round(w, 1), "h": round(h, 1), "m": round(m, 1), "b": round(b, 1),
+            "x0": round(m, 1), "y0": round(m, 1), "x1": round(w - m, 1), "y1": round(h - m, 1),
+            "iw": round(w - 2 * m, 1), "ih": round(h - 2 * m, 1)}
+
+
+# 잘된 보기 하나. 규칙만 늘어놓는 것보다 **숫자가 박힌 보기**가 훨씬 잘 먹는다 —
+# 여백 안에 맞추고, 왼쪽 선을 맞추고, 위에서 아래로 쌓고, 글상자 높이를 글자 크기에 맞춰 잡는
+# 네 가지가 이 한 덩어리에 다 들어 있다.
+COMPOSE_SHOT = (
+    "잘된 보기 — 90×50mm 명함, 여백 5mm(여백 안쪽 상자는 14.2,14.2 ~ 240.9,127.6pt)\n"
+    "  왼쪽 선을 14.2pt로 맞추고, 위에서 아래로 쌓고, 글상자 높이는 글자 크기의 1.6배 이상으로 잡았다.\n"
+    '  [{"command":"swatch.create","params":{"name":"Ink","color":{"c":0,"m":0,"y":0,"k":85}}},\n'
+    '   {"command":"frame.create","params":{"spread":0,"rect":[14.2,30,240.9,56],"content":"text"}},\n'
+    '   {"command":"type.char","params":{"attrs":{"fontFamily":"KOFONT","size":16,"fontStyle":"Bold","fill":"Ink"}}},\n'
+    '   {"command":"text.insert","params":{"text":"홍길동"}},\n'
+    '   {"command":"frame.create","params":{"spread":0,"rect":[14.2,58,240.9,74],"content":"text"}},\n'
+    '   {"command":"type.char","params":{"attrs":{"fontFamily":"KOFONT","size":9,"fill":"Ink"}}},\n'
+    '   {"command":"text.insert","params":{"text":"영업팀 과장"}},\n'
+    '   {"command":"frame.create","params":{"spread":0,"rect":[14.2,96,240.9,127.6],"content":"text"}},\n'
+    '   {"command":"type.char","params":{"attrs":{"fontFamily":"KOFONT","size":8,"fill":"Ink"}}},\n'
+    '   {"command":"text.insert","params":{"text":"02-0000-0000\\nname@example.com"}}]\n'
+).replace("KOFONT", KO_FONT)
+
+
 def _compose_prompt(request: str, doc: dict[str, Any], catalog: list[dict[str, Any]],
                     assets: list[dict[str, Any]] | None = None) -> str:
     rows = "\n".join(f"- {c['id']} {c['params']}" for c in catalog)
+    g = _box(doc)
     w, h = doc.get("width_mm") or 0, doc.get("height_mm") or 0
     return (
         "너는 인디자인 엔진(DesignCraft)에 보낼 명령을 짜는 도구다. JSON만 답한다.\n"
-        "모양: {\"says\": \"무엇을 하는지 한국어 한 문장\", \"commands\": [{\"command\": \"id\", \"params\": {}}]}\n\n"
-        "지켜야 할 것\n"
-        f"1. 아래 '쓸 수 있는 명령'에 있는 id만 쓴다. 없는 id는 쓰지 않는다.\n"
-        f"2. 길이는 전부 pt다. 1mm = 2.8346pt. 이 문서는 한 쪽이 {w}×{h}mm "
-        f"= {round(w * 72 / 25.4, 1)}×{round(h * 72 / 25.4, 1)}pt이고 {doc.get('pages')}쪽이다.\n"
-        "3. rect는 [왼쪽, 위, 오른쪽, 아래]이고 **펼침면 기준**이다. spread는 0부터 센다.\n"
-        + ("4. 마주보는 쪽이라 한 펼침면에 두 쪽이 붙는다. 오른쪽 쪽은 x에 쪽 가로 폭을 더한다.\n"
-           if doc.get("facing") else "4. 낱장이라 펼침면마다 쪽 하나다.\n")
-        + "5. 글상자는 frame.create(content:\"text\")에 text를 **주지 않는다.** 글은 그다음 "
+        "모양: {\"says\": \"무엇을 하는지 한국어 한 문장\", \"commands\": [{\"command\": \"id\", \"params\": {}}]}\n"
+        "**줄바꿈과 들여쓰기 없이 한 줄로** 답한다(길면 끊긴다).\n\n"
+        "이 문서\n"
+        f"- 한 쪽 {w}×{h}mm = {g['w']}×{g['h']}pt, {doc.get('pages')}쪽, 여백 {g['m']}pt, 도련 {g['b']}pt\n"
+        f"- **여백 안쪽 상자: 왼쪽 {g['x0']} 위 {g['y0']} 오른쪽 {g['x1']} 아래 {g['y1']}pt "
+        f"(폭 {g['iw']} 높이 {g['ih']})**\n"
+        + (f"- 마주보는 쪽이라 한 펼침면에 두 쪽이 붙는다. 오른쪽 쪽은 x에 {g['w']}pt를 더한다.\n"
+           if doc.get("facing") else "- 낱장이라 펼침면마다 쪽 하나다.\n")
+        + "\n보기 좋게 두는 규칙 — 이걸 어기면 인쇄할 수 없는 쪽이 된다\n"
+          f"1. **모든 것을 여백 안쪽 상자에 둔다**({g['x0']}~{g['x1']}, {g['y0']}~{g['y1']}pt). "
+          f"배경 띠처럼 일부러 끝까지 가는 것만 예외이고, 그때는 -{g['b']}pt부터 {round(g['w'] + g['b'], 1)}pt까지 "
+          "잡아 도련을 채운다.\n"
+          f"2. **왼쪽 선을 맞춘다.** 제목·부제·본문의 왼쪽 x를 모두 {g['x0']}pt로 둔다. "
+          "오른쪽에 붙일 것만 오른쪽 끝에 맞춘다.\n"
+          "3. **위에서 아래로 쌓고 겹치지 않게 한다.** 앞 상자의 아래값보다 큰 위값을 쓰고, "
+          "사이를 글자 크기의 0.5~1배만큼 띄운다.\n"
+          "4. **글상자 높이는 (글자 크기 × 줄 수 × 1.6) 이상**으로 잡는다. 좁으면 글이 넘쳐 안 보인다.\n"
+          "5. **글자 크기는 한 쪽에 3~4가지만.** 제목 > 부제 > 본문 > 잔글씨 순서로 분명히 차이를 둔다. "
+          f"작은 쪽({g['w']}pt 폭)에서 제목은 14~20pt, 본문은 8~10pt가 알맞다.\n"
+          "6. **글자색은 어두운 색 하나로** 통일한다(c0 m0 y0 k85 같은 것). 색 띠 위에 얹은 글만 흰색"
+          "(c0 m0 y0 k0)으로 한다.\n"
+          "7. 사진·빈 자리는 남은 공간을 채우되 여백 안쪽 상자를 넘지 않는다.\n"
+          f"8. **이 문서는 이미 {doc.get('pages')}쪽이다.** 쓸 쪽이 모자랄 때만 layout.pages.insert로 "
+          "늘린다. 있는 쪽으로 충분하면 늘리지 않는다 — 빈 쪽이 하나 더 붙으면 인쇄할 때 "
+          "쓸데없는 한 장이 된다.\n\n"
+          "명령 쓰는 법\n"
+          "1. 아래 '쓸 수 있는 명령'에 있는 id만 쓴다. 없는 id는 쓰지 않는다.\n"
+          "2. 길이는 전부 pt다. 1mm = 2.8346pt. rect는 [왼쪽, 위, 오른쪽, 아래]이고 펼침면 기준이다. "
+          "spread는 0부터 센다.\n"
+          "3. **글상자에는 content:\"text\"를 꼭 준다.** 빼면 빈 상자가 되어 글을 넣을 수 없다. "
+          "그리고 **첫 쪽이 아니면 spread를 꼭 적는다**(없으면 0쪽에 그려진다). "
+          "글상자는 frame.create에 text를 **주지 않는다.** 글은 그다음 "
           "text.insert로 넣는다. 한글이면 그 사이에 "
           f"type.char(attrs.fontFamily=\"{KO_FONT}\")를 넣고 그다음 text.insert를 쓴다. "
           "기본 글꼴에 한글이 없어 순서를 어기면 글자가 찍히지 않는다.\n"
-          "6. 색은 swatch.create로 먼저 만들고 그 이름을 object.fill에 쓴다. **인쇄 문서이므로 color는 "
-          "{c,m,y,k}(0~100)로 준다** — #rrggbb로 주면 RGB 색이라 인쇄 검사에서 걸린다.\n"
-          f"7. 명령은 {COMPOSE_MAX}개를 넘기지 않는다. 자리가 겹치지 않게 둔다.\n\n"
+          "4. 색은 swatch.create로 먼저 만들고 그 이름을 object.fill이나 type.char의 fill에 쓴다. "
+          "**인쇄 문서이므로 color는 {c,m,y,k}(0~100)로 준다** — #rrggbb로 주면 RGB 색이라 인쇄 검사에서 걸린다.\n"
+          f"5. 명령은 {COMPOSE_MAX}개를 넘기지 않는다.\n\n"
+          + COMPOSE_SHOT + "\n"
           "쓸 수 있는 명령\n" + rows + "\n\n"
         # 올려 둔 사진이 있으면 경로를 알려 준다. 안 알려 주면 LLM이 경로를 지어내고,
         # 그 경로는 울타리 밖이라 엔진이 거절한다.
@@ -566,13 +632,18 @@ def _compose_prompt(request: str, doc: dict[str, Any], catalog: list[dict[str, A
 
 def _compose_blocking(request: str, doc: dict[str, Any], client=None,
                       assets: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-    from ..llm import gemini, have_key
+    from ..llm import TruncatedAnswer, gemini, have_key
     if client is None and not have_key():
         return {"available": False, "commands": [], "says": "", "dropped": [],
                 "reason": "이 PC의 에이전트에 LLM 열쇠(GEMINI_API_KEY)가 없습니다"}
     cat = [c for c in _commands_blocking()["commands"] if c["id"] in COMPOSE_OK]
     prompt = _compose_prompt(request, doc, cat, assets)
-    raw = client(prompt) if client else gemini(prompt, os.environ["GEMINI_API_KEY"], temperature=0.2)
+    try:
+        raw = (client(prompt) if client
+               else gemini(prompt, os.environ["GEMINI_API_KEY"], temperature=0.2, max_tokens=COMPOSE_TOKENS))
+    except TruncatedAnswer:
+        return {"available": True, "commands": [], "says": "", "dropped": [],
+                "reason": "부탁이 길어 답이 끝나기 전에 끊겼습니다. 한 번에 한두 가지씩 나눠서 적어 주세요"}
     try:
         obj = json.loads(re.search(r"\{.*\}", raw, re.S).group(0))      # type: ignore[union-attr]
     except Exception:  # noqa: BLE001
@@ -609,6 +680,19 @@ def _normalize(cmds: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     프롬프트를 더 조이는 쪽보다 이게 확실하다 — 코드는 틀리지 않는다.
     """
+    # 글을 넣으려는 상자인데 `content`를 빼먹으면 빈 상자가 되고, 바로 뒤 `type.char`가
+    # "글이나 글상자를 고르라"며 멈춘다 — 그러면 전부 아니면 전무라 아무것도 안 들어간다.
+    # 뒤에 글 넣는 명령이 오면 글상자로 고쳐 둔다.
+    fixed: list[dict[str, Any]] = []
+    for n, c in enumerate(cmds):
+        cid, p = str(c.get("command") or ""), dict(c.get("params") or {})
+        if cid == "frame.create" and "content" not in p and not p.get("shape"):
+            nxt = {str((x or {}).get("command") or "") for x in cmds[n + 1:n + 3]}
+            if nxt & {"type.char", "text.insert", "type.para", "table.insert"}:
+                p["content"] = "text"
+        fixed.append({"command": cid, "params": p})
+    cmds = fixed
+
     out: list[tuple[str, dict[str, Any]]] = []
     for c in cmds:
         cid, p = str(c.get("command") or ""), dict(c.get("params") or {})
@@ -654,7 +738,8 @@ async def compose(req: AgentRequest) -> dict[str, Any]:
     request = str(req.input.get("request") or "").strip()
     if not request:
         return {"status": "rejected", "outcome": "INVALID_INPUT", "output": {"message": "무엇을 만들지 적어 주세요"}}
-    doc = {k: req.input.get(k) for k in ("pages", "width_mm", "height_mm", "facing")}
+    doc = {k: req.input.get(k) for k in ("pages", "width_mm", "height_mm", "facing",
+                                        "margin_mm", "bleed_mm")}
     assets = [a for a in (req.input.get("assets") or []) if isinstance(a, dict)][:20]
     r = await asyncio.to_thread(_compose_blocking, request, doc, None, assets)
     n = len(r["commands"])
@@ -674,6 +759,8 @@ async def compose(req: AgentRequest) -> dict[str, Any]:
 # 못한다** — 명령을 하나하나 고르는 것보다 이 울타리가 확실하다(`script.run`도 엔진 명령줄만 돈다).
 MAX_EDIT_CMDS = max(1, int(os.environ.get("PG_DESIGNCRAFT_MAX_CMDS", "40")))
 MAX_PREVIEW_PAGES = max(1, int(os.environ.get("PG_DESIGNCRAFT_PREVIEW_PAGES", "8")))
+# 명령 스무 개짜리 JSON은 길다. 기본 한도에서는 답이 중간에 끊긴다(실측으로 겪었다).
+COMPOSE_TOKENS = max(1024, int(os.environ.get("PG_DESIGNCRAFT_COMPOSE_TOKENS", "8192")))
 
 
 def _commands_blocking() -> dict[str, Any]:
@@ -838,12 +925,6 @@ async def edit_document(req: AgentRequest) -> dict[str, Any]:
 # 검수·수정은 '남이 만든 파일'을 받는 일이다. 그런데 원본이 아예 없는 사람도 있다. 그 사람에게
 # "인디자인에서 먼저 만들어 오세요"라고 하면 거기서 끝난다. DesignCraft는 문서를 만들 수도 있으므로,
 # 만드는 자리를 열어 두고 **만든 그 파일을 그대로 검수·수정으로 넘긴다**(앱의 '작업 만들기').
-MM = 72 / 25.4          # 1mm는 몇 pt인가. DesignCraft의 길이는 전부 pt다
-MAX_NEW_PAGES = max(1, int(os.environ.get("PG_DESIGNCRAFT_MAX_PAGES", "64")))
-# 새 문서의 기본 글꼴(Source Serif 4)에는 **한글이 없다.** 그대로 두면 넣은 글이 PDF에 한 자도
-# 찍히지 않고 preflight에 '없는 글자'만 쌓인다. 한글이 섞여 있으면 글꼴을 바꿔 준다.
-KO_FONT = os.environ.get("PG_DESIGNCRAFT_KO_FONT", "Malgun Gothic")
-DEFAULT_FONT = "Source Serif 4"
 
 
 def _has_hangul(s: str) -> bool:
