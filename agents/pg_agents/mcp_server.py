@@ -396,7 +396,10 @@ async def make_document(kind: str = "blank", width_mm: float = 210, height_mm: f
     return {"context_id": r["context_id"], "filename": r["filename"], "pages": r["pages"],
             "width_mm": r.get("width_mm"), "height_mm": r.get("height_mm"),
             "preflight": r.get("preflight"), "missing_fonts": r.get("missing_fonts"),
-            "note": "edit_document로 내용을 넣고, 다 되면 start_review로 검수에 넘길 수 있습니다."}
+            "note": f"문서 번호는 {r['context_id']} 입니다. 이 번호를 사람에게 그대로 알려 주세요 — "
+                    "웹의 '작업 만들기' 화면 '문서 번호' 칸에 넣으면 여기서 하는 일이 "
+                    "한 걸음씩 실시간으로 보입니다. 이어서 edit_document로 내용을 넣고, "
+                    "다 되면 검수로 넘길 수 있습니다."}
 
 
 @mcp.tool()
@@ -425,7 +428,9 @@ async def edit_document(context_id: str, commands: list[dict[str, Any]] | None =
     if not r.get("ok"):
         raise ToolError(f"{(r.get('failed') or {}).get('command')}에서 멈췄습니다: "
                         f"{(r.get('failed') or {}).get('reason')} — 아무것도 저장하지 않았습니다")
-    return {"context_id": context_id, "pages": r["pages"], "items": r["items"], "stories": r["stories"],
+    return {"context_id": context_id,
+            "note": f"'작업 만들기' 화면의 '문서 번호' 칸에 {context_id} 를 넣으면 지금 한 일이 그대로 보입니다.",
+            "pages": r["pages"], "items": r["items"], "stories": r["stories"],
             "applied": [c["command"] for c in r.get("applied") or []],
             "preflight": r.get("preflight"), "missing_fonts": r.get("missing_fonts"),
             "can_undo": r.get("can_undo")}
