@@ -175,3 +175,26 @@ def test_cannot_open_a_job_from_someone_elses_source():
 def test_job_without_file_or_source_is_refused():
     with client() as c:
         assert c.post("/jobs", data={"options": "{}"}).status_code == 400
+
+
+def test_the_orchestrator_is_in_its_own_agent_list():
+    """총괄을 목록에서 빼 두면 계획을 세우고 차례를 부르는 당사자만 화면에서 빠지고, 머릿수도
+    하나 모자라게 세어진다('8/8'). 자기 카드는 HTTP로 돌지 않고 들고 있는 것을 쓴다."""
+    c = client()
+    rows = c.get("/agents").json()["data"]
+    assert "orchestrator" in rows
+    assert rows["orchestrator"]["card"]["name"] == "orchestrator"
+    # 대답하고 있다는 것 자체가 켜져 있다는 뜻이다 — 꺼진 것으로 적힐 수 없다
+    assert rows["orchestrator"]["status"] != "off"
+    # 부서는 하나도 빠지지 않았다
+    assert set(rows) >= {"preflight", "color", "paper", "guide", "proofread", "report", "safety", "designcraft"}
+
+
+def test_the_orchestrator_card_says_it_receives_nothing():
+    """**받는 일이 없다는 것도 계약이다.** 총괄은 아무에게도 요청받지 않는다(`/a2a`가 없다) —
+    적어 두지 않으면 '아직 안 만든 에이전트'와 구별되지 않는다."""
+    c = client()
+    card = c.get("/.well-known/agent-card.json").json()
+    assert card["name"] == "orchestrator"
+    assert card["skills"] == []
+    assert c.post("/a2a", json={}).status_code == 404     # 받는 자리가 아예 없다

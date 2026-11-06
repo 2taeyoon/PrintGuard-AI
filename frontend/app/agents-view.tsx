@@ -102,16 +102,25 @@ function AgentRow({ name, a, open, toggle, why }:
           {a.card ? (
             <>
               <p className="note">{a.card.description}</p>
-              <ul className="skills">
-                {a.card.skills.map((s) => (
-                  <li key={s.id}>
-                    <div className="s_head"><SkillName id={s.id} /> <span className="chip grade">{GRADE[s.grade] ?? s.grade}</span>
-                      {s.verifier && <span className="chip">검증자 {agentLabel(s.verifier)}</span>}</div>
-                    <div className="note">{s.description}</div>
-                    <div className="note">부를 수 있는 쪽: {s.allowed_requesters.map(agentLabel).join(", ")}</div>
-                  </li>
-                ))}
-              </ul>
+              {/* 받는 일이 없는 에이전트가 있다(총괄). 빈 목록을 그냥 두면 '아직 안 만든 것'으로
+                  읽히므로, 없다는 것을 사실로 적는다 — 그게 총괄이 서 있는 자리다. */}
+              {a.card.skills.length === 0 ? (
+                <p className="note">
+                  <b>다른 에이전트에게 요청받는 일이 없습니다.</b> 이쪽은 <b>부르는 쪽</b>입니다 —
+                  계획을 세워 부서를 차례로 부르고, 질문을 사람에게 옮깁니다. 브라우저가 이 에이전트를 부릅니다.
+                </p>
+              ) : (
+                <ul className="skills">
+                  {a.card.skills.map((s) => (
+                    <li key={s.id}>
+                      <div className="s_head"><SkillName id={s.id} /> <span className="chip grade">{GRADE[s.grade] ?? s.grade}</span>
+                        {s.verifier && <span className="chip">검증자 {agentLabel(s.verifier)}</span>}</div>
+                      <div className="note">{s.description}</div>
+                      <div className="note">부를 수 있는 쪽: {s.allowed_requesters.map(agentLabel).join(", ")}</div>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </>
           ) : <p className="note">아직 켜지지 않았거나 만들어지지 않은 에이전트입니다.</p>}
         </div>

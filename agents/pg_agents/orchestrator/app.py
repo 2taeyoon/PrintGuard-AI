@@ -43,6 +43,20 @@ from .plan import build_plan, report_input
 NAME = "orchestrator"
 DEPTS = [n for n in PORTS if n != NAME]
 
+# 총괄의 Agent Card. **받는 일(skill)이 없다** — 부르는 쪽이기 때문이다. 부서 에이전트는
+# `/a2a`로 요청을 받지만 총괄은 아무에게도 요청받지 않는다. 브라우저가 HTTP로 부른다.
+#
+# 그래도 카드를 둔다. 없으면 에이전트 목록에 총괄이 아예 서지 못해서, 계획을 세우고 차례를
+# 부르는 당사자만 화면에서 빠진다 — "8/8"처럼 머릿수도 하나 모자라게 세어진다.
+# 빈 `skills`는 모자란 것이 아니라 **사실**이다. 화면이 그렇게 적는다.
+CARD = AgentCard.model_validate({
+    "name": NAME,
+    "description": "검수 의뢰를 받아 계획을 세우고 부서 에이전트를 차례로 부른다. 에이전트가 물으면 사람에게 "
+                   "전달하고, 답을 받으면 그 단계만 다시 부른다. 받는 일(skill)은 없다 — 부르는 쪽이다.",
+    "url": f"http://127.0.0.1:{PORTS[NAME]}",
+    "skills": [],
+})
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -64,9 +78,16 @@ MAX_ACTIVE = max(1, int(os.environ.get("PG_MAX_ACTIVE_PER_CLIENT", "3")))  # 한
 
 
 async def registry() -> dict[str, dict[str, Any]]:
-    """부서 에이전트의 Agent Card를 모은다. 응답이 없으면 off로 표시한다."""
+    """에이전트들의 Agent Card를 모은다. 응답이 없으면 off로 표시한다.
+
+    **총괄 자기도 넣는다.** 빼 두면 계획을 세우고 차례를 부르는 당사자만 화면에서 빠지고,
+    머릿수도 하나 모자라게 세어진다. 자기 카드는 HTTP로 돌아 가져오지 않는다 — 이 프로세스가
+    들고 있으므로 그대로 쓴다(자기에게 요청을 보내면 그 요청을 받는 일꾼이 자기라서 막힐 수 있다).
+    이 함수가 대답하고 있다는 것 자체가 총괄이 켜져 있다는 뜻이다.
+    """
+    me = {"status": "fake" if FAKE else "on", "card": CARD.model_dump(mode="json")}
     if FAKE:
-        return {d: {"status": "fake", "card": None} for d in DEPTS}
+        return {NAME: me, **{d: {"status": "fake", "card": None} for d in DEPTS}}
     out: dict[str, dict[str, Any]] = {}
     async with httpx.AsyncClient(timeout=1.5) as c:
         async def one(d: str) -> None:
@@ -76,7 +97,7 @@ async def registry() -> dict[str, dict[str, Any]]:
             except Exception:  # noqa: BLE001
                 out[d] = {"status": "off", "card": None}
         await asyncio.gather(*(one(d) for d in DEPTS))
-    return out
+    return {NAME: me, **out}
 
 
 # ---------- 의뢰의 주인 ----------
@@ -242,6 +263,13 @@ async def list_jobs(authorization: str | None = Auth) -> dict[str, Any]:
     mine = _mine(_who(authorization))
     rows = sorted((j for j in JOBS.values() if j.context_id in mine), key=lambda j: -j.created)[:30]
     return {"data": [{"context_id": j.context_id, "status": j.status, "filename": j.filename, "created": j.created} for j in rows], "meta": {}}
+
+
+@app.get("/.well-known/agent-card.json")
+async def agent_card() -> dict[str, Any]:
+    """총괄도 부서들과 같은 자리에 카드를 띄운다. 받는 일이 없다는 것도 계약의 일부다 —
+    적어 두지 않으면 '아직 안 만든 것'과 구별되지 않는다."""
+    return CARD.model_dump(mode="json")
 
 
 @app.get("/agents")
