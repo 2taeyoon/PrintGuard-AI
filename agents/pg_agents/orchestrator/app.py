@@ -720,6 +720,8 @@ async def dc_compose(ctx: str, body: dict[str, Any], authorization: str | None =
         "width_mm": j.get("width_mm") or ins.get("width_mm"),
         "height_mm": j.get("height_mm") or ins.get("height_mm"),
         "facing": bool(j.get("facing")),
+        # 올려 둔 그림의 경로를 같이 넘긴다. 안 넘기면 LLM이 경로를 지어내고 엔진이 거절한다.
+        "assets": j.get("assets") or [],
     })
     if r.get("status") != "completed":
         raise HTTPException(502, (((r.get("output") or {}).get("reason") or (r.get("output") or {}).get("message"))
@@ -755,8 +757,12 @@ async def dc_asset(ctx: str, file: UploadFile = File(...), authorization: str | 
                 raise HTTPException(413, f"그림이 너무 큽니다(최대 {MAX_ASSET // (1024 * 1024)}MB)")
             w.write(blk)
     log_event(ctx, "dc_asset_added", source=NAME, payload={"bytes": size, "ext": ext})
+    # 의뢰에 적어 둔다 — 말로 부탁할 때 이 목록만 `file.place`에 쓸 수 있다.
+    shown = file.filename or name
+    j.setdefault("assets", []).append({"name": shown, "path": str(dest)})
+    j["assets"] = j["assets"][-20:]
     return {"data": {"path": str(dest), "name": name, "bytes": size,
-                     "original": file.filename or name}, "meta": {}}
+                     "original": shown}, "meta": {}}
 
 
 @app.get("/designcraft/{ctx}")
