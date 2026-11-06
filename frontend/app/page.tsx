@@ -68,6 +68,10 @@ function Home() {
   const [srcInfo, setSrcInfo] = useState<SourceView | null>(null);
   // 주소에 번호를 달고 들어왔으면 **처음부터** 여는 중이다. 효과 안에서 켜면 렌더가 한 번 더 돈다.
   const [srcBusy, setSrcBusy] = useState(!!srcParam);
+  // 고른 것을 지울 때 input의 value까지 비우려면 손잡이가 필요하다
+  const pdfRef = useRef<HTMLInputElement>(null);
+  const idmlRef = useRef<HTMLInputElement>(null);
+  const pkgRef = useRef<HTMLInputElement | null>(null);
   const [risks, setRisks] = useState<(Risk & { hits: Hit[] })[]>([]);
   const [usedPaper, setUsedPaper] = useState<Paper | null>(null);
   const paper = db?.papers.find((p) => p.id === paperId) ?? null;
@@ -207,7 +211,7 @@ function Home() {
   }, [srcParam, adoptSource]);
 
   async function openSource(fs: File[]) {
-    setSrcBusy(true); setErr("");
+    setSrcBusy(true); setErr(""); setRead(null); setReadFail(false);
     try {
       await adoptSource(await uploadSource(fs));
     } catch (e) {
@@ -215,6 +219,17 @@ function Home() {
       setFile(null);
     }
     setSrcBusy(false);
+  }
+
+  /** 지금 고른 쪽. **둘 중 하나만** 올릴 수 있으므로 이 한 값이 두 칸의 잠금을 가른다.
+   *  `srcCtx`를 먼저 본다 — IDML을 올리면 거기서 뽑은 PDF가 `file`에도 들어가기 때문이다. */
+  const picked: "" | "pdf" | "idml" = srcCtx || srcBusy ? "idml" : (file ? "pdf" : "");
+
+  /** 고른 것을 지운다. 잠그기만 해 두면 잘못 고른 사람이 새로 고치기 말고는 길이 없다.
+   *  input의 `value`까지 비워야 한다 — 같은 파일을 다시 골라도 `change`가 안 나기 때문이다. */
+  function clearPick() {
+    for (const r of [pdfRef, idmlRef, pkgRef]) if (r.current) r.current.value = "";
+    setFile(null); setRead(null); setReadFail(false); setSrcCtx(""); setSrcInfo(null); setErr("");
   }
 
   async function pickFile(f: File | null) {
@@ -372,41 +387,75 @@ function Home() {
       <TermsPanel />
 
       <form className="upload panel" onSubmit={submit}>
-        {/* 파일 고르기는 **‘파일 선택’을 눌렀을 때만** 열려야 한다. `<label>`은 품은 input을
+        {/* **둘 중 하나만 올린다.** PDF로 맡긴 검수와 IDML로 맡긴 검수는 할 수 있는 일이 다르다
+            (IDML 쪽만 끝에서 원본을 고친다). 둘 다 골라 두면 어느 쪽으로 도는지 화면만 보고는
+            알 수 없다. 그래서 하나를 고르면 다른 쪽을 잠그고, 잠긴 이유를 그 자리에 적는다.
+
+            파일 고르기는 **‘파일 선택’을 눌렀을 때만** 열려야 한다. `<label>`은 품은 input을
             대신 누르므로, label 안에 설명이나 제목을 두면 그 글자를 눌러도 파일 창이 뜬다 —
             읽으려고 누른 사람 앞에 창이 열린다. 그래서 글자는 `<span>`으로 두고, 이름은
             `aria-labelledby`로 input에 묶는다(읽어 주는 프로그램에는 그대로 들린다). */}
-        <div className="wide filepick">
-          <span className="fp_title" id="pick_doc_l">검수할 파일</span>
-          <input id="pick_doc" aria-labelledby="pick_doc_l" type="file" accept=".pdf,.idml,.designcraft,application/pdf" disabled={srcBusy}
+        <div className={`wide filepick${picked === "idml" ? " locked" : ""}`}>
+          <span className="fp_title" id="pick_pdf_l">검수할 PDF 파일
+            {picked === "idml" && <span className="chip">IDML을 고르셨습니다</span>}
+          </span>
+          <input id="pick_pdf" aria-labelledby="pick_pdf_l" type="file" accept=".pdf,application/pdf"
+            ref={pdfRef} disabled={srcBusy || picked === "idml"}
             onChange={(e) => pickFile(e.target.files?.[0] ?? null)} />
-          {srcBusy && <span className="note">원본을 여는 중입니다… DesignCraft가 열어 검수용 PDF를 뽑습니다(10초쯤).</span>}
-          {read && <ReadHint m={read} />}
-          {readFail && <span className="note">파일에서 크기를 읽지 못했습니다. 암호가 걸렸거나 깨진 PDF일 수 있습니다. 아래 칸을 직접 채워 주세요.</span>}
-          {/* 무엇을 올리면 무엇까지 되는지는 **고르기 전에** 알아야 한다. 고른 뒤에 알려 주면 늦다. */}
-          {!srcInfo && !srcBusy && (
-            <span className="note">
-              <b>원본 수정까지 가시려면 편집 파일(<code>.idml</code>)이어야 합니다.</b> PDF로 올리면 검수까지만 됩니다 —
-              PDF에서는 글자를 집을 수 없어 고치지 못합니다.
-            </span>
-          )}
-        </div>
-        {/* IDML은 사진을 링크로만 들고 있고 글꼴은 이름으로만 들고 있다. 파일 하나만 받으면
-            인쇄용 사진도 글꼴도 빠진 채로 검수하게 된다. */}
-        <div className="wide filepick">
-          <span className="fp_title" id="pick_pkg_l">편집 파일은 폴더째도 됩니다</span>
-          {/* webkitdirectory는 React 타입에 없어서 속성으로 직접 준다 */}
-          <input id="pick_pkg" aria-labelledby="pick_pkg_l" type="file" disabled={srcBusy}
-            ref={(el) => { if (el) { el.setAttribute("webkitdirectory", ""); el.setAttribute("directory", ""); } }}
-            onChange={(e) => { const fs = e.target.files; if (fs?.length) { setRead(null); setReadFail(false); void openSource(Array.from(fs)); } }} />
           <span className="note">
-            고치는 것은 파일 하나로도 됩니다. 다만 <b>검수 결과를 원본대로 보시려면 폴더째가 맞습니다</b> —
-            InDesign의 <b>파일 → 패키지</b>로 만든 폴더를 올리면 옆의 <code>Links</code> 사진과{" "}
-            <code>Document Fonts</code> 글꼴까지 같이 올라갑니다.
+            검수까지 됩니다. <b>원본은 고치지 못합니다</b> — PDF에서는 글자를 집을 수 없습니다.
+          </span>
+        </div>
+
+        {/* IDML은 사진을 링크로만, 글꼴을 이름으로만 들고 있다. 파일 하나만 받으면 인쇄용 사진도
+            글꼴도 빠진 채로 검수하게 된다. 그래서 파일 하나와 패키지 폴더를 **둘 다** 받는다 —
+            `webkitdirectory`가 걸린 칸은 폴더만 고를 수 있어서, 칸 하나로는 둘을 다 받지 못한다. */}
+        <div className={`wide filepick${picked === "pdf" ? " locked" : ""}`}>
+          <span className="fp_title" id="pick_idml_l">검수할 IDML 파일
+            {picked === "pdf" && <span className="chip">PDF를 고르셨습니다</span>}
+          </span>
+          <div className="fp_two">
+            <input id="pick_idml" aria-labelledby="pick_idml_l" type="file" accept=".idml,.designcraft"
+              ref={idmlRef} disabled={srcBusy || picked === "pdf"}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) void openSource([f]); }} />
+            <span className="fp_or">또는 패키지 폴더째</span>
+            {/* webkitdirectory는 React 타입에 없어서 속성으로 직접 준다 */}
+            <input id="pick_pkg" aria-label="검수할 IDML 파일 — 패키지 폴더째" type="file"
+              disabled={srcBusy || picked === "pdf"}
+              ref={(el) => { pkgRef.current = el; if (el) { el.setAttribute("webkitdirectory", ""); el.setAttribute("directory", ""); } }}
+              onChange={(e) => { const fs = e.target.files; if (fs?.length) void openSource(Array.from(fs)); }} />
+          </div>
+          <span className="note">
+            검수가 끝나면 <b>교정을 원본에 반영할지 묻고 고칩니다.</b> 고치는 것은 파일 하나로도 되고,
+            돌려드리는 IDML에는 원래 글꼴 이름이 그대로 남습니다.
+          </span>
+          <span className="note">
+            다만 <b>검수 결과를 원본대로 보시려면 폴더째가 맞습니다</b> — InDesign의 <b>파일 → 패키지</b>로
+            만든 폴더를 올리면 옆의 <code>Links</code> 사진과 <code>Document Fonts</code> 글꼴까지 같이 올라갑니다.
             파일 하나만 올리면 인쇄용 사진이 따라오지 않고 글꼴도 이 PC에 있는 것으로 대체되어,{" "}
             <b>넘침·줄바꿈·해상도가 원본과 다르게 나옵니다.</b>
           </span>
         </div>
+
+        {/* 고른 뒤의 상태는 두 칸 어디에도 넣지 않는다. IDML을 올리면 거기서 뽑은 PDF가 '화면이 쓰는
+            PDF'가 되므로 크기 안내는 두 길에 다 해당하고, 잠긴 칸 안에 적으면 흐려져서 안 읽힌다. */}
+        {(picked || srcBusy) && (
+          <div className="wide fp_state">
+            {srcBusy && <span className="note">원본을 여는 중입니다… DesignCraft가 열어 검수용 PDF를 뽑습니다(10초쯤).</span>}
+            {!srcBusy && (
+              <span className="note">
+                고른 것: <b>{srcInfo ? srcInfo.filename : (file?.name ?? "")}</b>
+                {/* 파일 하나만 올려도 서버는 폴더 하나로 풀어 둔다. 그래서 1은 적지 않는다 —
+                    '폴더 안 1개'는 폴더로 올린 줄로 읽힌다. */}
+                {(srcInfo?.uploaded_files ?? 0) > 1 ? ` — 폴더째 ${srcInfo!.uploaded_files}개` : ""}
+                {" "}
+                <button type="button" className="pill" onClick={clearPick}>지우고 다시 고르기</button>
+              </span>
+            )}
+            {read && <ReadHint m={read} />}
+            {readFail && <span className="note">파일에서 크기를 읽지 못했습니다. 암호가 걸렸거나 깨진 PDF일 수 있습니다. 아래 칸을 직접 채워 주세요.</span>}
+          </div>
+        )}
         <label>완성 크기
           <select value={size} onChange={(e) => pickSize(e.target.value)}>
             {FORMATS.map((g) => (
