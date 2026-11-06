@@ -639,7 +639,9 @@ async def dc_create(body: dict[str, Any], authorization: str | None = Auth) -> d
                    "files": 1, "created": time.time(), "result": None, "made": True,
                    # 말로 부탁할 때 자리를 잡는 데 쓴다(쪽 크기를 모르면 엉뚱한 곳에 그린다)
                    "width_mm": made.get("width_mm"), "height_mm": made.get("height_mm"),
-                   "facing": bool(body.get("facing"))}
+                   "facing": bool(body.get("facing")),
+                   # 여백·도련도 적어 둔다. 이게 없으면 말로 부탁한 것이 여백을 넘어 앉는다.
+                   "margin_mm": body.get("margin_mm"), "bleed_mm": body.get("bleed_mm")}
     while len(DCJOBS) > MAX_JOBS:
         DCJOBS.pop(min(DCJOBS, key=lambda k: DCJOBS[k]["created"]), None)
     ins = await _ask("designcraft", "inspect_source", ctx, {"src_ref": made["src_ref"], "filename": made["doc"]})
@@ -720,6 +722,7 @@ async def dc_compose(ctx: str, body: dict[str, Any], authorization: str | None =
         "width_mm": j.get("width_mm") or ins.get("width_mm"),
         "height_mm": j.get("height_mm") or ins.get("height_mm"),
         "facing": bool(j.get("facing")),
+        "margin_mm": j.get("margin_mm"), "bleed_mm": j.get("bleed_mm"),
         # 올려 둔 그림의 경로를 같이 넘긴다. 안 넘기면 LLM이 경로를 지어내고 엔진이 거절한다.
         "assets": j.get("assets") or [],
     })

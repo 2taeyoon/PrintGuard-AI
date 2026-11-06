@@ -23,7 +23,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   composeDocument, createDocument, dcFileBlob, editDocument, makeProgress, mcpStatus, undoEdit, uploadAsset,
@@ -57,18 +57,17 @@ const EXAMPLES: { id: string; text: string }[] = [
   {
     id: "공연 전단",
     text: `1쪽 맨 위에 큰 제목 ‘가을 정기연주회’를 36pt 굵게, 글자는 진한 남색으로.
-그 바로 아래 부제 ‘서울시립교향악단 제128회’를 14pt로.
+그 바로 아래 부제 ‘제12회 정기공연’을 14pt로.
 가운데에 폭 160mm 높이 100mm로 사진 자리 하나.
-사진 아래에 ‘2026년 11월 21일 토요일 저녁 7시 30분 / 예술의전당 콘서트홀’을 12pt로.
-맨 아래에 높이 15mm 띠를 진한 남색으로 깔고, 그 위에 흰 글씨로 ‘문의 02-123-4567’.`,
+사진 아래에 ‘2026년 11월 21일 토요일 저녁 7시 30분 / 시민회관 대공연장’을 12pt로.
+맨 아래에 높이 15mm 띠를 진한 남색으로 깔고, 그 위에 흰 글씨로 ‘문의 02-0000-0000’.`,
   },
   {
     id: "명함",
-    text: `1쪽(앞면) 왼쪽 위에 올린 로고 사진을 폭 20mm로.
-그 아래에 이름 ‘이태윤’을 18pt 굵게, 바로 아래 직함 ‘인쇄 검수 담당’을 9pt 회색으로.
-오른쪽 아래에 전화·메일·주소를 8pt로 세 줄.
+    text: `1쪽(앞면) 왼쪽 위에 이름 ‘홍길동’을 18pt 굵게, 바로 아래 직함 ‘영업팀 과장’을 9pt 회색으로.
+왼쪽 아래에 전화·메일·주소를 8pt로 세 줄.
 왼쪽 가장자리에 폭 4mm 세로 띠를 주황색으로.
-2쪽(뒷면)은 가운데에 회사 이름만 14pt로, 그 아래 홈페이지 주소를 QR 코드로 20×20mm.`,
+2쪽(뒷면)은 가운데에 회사 이름을 14pt로, 그 아래 홈페이지 주소를 QR 코드로 20×20mm.`,
   },
   {
     id: "잡지 표지와 본문",
@@ -76,7 +75,7 @@ const EXAMPLES: { id: string; text: string }[] = [
 표지 아래 2/3는 사진 자리로 비워 두고, 맨 아래에 특집 제목 세 줄을 11pt로.
 2쪽은 목차. ‘차례’ 제목과 네 줄 두 칸 표(왼쪽은 글 제목, 오른쪽은 쪽 번호).
 3쪽부터는 본문. 쪽마다 위에 기사 제목 자리 20pt, 그 아래 두 단으로 본문 글상자,
-단 사이는 5mm. 쪽 아래 가운데에 쪽 번호 자리.`,
+단 사이는 5mm.`,
   },
 ];
 
@@ -219,8 +218,10 @@ export default function MakePage() {
   const [did, setDid] = useState<Did[]>([]);
   const [page, setPage] = useState(1);
 
-  // 만드는 동안의 한 걸음(0.8초마다 물어 따라간다)
+  // 만드는 동안의 한 걸음. 0.35초마다 묻는다 — 느리게 물으면 여러 줄이 한꺼번에 쏟아져
+  // '차곡차곡 쌓이는' 모양이 안 된다.
   const [live, setLive] = useState<MakeStep[]>([]);
+  const liveEnd = useRef<HTMLLIElement | null>(null);
 
   // 말로 부탁하기 + 쓸 사진
   const [ask, setAsk] = useState("");
@@ -251,10 +252,13 @@ export default function MakePage() {
     const tick = () => makeProgress(made.context_id)
       .then((rows) => { if (alive) setLive(rows); })
       .catch((e: unknown) => { if (alive) console.warn('[pg] 진행 상황을 못 읽었습니다', e); });
-    const t = setInterval(tick, 800);
+    const t = setInterval(tick, 350);
     tick();
     return () => { alive = false; clearInterval(t); };
   }, [made, busy]);
+
+  /** 줄이 늘면 바닥을 따라 내려간다. 쌓이는 것을 보려면 눈이 따라가야 한다. */
+  useEffect(() => { liveEnd.current?.scrollIntoView({ block: "nearest" }); }, [live]);
 
   function pickKind(id: string) {
     const k = KINDS.find((x) => x.id === id);
@@ -457,6 +461,8 @@ export default function MakePage() {
         <section className="panel dc_run">
           <div className="dc_head">
             <strong>2. 무엇을 넣을까요</strong>
+            <span className="chip">{made.filename}</span>
+            {made.width_mm > 0 && <span className="chip">크기<b>{made.width_mm}×{made.height_mm}mm</b></span>}
             <span className="chip">쪽<b>{pageCount}</b></span>
             <span className="chip">넣은 것<b>{state?.items ?? 0}</b></span>
             {busy && <span className="spinner" aria-hidden="true" />}
@@ -545,14 +551,25 @@ export default function MakePage() {
                 })()}
                 {busy && <span className="spinner" aria-hidden="true" />}
               </div>
+              {/* 오래된 것이 위, 새것이 아래. 로그가 그 순서로 오므로 그대로 쌓는다.
+                  '넣었습니다'는 빼고 '넣는 중'만 보여 준다 — 그쪽에만 무엇을 넣는지(params)가
+                  들어 있어 사람 말로 적을 수 있다. */}
               <ol className="livelist">
-                {[...live].reverse().filter((r) => r.payload.phase !== "넣는 중").map((r) => (
-                  <li key={r.id} className={r.payload.error ? "bad" : ""}>
-                    <b>{r.payload.phase}</b>
-                    {r.payload.command && <span className="pl_cmds">{r.payload.command}</span>}
-                    {r.payload.error && <span className="pl_detail">{r.payload.error}</span>}
-                  </li>
-                ))}
+                {live.filter((r) => r.payload.phase !== "넣었습니다").map((r) => {
+                  const p = r.payload;
+                  const row = p.command
+                    ? readable([{ command: p.command, params: p.params ?? {} }])[0]
+                    : null;
+                  return (
+                    <li key={r.id} className={p.error ? "bad" : ""}>
+                      <b>{row ? row.what : p.phase}</b>
+                      {row?.detail && <span className="pl_detail">{row.detail}</span>}
+                      {p.command && <span className="pl_cmds">{p.command}</span>}
+                      {p.error && <span className="pl_detail">{p.error}</span>}
+                    </li>
+                  );
+                })}
+                <li ref={liveEnd} aria-hidden="true" className="live_end" />
               </ol>
             </div>
           )}
@@ -562,7 +579,7 @@ export default function MakePage() {
           {preview && (
             <>
               {shots.length > 1 && (
-                <div className="pagebar" role="tablist" aria-label="쪽 고르기">
+                <div className="pagebar" role="tablist" aria-label={`쪽 고르기 — 문서 ${pageCount}쪽`}>
                   {shots.map((_, i) => (
                     <button key={i} type="button" role="tab" aria-selected={page === i + 1}
                       className={`pill${page === i + 1 ? " on" : ""}`} onClick={() => setPage(i + 1)}>{i + 1}쪽</button>

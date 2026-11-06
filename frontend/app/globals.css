@@ -735,6 +735,7 @@ input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, 
   max-height: 180px; overflow: auto; }
 .livelist li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; font-size: 1.4rem; }
 .livelist li.bad b { color: var(--redBright); }
+.livelist .live_end { height: 0; margin: 0; padding: 0; }
 /* 엔진이 실제로 한 일 */
 .didlist { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .didlist > li { padding: 10px 14px; background: var(--bgSurface); border: 1px solid var(--borderSubtle); }
@@ -750,6 +751,9 @@ input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, 
 
 .dc_ta { width: 100%; padding: 12px; border: 1px solid var(--borderLight); background: var(--white);
   color: var(--black); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1.4rem; line-height: 1.8; resize: vertical; }
+/* 누르면 브라우저가 굵은 테두리를 그린다. 그 자리에 테두리 색만 바꿔 둔다 —
+   아주 없애면 키보드로 옮겨 다닐 때 어디에 있는지 알 수 없다. */
+.dc_ta:focus, .dc_ta:focus-visible { outline: none; border-color: var(--thema); }
 .dc_skipped { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 1.4rem; }
 .dc_skipped li { padding: 6px 12px; background: var(--redLight); }
 
