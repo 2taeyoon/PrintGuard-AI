@@ -140,15 +140,36 @@ export type McpStatus = {
 export const mcpStatus = async () => j<McpStatus>(await fetch(`${orchUrl()}/designcraft/status`));
 
 export type PreflightIssue = { severity: string; kind: string; message: string; page: number | null };
-export type SourceView = {
+
+/** 문서가 쓰는 글꼴 하나와 그 처지.
+ *
+ *  글꼴은 편집 파일에 **담겨 오지 않는다** — 이름으로만 가리키고, 그 이름을 글자꼴로 바꾸는 일은
+ *  파일을 여는 쪽 PC가 한다. 그래서 올린 사람 PC에는 있고 검수하는 PC에는 없을 수 있다.
+ *  - `missing`      : 그 글꼴이 없어 `resolved`로 **대체해서** 그렸다
+ *  - `substituted`  : 글꼴 가족은 있는데 그 굵기·기울기가 없어 가까운 것으로 그렸다
+ *  - `source`       : `document`면 올린 **패키지의 `Document Fonts/`에서 실려 온 것**이다 */
+export type DocFont = {
+  family: string; style: string; status: "ok" | "missing" | "substituted";
+  resolved: string; resolved_style: string; chars: number;
+  source: "bundled" | "installed" | "document" | "added" | null; restricted_licence: boolean;
+};
+/** 글꼴 상태와, 그 때문에 **미리보기를 어디까지 믿을 수 있는지**.
+ *  수치를 지우지 않고 믿을 수 있는 범위를 같이 말한다 — 글꼴이 대체되면 줄이 밀려서,
+ *  넘친 글을 그대로 '원본의 문제'라고 말할 수 없기 때문이다. */
+export type FontState = {
+  fonts: DocFont[]; missing_fonts: string[]; substituted_styles: string[];
+  document_fonts: number; glyph_blocked: string[];
+  trust: { text_readable: boolean; layout_faithful: boolean };
+};
+export type SourceView = FontState & {
   context_id: string; filename: string; pages: number; pdf_ref: string;
   stories: { id: number; length: number; overset: boolean; pages: number[]; preview: string }[];
-  preflight: PreflightIssue[]; missing_fonts: string[]; open_warnings: string[];
+  preflight: PreflightIssue[]; open_warnings: string[]; text_chars: number;
   paragraph_styles: number; swatches: number; png: string; uploaded_files?: number;
 };
 
 /** 편집 파일을 올리고 바로 들여다본다(쪽·스토리·preflight + 검수용 PDF).
- *  파일 하나도 되고 **폴더째**도 된다 — 폴더로 주면 IDML 옆의 `Links/` 사진과 `Document fonts/`
+ *  파일 하나도 되고 **폴더째**도 된다 — 폴더로 주면 IDML 옆의 `Links/` 사진과 `Document Fonts/`
  *  글꼴까지 같이 올라가, 끊긴 링크와 대체 글꼴 문제가 사라진다. 서버는 둘을 같은 방식으로 다룬다. */
 export async function uploadSource(files: File[] | FileList): Promise<SourceView> {
   const list = Array.from(files);
@@ -160,7 +181,7 @@ export async function uploadSource(files: File[] | FileList): Promise<SourceView
   return j<SourceView>(await call("/designcraft/source", { method: "POST", body: fd }));
 }
 
-export type ApplyResult = {
+export type ApplyResult = FontState & {
   applied: { key?: string; page: number | null; original: string; suggestion: string; story: number; at: [number, number] }[];
   failed: { key?: string; page: number | null; original: string; suggestion: string; reason: string }[];
   pdf_ref: string; source_out: string | null;

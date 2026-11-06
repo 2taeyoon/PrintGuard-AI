@@ -65,14 +65,19 @@ CARD = AgentCard.model_validate({
         {"id": "inspect_source", "description": "편집 파일(IDML)을 열어 쪽·스토리·preflight를 보고 검수용 PDF를 뽑는다", "grade": "read",
          "allowed_requesters": ["orchestrator", "report", "mcp"],
          "input_schema": {"src_ref": "sha256", "filename": "string"},
-         "output_schema": {"pages": "number", "stories": "[]", "preflight": "Issue[]", "missing_fonts": "string[]",
-                           "pdf_ref": "sha256"}},
+         "output_schema": {"pages": "number", "stories": "[]", "preflight": "Issue[]", "pdf_ref": "sha256",
+                           "fonts": "[{family, style, status: ok|missing|substituted, resolved, chars, source}]",
+                           "missing_fonts": "string[] 이 PC에 없어 대체해서 그린 글꼴",
+                           "glyph_blocked": "string[] 글꼴에 그 글자가 없어 PDF에 찍히지 않은 곳",
+                           "document_fonts": "number 올린 패키지의 Document Fonts/에서 실려 온 글꼴 수",
+                           "trust": "{text_readable, layout_faithful} 미리보기를 어디까지 믿을 수 있는가"}},
         {"id": "apply_fixes", "description": "교정 목록을 원본에 반영하고 PDF로 내보낸다(묻고 나서 고치며, 파일 쓰기는 safety를 거친다)", "grade": "A",
          "allowed_requesters": ["orchestrator"],
          "input_schema": {"src_ref": "sha256", "filename": "string", "confirm": "yes | no (없으면 사용자에게 묻는다)",
                           "fixes": "[{page?: number(1부터), original: string, suggestion: string, key?: string}]"},
          "output_schema": {"applied": "[]", "failed": "[]", "pdf_ref": "sha256", "source_out": "고친 편집 파일 이름",
-                           "shots": "[{page, before, after}] 바뀐 쪽의 전후 그림"}},
+                           "shots": "[{page, before, after}] 바뀐 쪽의 전후 그림",
+                           "fonts": "[]", "missing_fonts": "string[]", "trust": "{}"}},
         {"id": "create_document", "description": "새 문서(빈 판형 또는 샘플 잡지)를 만들어 IDML·PDF로 내보낸다(파일 쓰기는 safety를 거친다)", "grade": "A",
          "allowed_requesters": ["orchestrator"],
          "input_schema": {"start": "blank | sample", "width_mm": "number", "height_mm": "number", "pages": "number",
@@ -89,7 +94,7 @@ def _src_path(src_ref: str, filename: str) -> tuple[Path, str]:
     """올린 것 안의 문서 경로와 확장자.
 
     업로드는 파일 하나든 폴더째든 **SRC/<토큰>/ 폴더 하나로** 풀려 있다. `filename`은 그 안에서의
-    상대 경로다(`Links/`나 `Document fonts/`가 옆에 있으면 DesignCraft가 알아서 읽는다).
+    상대 경로다(`Links/`나 `Document Fonts/`가 옆에 있으면 DesignCraft가 알아서 읽는다).
     확장자가 중요하다 — DesignCraft가 이걸로 가져오기 방식을 고른다.
     """
     ext = Path(filename or "").suffix.lower()
@@ -109,7 +114,7 @@ def _src_path(src_ref: str, filename: str) -> tuple[Path, str]:
 
 
 def _pkg_root(src: Path) -> Path:
-    """읽기를 열어 줄 폴더. 올린 묶음의 뿌리(SRC/<토큰>)까지 열어야 `Links/`와 `Document fonts/`가
+    """읽기를 열어 줄 폴더. 올린 묶음의 뿌리(SRC/<토큰>)까지 열어야 `Links/`와 `Document Fonts/`가
     닿는다 — 문서가 하위 폴더에 들어 있는 패키지가 흔하다. SRC 자체(남의 업로드까지)는 열지 않는다."""
     p = src.parent.resolve()
     root = SRC.resolve()
@@ -162,6 +167,75 @@ def _open(m: Mcp, path: Path, ext: str) -> dict[str, Any]:
     return r if isinstance(r, dict) else {}
 
 
+# ---------- 글꼴 ----------
+# 글꼴은 **파일에 담겨 오지 않는다.** IDML은 "윤명조 330"처럼 **이름으로만** 가리키고, 그 이름을
+# 실제 글자꼴로 바꾸는 일은 파일을 여는 쪽 PC가 한다. 서버에 세상의 글꼴을 다 깔아 둘 수는 없고,
+# 상용 글꼴을 깔아 두고 남의 파일에 쓰는 것은 라이선스 문제이기도 하다.
+#
+# 그래서 **글꼴이 없으면 어떻게 되는지**를 정확히 알고 정확히 말해야 한다. 두 가지가 전혀 다르다.
+#
+#   1. 글꼴이 아예 없다(`missing`) — 엔진이 비슷한 것으로 **대체해서** 그린다. 글자는 다 보이고
+#      PDF에서 뽑히기도 한다(없는 글자는 폴백 글꼴이 그려 준다). 교정은 멀쩡하게 돈다.
+#      다만 글자 너비가 달라 **줄바꿈이 밀린다** — 넘친 글·쪽 배분 수치는 원본의 것이 아니다.
+#   2. 글꼴은 있는데 그 글자가 없다(`missingGlyphs`) — 네모로 찍힌다. **PDF에 글자가 남지 않아서**
+#      교정이 아무것도 읽지 못한다. 그대로 두면 "고칠 것 없음"이라는 거짓 결과가 나온다.
+#      이건 대체로 원본 자체의 흠이다(한글을 라틴 전용 글꼴로 짠 경우).
+#
+# **고치는 쪽은 글꼴을 건드리지 않는다.** 우리는 글자만 바꾸므로 내보낸 IDML에는 원래 글꼴 이름이
+# 그대로 남고, 그 글꼴이 있는 PC(올린 사람의 인디자인)에서 열면 원본대로 보인다. 그래서
+# `font.replace`는 **우리가 만든 새 문서에서만** 쓴다(아래 `_create_blocking`). 남의 문서에 쓰면
+# 되돌릴 수 없게 조판을 바꿔 놓는 것이다.
+#
+# 글꼴을 받을 길은 **인디자인의 파일 → 패키지**다. 그 폴더의 `Document Fonts/`를 DesignCraft가
+# 문서를 열 때 먼저 읽는다(깔지 않고 그 자리에서만). 폴더째 올리면 1번이 사라진다.
+def _fonts(m: Mcp) -> list[dict[str, Any]]:
+    """문서가 쓰는 글꼴과 그 처지. preflight 메시지를 긁는 것보다 정확하다 — 무엇으로 대체됐는지,
+    몇 글자가 걸렸는지, 어디서 온 글꼴인지가 들어 있다."""
+    try:
+        rows = m.ex("font.list") or []
+    except McpError:
+        return []
+    out: list[dict[str, Any]] = []
+    for f in rows if isinstance(rows, list) else []:
+        missing = bool(f.get("missing"))
+        status = "missing" if missing else ("substituted" if f.get("matchStatus") == "styleSubstitute" else "ok")
+        out.append({
+            "family": f.get("family"), "style": f.get("style"), "status": status,
+            "resolved": f.get("resolvedFamily"), "resolved_style": f.get("resolvedStyle"),
+            "chars": int(f.get("characters") or 0),
+            # bundled | installed | document(패키지에서 실려 온 것) | added. 없으면 null.
+            "source": f.get("source"),
+            "restricted_licence": bool(f.get("restrictedLicence")),
+        })
+    return out
+
+
+def _font_summary(fonts: list[dict[str, Any]], issues: list[dict[str, Any]]) -> dict[str, Any]:
+    """화면과 보고서가 같은 말을 하도록, 글꼴 상태를 한 덩어리로 정리한다.
+
+    `trust`가 핵심이다. 수치를 지우지 않고 **어디까지 믿을 수 있는지**를 같이 낸다 — 글꼴이
+    대체되면 줄바꿈이 달라지므로, 넘친 글을 그대로 '원본의 문제'라고 말할 수 없다.
+    """
+    missing = [f for f in fonts if f["status"] == "missing"]
+    substituted = [f for f in fonts if f["status"] == "substituted"]
+    blocked = sorted({i.get("message", "").split(": ", 1)[0].replace("Missing glyphs in ", "")
+                      for i in issues if i.get("kind") == "missingGlyphs"})
+    return {
+        "fonts": fonts,
+        # 옛 이름 그대로 둔다 — 이걸 보는 화면이 이미 있다
+        "missing_fonts": sorted({str(f["family"]) for f in missing}),
+        "substituted_styles": sorted({f"{f['family']} {f['style']}" for f in substituted}),
+        "document_fonts": sum(1 for f in fonts if f["source"] == "document"),
+        "glyph_blocked": blocked,
+        "trust": {
+            # 글은 글꼴과 무관하다 — 네모로 찍히는 경우만 빼고
+            "text_readable": not blocked,
+            # 줄바꿈·넘침은 글꼴이 바뀌면 같이 바뀐다
+            "layout_faithful": not missing and not substituted,
+        },
+    }
+
+
 def _sha_file(p: Path) -> str:
     h = hashlib.sha256()
     with p.open("rb") as f:
@@ -191,6 +265,7 @@ def _inspect_blocking(src: Path, ext: str, out: Path) -> dict[str, Any]:
         stories = [{"id": s["id"], "length": s.get("length", 0), "overset": bool(s.get("overset")),
                     "pages": sorted(pages.get(s["id"], [])), "preview": (s.get("preview") or "")[:80]}
                    for s in doc.get("stories", [])]
+        fonts = _fonts(m)
         pdf = out / "inspect.pdf"
         m.ex("file.exportPdf", path=str(pdf))
         png = out / "page1.png"
@@ -200,7 +275,9 @@ def _inspect_blocking(src: Path, ext: str, out: Path) -> dict[str, Any]:
         "stories": stories,
         "preflight": [{"severity": i.get("severity"), "kind": i.get("kind"), "message": i.get("message"),
                        "page": (i["page"] + 1) if isinstance(i.get("page"), int) else None} for i in issues],
-        "missing_fonts": sorted({i["message"].split(": ", 1)[-1] for i in issues if i.get("kind") == "missingFont"}),
+        **_font_summary(fonts, issues),
+        # 문서가 품은 글자 수. PDF에서 뽑힌 글이 이보다 턱없이 적으면 글꼴이 글자를 막은 것이다.
+        "text_chars": sum(int(s.get("length") or 0) for s in doc.get("stories", [])),
         "open_warnings": (warn.get("warnings") or [])[:20],
         "paragraph_styles": len(doc.get("paragraphStyles", [])),
         "swatches": len(doc.get("swatches", [])),
@@ -218,7 +295,13 @@ async def inspect_source(req: AgentRequest) -> dict[str, Any]:
     return {"status": "completed", "output": r,
             "evidence": {"queries": [], "ref_ids": [r["pdf_ref"][:12]],
                          "data_summary": f"{r['pages']}쪽, 스토리 {len(r['stories'])}개, preflight 오류 {errs}건"
-                                         + (f", 없는 글꼴 {len(r['missing_fonts'])}개" if r["missing_fonts"] else "")}}
+                                         + (f", 없는 글꼴 {len(r['missing_fonts'])}개(대체해서 열었습니다 — "
+                                            "줄바꿈이 원본과 다릅니다)" if r["missing_fonts"] else "")
+                                         + (f", 글꼴에 없는 글자 {len(r['glyph_blocked'])}곳"
+                                            "(그 글자는 PDF에 찍히지 않아 교정이 읽지 못합니다)"
+                                            if r["glyph_blocked"] else "")
+                                         + (f", 패키지 글꼴 {r['document_fonts']}개를 그대로 썼습니다"
+                                            if r["document_fonts"] else "")}}
 
 
 def _store_pdf(p: Path) -> str:
@@ -325,7 +408,11 @@ def _apply_blocking(src: Path, ext: str, out: Path, fixes: list[dict[str, Any]])
         source_out = s.name
         # 고친 뒤 남은 문제도 알려 준다(교정이 넘침을 새로 만들었을 수 있다)
         pf = m.ex("preflight.run", minPpi=150) or {}
+        # 글꼴은 **건드리지 않았다.** 그래도 상태를 같이 내보낸다 — 내려받은 PDF가 원본과 다르게
+        # 보이는 이유를 그 자리에서 알 수 있어야 하기 때문이다.
+        fonts = _fonts(m)
     return {"applied": applied, "failed": failed, "pdf_path": str(pdf), "source_out": source_out,
+            **_font_summary(fonts, pf.get("issues", [])),
             "shots": [{"page": p, "before": f"before_p{p}.png", "after": f"after_p{p}.png"} for p in shot_pages],
             "shots_total": want_total,
             "preflight_after": [{"severity": i.get("severity"), "kind": i.get("kind"), "message": i.get("message"),

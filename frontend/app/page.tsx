@@ -18,7 +18,7 @@ import { assess, inputFrom, type Risk } from "@/lib/risk";
 import CopyFixes from "./copy-fixes";
 import { SignInNote } from "./sign-in";
 import FixResultPanel from "./fix-result";
-import { IssueRows } from "./dc-shared";
+import { FontNotice, IssueRows } from "./dc-shared";
 import { answerJob, createJob, dcFile, getSource, hostedOrch, orchestratorUp, toScreen, uploadSource, waitJob,
   type FixResult, type JobView, type SourceView } from "@/lib/agentClient";
 
@@ -394,7 +394,9 @@ function Home() {
             onChange={(e) => { const fs = e.target.files; if (fs?.length) { setRead(null); setReadFail(false); void openSource(Array.from(fs)); } }} />
           <span className="note">
             InDesign의 <b>파일 → 패키지</b>로 만든 폴더를 통째로 올리면 옆의 <code>Links</code> 사진과{" "}
-            <code>Document fonts</code> 글꼴까지 같이 올라가 그대로 열립니다. 파일 하나만 올리면 인쇄용 사진이 따라오지 않습니다.
+            <code>Document Fonts</code> 글꼴까지 같이 올라가 <b>원본 그대로</b> 열립니다.
+            파일 하나만 올리면 인쇄용 사진이 따라오지 않고, <b>글꼴도 이 PC에 있는 것으로 대체됩니다</b>{" "}
+            — 글은 멀쩡하지만 줄바꿈이 원본과 달라집니다.
           </span>
         </label>
         <label>완성 크기
@@ -647,12 +649,7 @@ function SourcePanel({ s }: { s: SourceView }) {
           글자 교정만 하실 거면 그대로 두셔도 됩니다.
         </p>
       )}
-      {s.missing_fonts.length > 0 && (
-        <p className="warn">
-          <b>이 PC에 없는 글꼴 {s.missing_fonts.length}개</b>: {s.missing_fonts.join(", ")} — 대체 글꼴로 열렸습니다.
-          글자 너비가 달라져 <b>줄바꿈과 넘침이 원본과 다르게 보일 수 있습니다.</b>
-        </p>
-      )}
+      <FontNotice s={s} />
       <button type="button" className="gs_toggle" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
         <GsMark open={open} /> 원본 검사(preflight) {s.preflight.length}건
       </button>

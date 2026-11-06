@@ -8,7 +8,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { dcFileBlob, type PreflightIssue } from "@/lib/agentClient";
+import { dcFileBlob, type FontState, type PreflightIssue } from "@/lib/agentClient";
 
 export const SEV: Record<string, string> = { error: "오류", warning: "경고" };
 // DesignCraft preflight가 내는 종류를 우리말로. 모르는 종류는 영문 그대로 둔다(숨기면 왜 걸렸는지 알 수 없다).
@@ -18,6 +18,88 @@ export const KIND: Record<string, string> = {
   emptyText: "빈 텍스트 프레임", rgbColor: "인쇄 문서의 RGB 색", unsupportedTypography: "미지원 조판",
   unsupportedGraphicLayers: "미지원 그래픽 레이어",
 };
+
+/** 글꼴 상태. **고치는 게 아니라 밝히는 화면이다.**
+ *
+ *  글꼴은 편집 파일에 담겨 오지 않고 이름으로만 실려 온다. 서버에 세상의 글꼴을 다 깔아 둘 수는
+ *  없고, 상용 글꼴을 깔아 두고 남의 파일에 쓰는 것은 라이선스 문제이기도 하다. 그래서 글꼴이
+ *  없을 때 **무엇이 멀쩡하고 무엇이 못 믿을 것인지**를 가려 말하는 것이 이 화면이 할 일이다.
+ *
+ *  대체된 글꼴로 본 결과를 그냥 내놓으면, 넘친 글 수치를 원본의 문제로 읽게 된다. 수치를 지우는
+ *  것도 답이 아니다 — 색·해상도처럼 글꼴과 무관한 검수는 그대로 맞기 때문이다. 그래서 둘을 나눈다.
+ *
+ *  `advise`: 올린 원본이면 패키지로 다시 올리는 길을 알려 준다. 우리가 만든 문서에는 해당 없다.
+ */
+export function FontNotice({ s, advise = true }: { s: Partial<FontState>; advise?: boolean }) {
+  const missing = (s.fonts ?? []).filter((f) => f.status === "missing");
+  const subbed = (s.fonts ?? []).filter((f) => f.status === "substituted");
+  const blocked = s.glyph_blocked ?? [];
+  const fromPkg = s.document_fonts ?? 0;
+  if (!missing.length && !subbed.length && !blocked.length && !fromPkg) return null;
+
+  return (
+    <div className="dc_fonts">
+      {fromPkg > 0 && (
+        <p className="note dc_fontok">
+          <b>패키지에 담겨 온 글꼴 {fromPkg}개를 그대로 썼습니다.</b> 미리보기가 원본과 같습니다 —
+          이 PC에 설치하지 않고 올리신 폴더 안에서만 읽습니다.
+        </p>
+      )}
+
+      {/* 가장 위험한 경우. 글자가 PDF에 남지 않아 교정이 '고칠 것 없음'을 내놓는다 */}
+      {blocked.length > 0 && (
+        <div className="warn">
+          <p><b>글꼴에 없는 글자가 있습니다</b> — {blocked.join(", ")}.</p>
+          <p>
+            그 글자는 네모로 찍히고 <b>PDF에 글자로 남지 않습니다.</b> 교정이 그 글을 읽지 못하니,
+            <b> 교정이 적게 나왔다면 글이 깨끗해서가 아닐 수 있습니다.</b>
+          </p>
+          <p>
+            이건 대체 글꼴 문제가 아니라 <b>원본의 흠</b>입니다 — 한글을 한글이 없는 글꼴로 짜 놓은 것입니다.
+            인디자인에서 그 글의 글꼴을 바꾸셔야 합니다.
+          </p>
+        </div>
+      )}
+
+      {missing.length > 0 && (
+        <div className="warn">
+          <p><b>이 PC에 없는 글꼴 {missing.length}개</b> — 비슷한 것으로 대체해서 열었습니다.</p>
+          <ul className="dc_fontlist">
+            {missing.map((f) => (
+              <li key={`${f.family} ${f.style}`}>
+                <b>{f.family}</b> {f.style}
+                <span>→ {f.resolved} {f.resolved_style}로 대체</span>
+                <span className="chip">{f.chars}자</span>
+              </li>
+            ))}
+          </ul>
+          <p>
+            <b>글은 그대로입니다.</b> 교정과 원본 반영은 글꼴과 상관없이 됩니다 — 고쳐 드리는 편집 파일에는{" "}
+            <b>원래 글꼴 이름이 그대로 남아</b>, 그 글꼴이 있는 PC(올리신 인디자인)에서 열면 원본대로 보입니다.
+            <b> 원본이 깨지는 일은 없습니다.</b>
+          </p>
+          <p>
+            <b>줄바꿈은 다릅니다.</b> 글자 너비가 달라 줄이 밀립니다. 그래서 <b>넘친 글·쪽 배분·줄 수</b>는
+            여기 보이는 값이 원본의 것이 아닙니다. 색·해상도·먹음침·종이처럼 글꼴과 무관한 검수는 그대로 맞습니다.
+          </p>
+          {advise && (
+            <p>
+              글꼴까지 맞춰서 보시려면 인디자인에서 <b>파일 → 패키지</b>로 만든 폴더를 <b>통째로</b> 올려 주세요.
+              그 안의 <code>Document Fonts</code> 폴더를 문서보다 먼저 읽습니다. 글꼴 파일을 따로 보내실 필요는 없습니다.
+            </p>
+          )}
+        </div>
+      )}
+
+      {subbed.length > 0 && (
+        <p className="warn">
+          <b>굵기·기울기가 대체된 글꼴 {subbed.length}개</b>: {subbed.map((f) => `${f.family} ${f.style}`).join(", ")} —
+          글꼴 가족은 있는데 그 굵기가 없어 가까운 것으로 그렸습니다. 글자 모양이 원본보다 가늘거나 굵게 보입니다.
+        </p>
+      )}
+    </div>
+  );
+}
 
 /** 같은 종류는 묶어서 센다 — 넘침 28건을 28줄로 늘어놓으면 읽을 수가 없다. */
 export function IssueRows({ rows, empty }: { rows: PreflightIssue[]; empty: string }) {

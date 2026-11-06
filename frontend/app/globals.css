@@ -679,6 +679,16 @@ input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, 
   padding: 8px 12px; background: var(--bgMuted); font-size: 1.5rem; }
 .dc_issues li.sev-high { background: var(--redLight); }
 .dc_issues .dc_msg { color: var(--blacklight); font-size: 1.4rem; overflow-wrap: anywhere; }
+/* 글꼴 상태 — 어느 글꼴이 무엇으로 대체됐는지 한 줄에 한 벌씩 */
+.dc_fonts { margin: 8px 0; }
+.dc_fonts > *:first-child { margin-top: 0; }
+.dc_fontok { background: var(--themaLight); color: var(--thema); padding: 10px 14px; margin: 8px 0; }
+.dc_fontok b { color: var(--thema); }
+.dc_fontlist { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.dc_fontlist li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px;
+  padding: 6px 12px; background: var(--white); font-size: 1.4rem; }
+.dc_fontlist li > span:not(.chip) { color: var(--blacklight); }
+
 .dc_warnbox { margin: 8px 0; font-size: 1.4rem; color: var(--blacklight); }
 .dc_warnbox summary { cursor: pointer; }
 .dc_warnbox ul { margin: 8px 0 0 16px; }

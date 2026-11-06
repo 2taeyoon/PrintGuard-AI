@@ -8,7 +8,7 @@
 // 고친다. 그래서 이 패널은 **검수 결과의 한 조각**이다.
 
 import { dcFileBlob, type FixResult } from "@/lib/agentClient";
-import { Compare, IssueRows } from "./dc-shared";
+import { Compare, FontNotice, IssueRows } from "./dc-shared";
 
 export default function FixResultPanel({ ctx, filename, r }: { ctx: string; filename: string; r: FixResult }) {
   const dl = async (name: string, as: string) => {
@@ -52,6 +52,9 @@ export default function FixResultPanel({ ctx, filename, r }: { ctx: string; file
       <p className="note">
         올리신 원본은 건드리지 않았습니다. 고친 것은 사본이고, 위 두 단추로 받으시면 됩니다.
       </p>
+      {/* 받은 PDF가 원본과 달라 보이는 이유는 여기서 말해야 한다. 나중에 알면 '잘못 고쳤나' 싶다.
+          다시 올리라는 안내는 하지 않는다 — 고치는 일은 이미 끝났고, 글꼴은 건드리지 않았다. */}
+      <FontNotice s={r} advise={false} />
 
       {shots.map((s) => <Compare key={s.page} ctx={ctx} shot={s} />)}
       {(r.shots_total ?? 0) > shots.length && (

@@ -256,3 +256,114 @@ def test_no_means_the_original_is_left_alone(tmp_path, monkeypatch):
     r = asyncio.run(dc.apply_fixes(req))
     assert r["status"] == "completed" and r["output"]["skipped"] is True
     assert r["output"]["applied"] == [] and r["output"]["asked"] == 1
+
+
+# ---------- 글꼴 ----------
+# 글꼴은 편집 파일에 **담겨 오지 않는다** — 이름으로만 실려 온다. 올린 사람 PC에는 있고 검수하는
+# PC에는 없는 일이 흔하다. 서버에 세상의 글꼴을 다 깔아 둘 수도 없다(라이선스 문제이기도 하다).
+# 그래서 "없을 때 무엇이 멀쩡하고 무엇이 거짓인지"를 정확히 가리는 것이 여기서 지킬 일이다.
+def test_font_summary_keeps_the_numbers_but_says_which_to_trust():
+    """글꼴이 대체되면 줄이 밀린다 — 넘침 수치를 원본의 것이라고 말할 수 없다. 그래도 글은 멀쩡해서
+    교정은 돈다. 둘을 따로 말해야 한다(수치를 지우는 것은 답이 아니다)."""
+    fonts = [
+        {"family": "윤명조 330", "style": "Regular", "status": "missing", "resolved": "Source Sans 3",
+         "resolved_style": "Regular", "chars": 49, "source": None, "restricted_licence": False},
+        {"family": "Arial", "style": "Regular", "status": "ok", "resolved": "Arial",
+         "resolved_style": "Regular", "chars": 12, "source": "installed", "restricted_licence": False},
+    ]
+    r = dc._font_summary(fonts, [])
+    assert r["missing_fonts"] == ["윤명조 330"]
+    assert r["trust"] == {"text_readable": True, "layout_faithful": False}
+
+
+def test_font_summary_flags_the_case_that_makes_the_check_a_lie():
+    """글꼴은 있는데 그 글자가 없으면 네모로 찍힌다 — PDF에 글자가 남지 않아 교정이 아무것도 못
+    읽는다. 이때 '고칠 것 없음'은 거짓이다. 대체(missing)와 섞어 두면 안 된다."""
+    fonts = [{"family": "Source Serif 4", "style": "Regular", "status": "ok", "resolved": "Source Serif 4",
+              "resolved_style": "Regular", "chars": 29, "source": "bundled", "restricted_licence": False}]
+    issues = [{"kind": "missingGlyphs", "severity": "error",
+               "message": "Missing glyphs in Source Serif 4 Regular: 한 글 제 목"}]
+    r = dc._font_summary(fonts, issues)
+    assert r["missing_fonts"] == []                       # 글꼴은 멀쩡하다
+    assert r["glyph_blocked"] == ["Source Serif 4 Regular"]
+    assert r["trust"]["text_readable"] is False           # 그런데 글을 읽을 수 없다
+    assert r["trust"]["layout_faithful"] is True
+
+
+def test_fonts_carried_in_the_uploaded_package_are_counted():
+    """패키지의 `Document Fonts/`에서 실려 온 글꼴은 깔지 않고 그 자리에서만 읽는다. 그게 글꼴을
+    받는 유일한 길이므로, 몇 개가 실렸는지 보여 줘야 한다 — 됐는지 안 됐는지 알 수가 없다."""
+    fonts = [{"family": "Malgun Gothic", "style": "Regular", "status": "ok", "resolved": "Malgun Gothic",
+              "resolved_style": "Regular", "chars": 49, "source": "document", "restricted_licence": False}]
+    r = dc._font_summary(fonts, [])
+    assert r["document_fonts"] == 1
+    assert r["trust"] == {"text_readable": True, "layout_faithful": True}
+
+
+def test_only_documents_we_made_get_their_font_replaced():
+    """**남의 문서의 글꼴은 건드리지 않는다.** 우리가 보기 좋게 바꿔 버리면 되돌릴 수 없게 조판을
+    바꿔 놓는 것이고, 올린 사람 PC에는 그 글꼴이 있다. `font.replace`는 우리가 만든 새 문서에서만
+    쓴다 — 그 문서의 글꼴은 우리가 고른 것이라서."""
+    import inspect
+    for fn in (dc._inspect_blocking, dc._apply_blocking):
+        assert "font.replace" not in inspect.getsource(fn), f"{fn.__name__}이 남의 글꼴을 바꾼다"
+    assert "font.replace" in inspect.getsource(dc._create_blocking)
+
+
+def _idml_with_a_font_this_pc_lacks(tmp_path: Path) -> Path:
+    """이 PC에 없는 글꼴을 가리키는 IDML. 남이 보낸 파일을 흉내 낸다 — IDML 안의 글꼴 이름을
+    바꿔치기하면 된다(글꼴은 이름으로만 실려 오므로 그것이 곧 '없는 글꼴'이다)."""
+    import zipfile
+    base = tmp_path / "base.idml"
+    with Mcp(read_roots=[tmp_path], write_roots=[tmp_path]) as m:
+        m.ex("file.new", intent="print", units="points", width=595, height=842,
+             pages=1, facingPages=False, margins=36, primaryTextFrame=False)
+        m.ex("frame.create", spread=0, rect=[60, 60, 500, 300], content="text",
+             text="본문입니다. 깨끗히 인쇄되어야 합니다.")
+        m.ex("font.replace", family="Source Serif 4", toFamily="Malgun Gothic")
+        m.ex("file.exportIdml", path=str(base))
+    out = tmp_path / "missing.idml"
+    with zipfile.ZipFile(base) as zin, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
+        for it in zin.infolist():
+            b = zin.read(it.filename)
+            if it.filename.endswith(".xml"):
+                b = b.replace(b"Malgun Gothic", b"Yoon Myungjo 330").replace(b"MalgunGothic", b"YoonMyungjo330")
+            zout.writestr(it, b)
+    return out
+
+
+@needs_cli
+def test_a_missing_font_says_what_replaced_it_and_how_much_text(tmp_path):
+    """"없는 글꼴 1개"만으로는 아무것도 할 수 없다. 무엇으로 대체됐고 몇 글자가 걸렸는지 알아야
+    미리보기를 어디까지 믿을지 판단할 수 있다."""
+    src = _idml_with_a_font_this_pc_lacks(tmp_path)
+    out = tmp_path / "out"
+    out.mkdir()
+    r = dc._inspect_blocking(src, ".idml", out)
+    assert r["missing_fonts"] == ["Yoon Myungjo 330"]
+    (f,) = [x for x in r["fonts"] if x["status"] == "missing"]
+    assert f["resolved"] and f["resolved"] != "Yoon Myungjo 330"   # 무엇으로 그렸는지
+    assert f["chars"] > 0                                          # 몇 글자가 걸렸는지
+    assert r["trust"]["layout_faithful"] is False
+    assert r["trust"]["text_readable"] is True                     # 글은 멀쩡하다
+
+
+@needs_cli
+def test_fixing_text_leaves_the_original_font_name_in_the_file(tmp_path):
+    """**이것이 글꼴 문제의 답이다.** 글꼴이 없어도 원본은 깨지지 않는다 — 우리는 글자만 바꾸고
+    글꼴 이름은 손대지 않으므로, 내보낸 편집 파일에는 원래 이름이 그대로 남는다. 그 글꼴이 있는
+    PC(올린 사람의 인디자인)에서 열면 원본대로 보인다. 대체한 글꼴 이름이 파일에 적히면 안 된다."""
+    import re
+    import zipfile
+    src = _idml_with_a_font_this_pc_lacks(tmp_path)
+    out = tmp_path / "out"
+    out.mkdir()
+    r = dc._apply_blocking(src, ".idml", out, [{"original": "깨끗히", "suggestion": "깨끗이"}])
+    assert len(r["applied"]) == 1 and not r["failed"]       # 글 고치기는 글꼴과 무관하게 된다
+    names: set[str] = set()
+    with zipfile.ZipFile(out / r["source_out"]) as z:
+        for n in z.namelist():
+            if n.endswith(".xml"):
+                names |= set(re.findall(r"Yoon Myungjo 330|Source Sans 3|Malgun Gothic",
+                                        z.read(n).decode("utf-8", "replace")))
+    assert names == {"Yoon Myungjo 330"}, f"글꼴 이름이 바뀌었다: {sorted(names)}"
