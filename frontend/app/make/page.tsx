@@ -375,17 +375,46 @@ export default function MakePage() {
 
       <SignInNote />
 
-      {/* 연결은 끊겼을 때만 자리를 차지한다. 잘 되고 있을 때 설명을 읽고 싶은 사람은 없다. */}
-      {off && (
-        <section className="panel dc_mcp">
-          <div className="dc_head">
-            <strong>아직 만들 수 없습니다</strong>
-            <span className="badge off">연결 안 됨</span>
-            <button type="button" className="pill" onClick={() => { setMcpBusy(true); void check(); }} disabled={mcpBusy}>다시 확인</button>
+      {/* 연결 칸. 한때 '끊겼을 때만' 띄우게 줄였는데, 지금 무엇으로 돌고 있는지
+          (창 없이 도는지, 켜 둔 앱에 붙었는지) 보이지 않아 되살렸다. */}
+      <section className="panel dc_mcp">
+        <div className="dc_head">
+          <strong>DesignCraft 연결</strong>
+          <span className={`badge ${mcp?.available ? "ok" : "off"}`}>
+            {mcpBusy ? "확인 중…" : mcp?.available ? "연결됨" : "연결 안 됨"}
+          </span>
+          {mcp?.available && (
+            <span className="chip">{mcp.mode === "app" ? `앱에 붙음 (${mcp.app_port} 포트)` : "창 없이 돎"}</span>
+          )}
+          <button type="button" className="pill" onClick={() => { setMcpBusy(true); void check(); }} disabled={mcpBusy}>다시 확인</button>
+        </div>
+        {mcp?.available && (
+          <div className="dc_kv">
+            <span className="chip">서버<b>{mcp.server} {mcp.server_version}</b></span>
+            <span className="chip">CLI<b>{mcp.version}</b></span>
+            <span className="chip">프로토콜<b>{mcp.protocol}</b></span>
+            <span className="chip">도구<b>{mcp.tools?.length ?? 0}</b></span>
           </div>
-          <SetupGuide reason={mcp?.reason ?? ""} />
-        </section>
-      )}
+        )}
+        {mcp?.available && mcp.mode !== "app" && (
+          <p className="note">
+            지금은 <b>창 없이</b> 돕니다 — 에이전트가 엔진을 그때그때 띄워 그 의뢰 폴더 안에서만 읽고 씁니다.
+            <b> DesignCraft 앱을 켜 두고 그 화면에서 같이 작업하고 싶다면</b>, 앱을{" "}
+            <code>designcraft --control 7979</code>로 띄운 뒤 에이전트 쪽{" "}
+            <code>agents/.env</code>에 <code>PG_DESIGNCRAFT_CONNECT=7979</code>를 넣고 다시 켜세요.
+            그러면 여기서 하는 일이 <b>앱에 열려 있는 그 문서에</b> 그대로 갑니다.
+            다만 그때는 <b>폴더 울타리가 없어집니다</b>(돌고 있는 앱은 가둘 수 없습니다).
+          </p>
+        )}
+        {mcp?.available && mcp.mode === "app" && (
+          <p className="note">
+            <b>켜 두신 DesignCraft 앱에 붙어 있습니다.</b> 여기서 하는 일이 그 화면의 문서에 그대로 갑니다.
+            이 모드에서는 <b>폴더 울타리가 없습니다</b> — 앱이 열 수 있는 것은 모두 열 수 있습니다.
+          </p>
+        )}
+        {mcp?.available === false && <SetupGuide reason={mcp.reason ?? ""} />}
+        {mcp?.available === false && mcp.hint && <p className="note">{mcp.hint}</p>}
+      </section>
 
       {/* 1. 무엇을 만들까 */}
       <section className="panel dc_src">
