@@ -103,3 +103,29 @@ def test_root_says_only_that_it_is_an_api():
     r = client.get("/").json()["data"]
     assert r == {"agent": "dummy", "note": "에이전트 API입니다. 사람이 쓰는 화면은 앱에서 보세요."}
     assert "8752" not in str(r) and "127.0.0.1" not in str(r)
+
+
+def test_starting_one_agent_directly_still_reads_env_files():
+    """런처를 거치지 않고 `python -m pg_agents.orchestrator`로 하나만 켜도 설정이 살아 있어야 한다.
+
+    전에는 `.env`를 런처만 읽었다. 그래서 직접 켠 에이전트는 CORS가 로컬 전용 기본값으로
+    돌아갔고, **배포된 사이트가 조용히 막혔다** — 에이전트는 멀쩡히 켜져 있고 터널도 200을
+    내주는데 브라우저만 거절당해서, 어디가 끊겼는지 알기 어려웠다.
+    """
+    import json
+    import subprocess
+    import sys
+
+    from pg_agents.config import ENV_FILES, ROOT
+
+    env = {k: v for k, v in os.environ.items() if k not in ("PG_NO_ENV_FILES", "PG_CORS_ORIGIN_REGEX")}
+    out = subprocess.run(  # noqa: S603 - 우리가 만든 인자다
+        [sys.executable, "-c",
+         "from pg_agents.config import CORS_ORIGIN_REGEX, ENV_LOADED;"
+         "import json; print(json.dumps({'cors': CORS_ORIGIN_REGEX, 'read': ENV_LOADED}))"],
+        capture_output=True, text=True, cwd=str(ROOT / "agents"), env=env, check=True)
+    got = json.loads(out.stdout.strip().splitlines()[-1])
+    assert got["read"], "불러오는 순간 .env를 읽지 않았다"
+    if any(p.exists() for p in ENV_FILES):
+        # .env가 있으면 그 안의 값이 기본값을 밀어내야 한다
+        assert got["cors"] != r"http://(127\.0\.0\.1|localhost):\d+"

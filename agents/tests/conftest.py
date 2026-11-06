@@ -11,3 +11,8 @@ import os
 import tempfile
 
 os.environ.setdefault("PG_DATA_DIR", tempfile.mkdtemp(prefix="pg-test-"))
+
+# `agents/.env`도 읽지 않는다. config는 불러오는 순간 그 파일을 읽으므로(직접 켠 에이전트도
+# 설정이 살아 있게 하려고), 그대로 두면 개발자 PC의 열쇠와 설정이 시험 결과를 바꾼다 —
+# `GEMINI_API_KEY`가 있으면 진짜 LLM을 부르러 가고, `PG_PROOF_METHODS`는 교정 방식을 갈아 버린다.
+os.environ.setdefault("PG_NO_ENV_FILES", "1")
