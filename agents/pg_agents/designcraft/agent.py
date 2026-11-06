@@ -51,6 +51,7 @@ from pathlib import Path
 from typing import Any
 
 from ..client import call_agent
+from ..common_log import log_event
 from ..config import DC_OUT, SRC
 from ..contracts import AgentCard, AgentRequest, TaskStatus
 from ..server import create_agent_app
@@ -718,7 +719,16 @@ def _state(m: Mcp, out: Path) -> dict[str, Any]:
     }
 
 
-def _edit_blocking(src: Path, ext: str, out: Path, cmds: list[dict[str, Any]]) -> dict[str, Any]:
+def _step(ctx: str, phase: str, **extra: Any) -> None:
+    """지금 무엇을 하고 있는지 한 줄 남긴다. 화면이 이걸 읽어 따라간다.
+
+    로그 쓰기가 실패해도 작업은 멈추지 않는다(`log_event`가 삼킨다) — 진행 표시는
+    거드는 것이고, 문서를 만드는 일이 본체다.
+    """
+    log_event(ctx, "dc_step", source=NAME, payload={"phase": phase, **extra})
+
+
+def _edit_blocking(src: Path, ext: str, out: Path, cmds: list[dict[str, Any]], ctx: str = "") -> dict[str, Any]:
     """명령을 얹고, **전부 됐을 때만** 저장한다.
 
     중간에 하나가 실패하면 아무것도 저장하지 않는다. 절반만 들어간 문서를 돌려주면 무엇이
@@ -729,22 +739,31 @@ def _edit_blocking(src: Path, ext: str, out: Path, cmds: list[dict[str, Any]]) -
     """
     undo = out / f"undo{ext}"
     shutil.copyfile(src, undo)
+    total = len(cmds)
+    _step(ctx, "문서를 엽니다", at=0, total=total)
     with Mcp(read_roots=[_pkg_root(src), out], write_roots=[out]) as m:
         _open(m, src, ext)
         applied: list[dict[str, Any]] = []
         for n, c in enumerate(cmds):
             cmd, params = str(c.get("command") or ""), c.get("params") or {}
+            _step(ctx, "넣는 중", at=n + 1, total=total, command=cmd, params=params)
             try:
                 res = m.ex(cmd, **params)
             except McpError as e:
+                _step(ctx, "멈춤", at=n + 1, total=total, command=cmd, error=str(e)[:200])
                 return {"ok": False, "applied": applied,
                         "failed": {"command": cmd, "reason": str(e)[:400], "not_run": len(cmds) - n - 1},
                         "can_undo": undo.is_file()}
             applied.append({"command": cmd, "result": res if isinstance(res, dict) else None})
+            _step(ctx, "넣었습니다", at=n + 1, total=total, command=cmd,
+                  result=res if isinstance(res, dict) else None)
+        _step(ctx, "저장합니다", at=total, total=total)
         work = out / f"work{ext}"
         m.ex("file.exportIdml" if ext == ".idml" else "file.saveAs", path=str(work))
+        _step(ctx, "그림을 뽑습니다", at=total, total=total)
         state = _state(m, out)
     shutil.copyfile(work, src)      # 고친 문서를 제자리로
+    _step(ctx, "끝", at=total, total=total, pages=state.get("pages"), items=state.get("items"))
     return {"ok": True, "applied": applied, "failed": None, "can_undo": True, **state}
 
 
@@ -801,7 +820,7 @@ async def edit_document(req: AgentRequest) -> dict[str, Any]:
 
     out = _job_dir(req.meta.context_id)
     r = (await asyncio.to_thread(_undo_blocking, src, ext, out) if undo
-         else await asyncio.to_thread(_edit_blocking, src, ext, out, cmds))
+         else await asyncio.to_thread(_edit_blocking, src, ext, out, cmds, req.meta.context_id))
     if p := r.pop("pdf_path", None):
         r["pdf_ref"] = await asyncio.to_thread(_store_pdf, Path(p))
     r["decision"] = d

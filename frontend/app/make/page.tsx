@@ -26,14 +26,12 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import {
-  composeDocument, createDocument, dcFileBlob, editDocument, mcpStatus, undoEdit, uploadAsset,
-  type Composed, type EditResult, type EngineStep, type MadeDoc, type McpStatus,
+  composeDocument, createDocument, dcFileBlob, editDocument, makeProgress, mcpStatus, undoEdit, uploadAsset,
+  type Composed, type EditResult, type EngineStep, type MadeDoc, type MakeStep, type McpStatus,
 } from "@/lib/agentClient";
 import { CUSTOM, GROUPS as FORMATS, dims } from "@/lib/formats";
 import { FontNotice, IssueRows, SetupGuide, useBlob } from "../dc-shared";
 import { SignInNote } from "../sign-in";
-
-const PT = 72 / 25.4;           // 엔진이 쓰는 길이는 pt다. 화면은 mm로 묻는다
 
 /** 무엇을 만들까. 크기 하나가 아니라 **한 벌**이다 — 명함은 앞뒤 두 쪽 낱장이고 책은 열여섯 쪽
  *  펼침면이다. 고르면 아래 칸이 한꺼번에 채워진다. */
@@ -55,14 +53,146 @@ const KINDS: Kind[] = [
 ];
 
 /** 적어서 부탁하는 보기. 빈 칸만 있으면 무엇을 적어야 할지 모른다. */
-const EXAMPLES = [
-  "맨 위에 큰 제목 ‘가을 공연 안내’, 그 아래 날짜와 장소, 아래쪽에 사진 자리 하나",
-  "표지에 제목과 지은이, 둘째 쪽부터 두 단으로 본문 자리",
-  "가격표를 세 줄 네 칸 표로, 맨 윗줄은 머리글",
+const EXAMPLES: { id: string; text: string }[] = [
+  {
+    id: "공연 전단",
+    text: `1쪽 맨 위에 큰 제목 ‘가을 정기연주회’를 36pt 굵게, 글자는 진한 남색으로.
+그 바로 아래 부제 ‘서울시립교향악단 제128회’를 14pt로.
+가운데에 폭 160mm 높이 100mm로 사진 자리 하나.
+사진 아래에 ‘2026년 11월 21일 토요일 저녁 7시 30분 / 예술의전당 콘서트홀’을 12pt로.
+맨 아래에 높이 15mm 띠를 진한 남색으로 깔고, 그 위에 흰 글씨로 ‘문의 02-123-4567’.`,
+  },
+  {
+    id: "명함",
+    text: `1쪽(앞면) 왼쪽 위에 올린 로고 사진을 폭 20mm로.
+그 아래에 이름 ‘이태윤’을 18pt 굵게, 바로 아래 직함 ‘인쇄 검수 담당’을 9pt 회색으로.
+오른쪽 아래에 전화·메일·주소를 8pt로 세 줄.
+왼쪽 가장자리에 폭 4mm 세로 띠를 주황색으로.
+2쪽(뒷면)은 가운데에 회사 이름만 14pt로, 그 아래 홈페이지 주소를 QR 코드로 20×20mm.`,
+  },
+  {
+    id: "잡지 표지와 본문",
+    text: `1쪽은 표지. 위쪽에 잡지 이름 ‘계간 인쇄’를 48pt 굵게, 아래에 ‘2026 겨울호’를 16pt로.
+표지 아래 2/3는 사진 자리로 비워 두고, 맨 아래에 특집 제목 세 줄을 11pt로.
+2쪽은 목차. ‘차례’ 제목과 네 줄 두 칸 표(왼쪽은 글 제목, 오른쪽은 쪽 번호).
+3쪽부터는 본문. 쪽마다 위에 기사 제목 자리 20pt, 그 아래 두 단으로 본문 글상자,
+단 사이는 5mm. 쪽 아래 가운데에 쪽 번호 자리.`,
+  },
 ];
 
 /** 엔진이 한 일 한 줄. 명령과 그 결과를 그대로 적는다. */
 type Did = { label: string; steps: { command: string; result: Record<string, unknown> | null }[] };
+
+/* ---------- 계획을 사람 말로 ----------
+   `swatch.create`·`type.char`는 인디자인을 아는 사람에게도 이 화면에서는 암호다. 그래서
+   **하는 일**로 적는다. 명령 이름은 지우지 않고 작게 옆에 남긴다 — 실제로 무엇이 돌았는지
+   보고 싶은 사람이 있고, 숨기면 '알 수 없는 다섯 가지'가 된다.
+
+   한 가지 더: 엔진에서 **글 하나를 넣는 일은 명령 세 개**다(상자 만들기 → 글자 모양 →
+   글 넣기). 그것을 세 줄로 적으면 '5가지'가 '글 하나 + 색 둘'이라는 것이 안 보인다.
+   그래서 한 묶음으로 합쳐 센다. 넣는 명령 자체는 그대로 보낸다(합치는 것은 화면뿐이다). */
+const MM = 72 / 25.4;
+const mm = (v: unknown) => (typeof v === "number" ? Math.round(v / MM) : null);
+const place = (p: Record<string, unknown>) => {
+  const r = Array.isArray(p.rect) ? (p.rect as number[]).map((v) => Math.round(v / MM)) : null;
+  const pg = typeof p.spread === "number" ? `${p.spread + 1}쪽` : null;
+  const at = r && r.length === 4 ? `왼쪽에서 ${r[0]}mm, 위에서 ${r[1]}mm 자리에 ${r[2] - r[0]}×${r[3] - r[1]}mm`
+    : typeof p.x === "number" ? `왼쪽에서 ${mm(p.x)}mm, 위에서 ${mm(p.y)}mm 자리에` : null;
+  return [pg, at].filter(Boolean).join(" · ");
+};
+const font = (p: Record<string, unknown>) => {
+  const a = (p.attrs ?? {}) as Record<string, unknown>;
+  const bits: string[] = [];
+  if (typeof a.fontFamily === "string") bits.push(String(a.fontFamily));
+  if (typeof a.size === "number") bits.push(`${a.size}pt`);
+  if (a.fontStyle === "Bold" || a.fontStyle === "bold") bits.push("굵게");
+  if (typeof a.fill === "string") bits.push(`${a.fill} 색`);
+  return bits.join(" ");
+};
+const quote = (t: unknown, n = 30) =>
+  typeof t === "string" && t ? `“${t.replace(/\n/g, " ").slice(0, n)}${t.length > n ? "…" : ""}”` : "";
+
+/** 화면에 보여 줄 한 줄. `cmds`에는 합쳐진 명령 이름들이 들어간다. */
+type Row = { what: string; detail: string; cmds: string[] };
+
+/** 엔진 명령 묶음을 사람이 읽는 줄로. 글 하나를 넣는 세 명령은 한 줄로 합친다. */
+function readable(steps: EngineStep[]): Row[] {
+  const rows: Row[] = [];
+  for (let i = 0; i < steps.length; i++) {
+    const c = steps[i];
+    const p = (c.params ?? {}) as Record<string, unknown>;
+
+    // 글상자 + 글자 모양 + 글 넣기 → 한 줄
+    if (c.command === "frame.create" && p.content === "text") {
+      const cmds = [c.command];
+      let look = "", text = "";
+      while (i + 1 < steps.length && (steps[i + 1].command === "type.char" || steps[i + 1].command === "text.insert"
+        || steps[i + 1].command === "type.para")) {
+        const nx = steps[++i];
+        cmds.push(nx.command);
+        const np = (nx.params ?? {}) as Record<string, unknown>;
+        if (nx.command === "type.char") look = font(np);
+        if (nx.command === "text.insert") text = String(np.text ?? "");
+      }
+      rows.push({
+        what: text ? `글 넣기 ${quote(text)}` : "글상자 놓기",
+        detail: [place(p), look].filter(Boolean).join(" · "),
+        cmds,
+      });
+      continue;
+    }
+
+    // 도형 + 색 채우기 + 테두리 → 한 줄
+    if (c.command === "frame.create") {
+      const cmds = [c.command];
+      const shape = p.shape === "ellipse" ? "동그라미" : p.shape === "polygon" ? "다각형" : "사각형";
+      let fill = "";
+      while (i + 1 < steps.length && (steps[i + 1].command === "object.fill" || steps[i + 1].command === "object.stroke")) {
+        const nx = steps[++i];
+        cmds.push(nx.command);
+        const np = (nx.params ?? {}) as Record<string, unknown>;
+        if (nx.command === "object.fill" && typeof np.swatch === "string") fill = `${np.swatch} 색으로 채우기`;
+        if (nx.command === "object.stroke") fill = fill ? `${fill} · 테두리` : "테두리 넣기";
+      }
+      const what = p.content === "graphic" ? "사진 자리 비우기" : `${shape} 그리기`;
+      rows.push({ what, detail: [place(p), fill].filter(Boolean).join(" · "), cmds });
+      continue;
+    }
+
+    const one = (what: string, detail = "") => rows.push({ what, detail, cmds: [c.command] });
+    switch (c.command) {
+      case "swatch.create": one("색 준비", String(p.name ?? "")); break;
+      case "file.place": one("사진 넣기", [place(p), typeof p.width === "number" ? `폭 ${mm(p.width)}mm` : ""].filter(Boolean).join(" · ")); break;
+      case "line.create": one("선 그리기", typeof p.spread === "number" ? `${p.spread + 1}쪽` : ""); break;
+      case "table.insert": one("표 넣기", `${p.rows ?? "?"}줄 ${p.cols ?? p.columns ?? "?"}칸`); break;
+      case "layout.pages.insert": one("쪽 늘리기", `${p.count ?? 1}쪽`); break;
+      case "layout.marginsAndColumns": one("여백·단 바꾸기", p.columns ? `${p.columns}단` : ""); break;
+      case "object.qrCode": one("QR 코드 넣기", place(p)); break;
+      case "style.paragraph.create": one("글 모양 모음 만들기", String(p.name ?? "")); break;
+      case "style.paragraph.apply": one("글 모양 모음 입히기", String(p.name ?? "")); break;
+      case "style.character.create": one("글자 모양 모음 만들기", String(p.name ?? "")); break;
+      case "type.char": one("글자 모양 정하기", font(p)); break;
+      case "type.para": one("문단 모양 정하기"); break;
+      case "text.insert": one("글 넣기", quote(p.text)); break;
+      case "object.fill": one("색 채우기", String(p.swatch ?? "")); break;
+      case "object.stroke": one("테두리 넣기"); break;
+      case "type.fillWithPlaceholder": one("임시 글로 채우기"); break;
+      case "text.thread": one("글상자 잇기"); break;
+      case "toc.generate": one("목차 만들기"); break;
+      case "variables.define": one("자동 글 만들기", String(p.name ?? "")); break;
+      case "variables.insert": one("자동 글 넣기", String(p.name ?? "")); break;
+      case "layer.new": one("층 만들기", String(p.name ?? "")); break;
+      case "transform.move": one("옮기기"); break;
+      case "transform.scale": one("크기 바꾸기"); break;
+      case "transform.rotate": one("돌리기"); break;
+      case "object.arrange": one("앞뒤 순서 바꾸기"); break;
+      case "object.textFrameOptions": one("글상자 설정 바꾸기"); break;
+      case "table.setCell": one("표 칸 꾸미기"); break;
+      default: one(c.command); break;
+    }
+  }
+  return rows;
+}
 
 export default function MakePage() {
   const router = useRouter();
@@ -89,6 +219,9 @@ export default function MakePage() {
   const [did, setDid] = useState<Did[]>([]);
   const [page, setPage] = useState(1);
 
+  // 만드는 동안의 한 걸음(0.8초마다 물어 따라간다)
+  const [live, setLive] = useState<MakeStep[]>([]);
+
   // 말로 부탁하기 + 쓸 사진
   const [ask, setAsk] = useState("");
   const [plan, setPlan] = useState<Composed | null>(null);
@@ -110,6 +243,18 @@ export default function MakePage() {
     [],
   );
   useEffect(() => { void check(); }, [check]);
+
+  /** 넣는 동안만 되풀이해 묻는다. 끝나면 멈춘다 — 가만히 있는 화면을 계속 물을 이유가 없다. */
+  useEffect(() => {
+    if (!made || !busy) return;
+    let alive = true;
+    const tick = () => makeProgress(made.context_id)
+      .then((rows) => { if (alive) setLive(rows); })
+      .catch((e: unknown) => { if (alive) console.warn('[pg] 진행 상황을 못 읽었습니다', e); });
+    const t = setInterval(tick, 800);
+    tick();
+    return () => { alive = false; clearInterval(t); };
+  }, [made, busy]);
 
   function pickKind(id: string) {
     const k = KINDS.find((x) => x.id === id);
@@ -151,9 +296,11 @@ export default function MakePage() {
   /** 넣는다. 하나라도 실패하면 **아무것도 저장되지 않는다** — 그 말을 그대로 적는다. */
   async function apply(steps: EngineStep[], label: string) {
     if (!made || !steps.length) return;
-    setBusy(true); setErr("");
+    setBusy(true); setErr(""); setLive([]);
     try {
       const r = await editDocument(made.context_id, steps);
+      // 묻기를 멈추기 전에 한 번 더. 마지막 줄들('저장합니다'·'끝')이 그 사이에 들어온다.
+      await makeProgress(made.context_id).then(setLive).catch(() => { /* 없으면 그냥 둔다 */ });
       setState(r);
       if (r.ok) {
         setDid((d) => [...d, { label, steps: r.applied }]);
@@ -325,8 +472,9 @@ export default function MakePage() {
             <button type="button" className="pill on" disabled={busy || !ask.trim()} onClick={() => void compose()}>
               {busy ? "생각하는 중…" : "이렇게 만들어 줘"}
             </button>
-            {EXAMPLES.map((x, i) => (
-              <button key={i} type="button" className="pill" onClick={() => setAsk(x)} title="눌러서 넣어 보기">보기 {i + 1}</button>
+            {EXAMPLES.map((x) => (
+              <button key={x.id} type="button" className="pill" onClick={() => setAsk(x.text)}
+                title="눌러서 칸에 넣고, 고쳐 쓰셔도 됩니다">{x.id} 보기</button>
             ))}
           </div>
 
@@ -355,11 +503,17 @@ export default function MakePage() {
             <div className="planbox">
               <div className="dc_kv">
                 <strong>이렇게 만들까요?</strong>
-                <span className="chip">{plan.commands.length}가지</span>
+                <span className="chip">{readable(plan.commands).length}가지</span>
               </div>
               {plan.says && <p className="note">{plan.says}</p>}
-              <ol className="dc_steps">
-                {plan.commands.map((c, i) => <li key={i}><code>{c.command}</code> {describe(c)}</li>)}
+              <ol className="planlist">
+                {readable(plan.commands).map((r, i) => (
+                  <li key={i}>
+                    <b>{r.what}</b>
+                    {r.detail && <span className="pl_detail">{r.detail}</span>}
+                    <span className="pl_cmds">{r.cmds.join(" · ")}</span>
+                  </li>
+                ))}
               </ol>
               {plan.dropped.length > 0 && (
                 <p className="note">
@@ -375,6 +529,33 @@ export default function MakePage() {
               </div>
             </div>
           ) : null}
+
+          {/* 만드는 동안 — 한 단계가 끝날 때마다 한 줄씩 늘어난다. 20초 동안 아무 소식이
+              없으면 멈춘 것인지 도는 것인지 알 수가 없다. */}
+          {live.length > 0 && (
+            <div className="livebox" aria-live="polite">
+              <div className="dc_kv">
+                <strong>{busy ? "지금 만들고 있습니다" : "이렇게 만들었습니다"}</strong>
+                {(() => {
+                  // 로그는 오래된 것부터 온다. 그래서 "몇 번째까지 왔나"는 가장 큰 at으로 센다 —
+                  // 첫 줄을 집으면 늘 0이 나온다(문서를 여는 단계라서).
+                  const total = live.reduce((n, r) => Math.max(n, r.payload.total ?? 0), 0);
+                  const at = live.reduce((n, r) => Math.max(n, r.payload.at ?? 0), 0);
+                  return total ? <span className="chip">{at}/{total}</span> : null;
+                })()}
+                {busy && <span className="spinner" aria-hidden="true" />}
+              </div>
+              <ol className="livelist">
+                {[...live].reverse().filter((r) => r.payload.phase !== "넣는 중").map((r) => (
+                  <li key={r.id} className={r.payload.error ? "bad" : ""}>
+                    <b>{r.payload.phase}</b>
+                    {r.payload.command && <span className="pl_cmds">{r.payload.command}</span>}
+                    {r.payload.error && <span className="pl_detail">{r.payload.error}</span>}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
 
           {err && <p className="warn">{err}</p>}
 
@@ -423,6 +604,7 @@ export default function MakePage() {
                   <ul className="did_cmds">
                     {d.steps.map((st, k) => (
                       <li key={k}>
+                        <b>{readable([{ command: st.command, params: {} }])[0]?.what ?? st.command}</b>
                         <code>{st.command}</code>
                         {st.result && <span className="note">{Object.entries(st.result).map(([a, b]) => `${a} ${String(b)}`).join(" · ")}</span>}
                       </li>
@@ -450,22 +632,4 @@ export default function MakePage() {
       )}
     </main>
   );
-}
-
-/** 짠 명령 한 줄을 사람 말로. 전부 옮기지는 못하니 **눈에 띄는 값만** 추린다 —
- *  무엇이 일어날지 가늠하는 데 필요한 만큼이고, 정확한 값은 그 옆 `command`가 말한다. */
-function describe(c: EngineStep): string {
-  const p = c.params as Record<string, unknown>;
-  const bits: string[] = [];
-  if (typeof p.text === "string" && p.text) bits.push(`“${p.text.slice(0, 40)}${p.text.length > 40 ? "…" : ""}”`);
-  if (typeof p.content === "string") bits.push(p.content === "text" ? "글상자" : p.content === "graphic" ? "사진 자리" : String(p.content));
-  if (typeof p.shape === "string") bits.push(String(p.shape));
-  if (typeof p.name === "string") bits.push(String(p.name));
-  if (Array.isArray(p.rect) && p.rect.length === 4) {
-    const [x0, y0, x1, y1] = (p.rect as number[]).map((v) => Math.round(v / PT));
-    bits.push(`${x0},${y0}에서 ${x1 - x0}×${y1 - y0}mm`);
-  }
-  if (typeof p.spread === "number") bits.push(`${p.spread + 1}쪽`);
-  if (typeof p.count === "number") bits.push(`${p.count}개`);
-  return bits.join(" · ");
 }
