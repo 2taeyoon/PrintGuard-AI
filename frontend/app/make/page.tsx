@@ -6,30 +6,34 @@
 // "인디자인에서 먼저 만들어 오세요"라고 하면 거기서 끝난다. 그래서 만드는 자리를 열어 두고,
 // **만든 그 파일을 그대로 인쇄 검수로 넘긴다.**
 //
-// **말로 부탁하는 것이 기본이다.** 엔진이 받는 명령은 547개인데, 처음 온 사람에게 그 목록을
-// 들이밀면 무엇을 눌러야 할지 모른다. 그래서 적어서 부탁하면 LLM이 계획을 짜고, 사람이 그
-// 계획을 보고 누르면 엔진이 넣는다. 직접 고르는 길과 명령을 그대로 쓰는 길은 **접어 둔다** —
-// 없애지는 않는다. 쓸 사람은 쓰고, 처음 온 사람은 안 보이는 쪽이 맞다.
+// **넣는 길은 적어서 부탁하기 하나다.** 전에는 빠른 도구(글상자·사진·도형…)와 명령 547개를
+// 찾아 쓰는 칸이 같이 있었다. 둘 다 없앴다 — 자리를 숫자로 적고 명령 이름을 찾는 일은
+// 인디자인을 아는 사람도 이 화면에서 하고 싶지 않고, 어차피 적어서 부탁하면 되는 일이었다.
+// 칸이 하나면 무엇을 눌러야 할지 고민할 것도 없다.
+//
+// 사진만 예외로 **올리는 칸**이 남는다. 브라우저의 사진은 에이전트 PC에 없으므로 프롬프트만으로는
+// 닿지 않는다 — 먼저 의뢰 폴더로 올려야 엔진이 읽는다. 올린 것의 경로를 LLM에게 알려 주고,
+// 그 목록에 없는 경로는 서버가 버린다(지어낸 경로는 울타리 밖이라 어차피 거절된다).
 //
 // 한 번에 넣는 것은 **전부 아니면 전무**다. 하나가 실패하면 아무것도 저장되지 않는다 — 절반만
 // 들어간 문서를 돌려주면 무엇이 들어갔는지 알 수 없다. 한 걸음 되돌리는 단추도 둔다.
+//
+// 마지막 칸에는 **엔진이 실제로 한 일**을 적는다. 명령 이름과 그 결과를 그대로 보여 준다 —
+// 무엇이 어떻게 만들어졌는지 보고 싶은 사람에게는 이게 명령 목록보다 쓸모 있다.
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import {
-  composeDocument, createDocument, dcFileBlob, editDocument, listCommands, mcpStatus, undoEdit, uploadAsset,
-  type Composed, type EditResult, type EngineCommand, type EngineStep, type MadeDoc, type McpStatus,
+  composeDocument, createDocument, dcFileBlob, editDocument, mcpStatus, undoEdit, uploadAsset,
+  type Composed, type EditResult, type EngineStep, type MadeDoc, type McpStatus,
 } from "@/lib/agentClient";
 import { CUSTOM, GROUPS as FORMATS, dims } from "@/lib/formats";
 import { FontNotice, IssueRows, SetupGuide, useBlob } from "../dc-shared";
-import { GsMark } from "../gs-mark";
 import { SignInNote } from "../sign-in";
 
 const PT = 72 / 25.4;           // 엔진이 쓰는 길이는 pt다. 화면은 mm로 묻는다
-const pt = (mm: number) => Math.round(mm * PT * 100) / 100;
-const hasHangul = (s: string) => /[ㄱ-ㆎ가-힣]/.test(s);
 
 /** 무엇을 만들까. 크기 하나가 아니라 **한 벌**이다 — 명함은 앞뒤 두 쪽 낱장이고 책은 열여섯 쪽
  *  펼침면이다. 고르면 아래 칸이 한꺼번에 채워진다. */
@@ -57,91 +61,8 @@ const EXAMPLES = [
   "가격표를 세 줄 네 칸 표로, 맨 윗줄은 머리글",
 ];
 
-/** 직접 넣기 — 자주 쓰는 것만. 없는 것은 아래 ‘명령 직접 쓰기’에 전부 있다. */
-type Field = { k: string; label: string; kind: "num" | "text" | "area" | "file" | "pick"; def?: string; of?: string[] };
-type Tool = { id: string; label: string; hint: string; fields: Field[]; build: (v: Record<string, string>, asset: string | null) => EngineStep[] };
-
-const rect = (v: Record<string, string>) => [pt(+v.x), pt(+v.y), pt(+v.x + +v.w), pt(+v.y + +v.h)];
-const XYWH: Field[] = [
-  { k: "page", label: "쪽", kind: "num", def: "1" },
-  { k: "x", label: "왼쪽(mm)", kind: "num", def: "20" },
-  { k: "y", label: "위(mm)", kind: "num", def: "20" },
-  { k: "w", label: "폭(mm)", kind: "num", def: "80" },
-  { k: "h", label: "높이(mm)", kind: "num", def: "40" },
-];
-
-const TOOLS: Tool[] = [
-  {
-    id: "text", label: "글", hint: "frame.create → type.char → text.insert",
-    fields: [...XYWH, { k: "text", label: "넣을 글", kind: "area", def: "" }],
-    build: (v) => {
-      const steps: EngineStep[] = [
-        { command: "frame.create", params: { spread: +v.page - 1, rect: rect(v), content: "text" } },
-      ];
-      // 기본 글꼴에는 한글이 없다. 글을 넣기 **전에** 글꼴을 세워야 그 상자만 바뀐다
-      // (다 넣고 font.replace를 하면 문서의 다른 글까지 갈아 버린다 — 실측으로 확인했다).
-      if (hasHangul(v.text)) steps.push({ command: "type.char", params: { attrs: { fontFamily: "Malgun Gothic" } } });
-      if (v.text) steps.push({ command: "text.insert", params: { text: v.text } });
-      return steps;
-    },
-  },
-  {
-    id: "image", label: "사진", hint: "file.place",
-    fields: [{ k: "page", label: "쪽", kind: "num", def: "1" }, { k: "x", label: "왼쪽(mm)", kind: "num", def: "20" },
-      { k: "y", label: "위(mm)", kind: "num", def: "20" }, { k: "w", label: "폭(mm)", kind: "num", def: "60" },
-      { k: "file", label: "그림 파일", kind: "file" }],
-    build: (v, asset) => asset
-      ? [{ command: "file.place", params: { path: asset, spread: +v.page - 1, x: pt(+v.x), y: pt(+v.y), width: pt(+v.w) } }]
-      : [],
-  },
-  {
-    id: "shape", label: "도형", hint: "swatch.create → frame.create → object.fill",
-    fields: [{ k: "shape", label: "모양", kind: "pick", of: ["rectangle", "ellipse", "polygon"], def: "rectangle" },
-      ...XYWH, { k: "color", label: "색(#rrggbb, 비우면 테두리만)", kind: "text", def: "" }],
-    build: (v) => {
-      const steps: EngineStep[] = [];
-      const name = `색 ${v.color}`;
-      if (v.color) steps.push({ command: "swatch.create", params: { name, color: v.color } });
-      steps.push({ command: "frame.create", params: { spread: +v.page - 1, rect: rect(v), shape: v.shape,
-        content: "unassigned", ...(v.shape === "polygon" ? { sides: 6 } : {}) } });
-      if (v.color) steps.push({ command: "object.fill", params: { swatch: name } });
-      return steps;
-    },
-  },
-  {
-    id: "line", label: "선", hint: "line.create",
-    fields: [{ k: "page", label: "쪽", kind: "num", def: "1" },
-      { k: "x1", label: "시작 왼쪽(mm)", kind: "num", def: "20" }, { k: "y1", label: "시작 위(mm)", kind: "num", def: "60" },
-      { k: "x2", label: "끝 왼쪽(mm)", kind: "num", def: "120" }, { k: "y2", label: "끝 위(mm)", kind: "num", def: "60" }],
-    build: (v) => [{ command: "line.create", params: { spread: +v.page - 1, a: [pt(+v.x1), pt(+v.y1)], b: [pt(+v.x2), pt(+v.y2)] } }],
-  },
-  {
-    id: "table", label: "표", hint: "frame.create(text) → table.insert",
-    fields: [...XYWH, { k: "rows", label: "줄", kind: "num", def: "4" }, { k: "cols", label: "칸", kind: "num", def: "3" },
-      { k: "head", label: "머리줄", kind: "num", def: "1" }],
-    build: (v) => [
-      { command: "frame.create", params: { spread: +v.page - 1, rect: rect(v), content: "text" } },
-      { command: "table.insert", params: { rows: +v.rows, cols: +v.cols, headerRows: +v.head } },
-    ],
-  },
-  {
-    id: "qr", label: "QR 코드", hint: "object.qrCode",
-    fields: [...XYWH, { k: "content", label: "주소나 글", kind: "text", def: "https://" }],
-    build: (v) => [{ command: "object.qrCode", params: { spread: +v.page - 1, rect: rect(v), type: "url", content: v.content } }],
-  },
-  {
-    id: "pages", label: "쪽 늘리기", hint: "layout.pages.insert",
-    fields: [{ k: "count", label: "몇 쪽", kind: "num", def: "2" }],
-    build: (v) => [{ command: "layout.pages.insert", params: { count: +v.count } }],
-  },
-  {
-    id: "style", label: "글 모양 모음", hint: "style.paragraph.create",
-    fields: [{ k: "name", label: "이름", kind: "text", def: "본문" }, { k: "font", label: "글꼴", kind: "text", def: "Malgun Gothic" },
-      { k: "size", label: "크기(pt)", kind: "num", def: "10" }, { k: "lead", label: "줄 간격(pt)", kind: "num", def: "16" }],
-    build: (v) => [{ command: "style.paragraph.create", params: { name: v.name,
-      chars: { fontFamily: v.font, size: +v.size, leading: { kind: "points", value: +v.lead } } } }],
-  },
-];
+/** 엔진이 한 일 한 줄. 명령과 그 결과를 그대로 적는다. */
+type Did = { label: string; steps: { command: string; result: Record<string, unknown> | null }[] };
 
 export default function MakePage() {
   const router = useRouter();
@@ -158,32 +79,20 @@ export default function MakePage() {
   const [gutter, setGutter] = useState(5);
   const [margin, setMargin] = useState(10);
   const [bleed, setBleed] = useState(3);
-  const [openSize, setOpenSize] = useState(false);
 
   const [made, setMade] = useState<MadeDoc | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  const [showPre, setShowPre] = useState(false);
 
   // 넣고 난 뒤의 모습. 한 번 넣을 때마다 갈린다.
   const [state, setState] = useState<EditResult | null>(null);
-  const [log, setLog] = useState<string[]>([]);
+  const [did, setDid] = useState<Did[]>([]);
   const [page, setPage] = useState(1);
 
-  // 말로 부탁하기
+  // 말로 부탁하기 + 쓸 사진
   const [ask, setAsk] = useState("");
   const [plan, setPlan] = useState<Composed | null>(null);
-
-  // 직접 넣기 / 명령 직접 쓰기(둘 다 접어 둔다)
-  const [openTools, setOpenTools] = useState(false);
-  const [openRaw, setOpenRaw] = useState(false);
-  const [tool, setTool] = useState("text");
-  const [val, setVal] = useState<Record<string, string>>({});
-  const [pickedFile, setPickedFile] = useState<File | null>(null);
-  const [cmds, setCmds] = useState<EngineCommand[] | null>(null);
-  const [q, setQ] = useState("");
-  const [picked, setPicked] = useState<EngineCommand | null>(null);
-  const [json, setJson] = useState("{}");
+  const [pics, setPics] = useState<string[]>([]);
 
   const shots = state?.shots ?? (made ? [made.png] : []);
   const shotName = shots[Math.min(page, shots.length) - 1] ?? null;
@@ -201,14 +110,6 @@ export default function MakePage() {
     [],
   );
   useEffect(() => { void check(); }, [check]);
-
-  // 명령표는 펼쳐 볼 때 한 번만 받는다(547개라 미리 받아 둘 이유가 없다).
-  useEffect(() => {
-    if (!openRaw || cmds) return;
-    let alive = true;
-    listCommands().then((r) => { if (alive) setCmds(r.commands); }).catch(() => { if (alive) setCmds([]); });
-    return () => { alive = false; };
-  }, [openRaw, cmds]);
 
   function pickKind(id: string) {
     const k = KINDS.find((x) => x.id === id);
@@ -232,14 +133,15 @@ export default function MakePage() {
   };
 
   async function make(start: "blank" | "sample") {
-    setBusy(true); setErr(""); setMade(null); setState(null); setLog([]); setPage(1); setPlan(null);
+    setBusy(true); setErr(""); setMade(null); setState(null); setDid([]); setPage(1); setPlan(null); setPics([]);
     try {
       const m = await createDocument(start === "sample"
         ? { start: "sample" }
         : { start: "blank", width_mm: w, height_mm: h, pages, facing, columns,
           gutter_mm: gutter, margin_mm: margin, bleed_mm: bleed, text: "" });
       setMade(m);
-      setLog([start === "sample" ? "미리 만들어 둔 샘플로 시작했습니다" : `${m.pages}쪽 ${m.width_mm}×${m.height_mm}mm 문서를 만들었습니다`]);
+      setDid([{ label: start === "sample" ? "미리 만들어 둔 샘플로 시작했습니다"
+        : `${m.pages}쪽 ${m.width_mm}×${m.height_mm}mm 문서를 만들었습니다`, steps: [] }]);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     }
@@ -254,9 +156,9 @@ export default function MakePage() {
       const r = await editDocument(made.context_id, steps);
       setState(r);
       if (r.ok) {
-        setLog((l) => [...l, label]);
+        setDid((d) => [...d, { label, steps: r.applied }]);
         setPage((p) => Math.min(p, Math.max(1, r.shots.length)));
-        setPlan(null);
+        setPlan(null); setAsk("");
       } else {
         setErr(`${r.failed?.command}에서 멈췄습니다 — ${r.failed?.reason} 아무것도 저장하지 않았으니 문서는 그대로입니다.`);
       }
@@ -272,44 +174,26 @@ export default function MakePage() {
     try {
       const r = await composeDocument(made.context_id, ask.trim());
       setPlan(r);
-      if (r.available && r.commands.length === 0) setErr(r.reason ?? "조금 더 자세히 적어 주세요. 지금 내용만으로는 무엇을 넣을지 알 수 없습니다.");
+      if (r.available && r.commands.length === 0) {
+        setErr(r.reason ?? "조금 더 자세히 적어 주세요. 지금 내용만으로는 무엇을 넣을지 알 수 없습니다.");
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     }
     setBusy(false);
   }
 
-  async function runTool() {
-    const t = TOOLS.find((x) => x.id === tool);
-    if (!t || !made) return;
-    const v: Record<string, string> = {};
-    for (const f of t.fields) v[f.k] = val[`${t.id}.${f.k}`] ?? f.def ?? "";
-    let asset: string | null = null;
-    if (t.fields.some((f) => f.kind === "file")) {
-      if (!pickedFile) { setErr("넣을 그림을 먼저 고르세요."); return; }
-      setBusy(true);
-      try {
-        asset = (await uploadAsset(made.context_id, pickedFile)).path;
-      } catch (e) {
-        setErr(e instanceof Error ? e.message : String(e)); setBusy(false); return;
-      }
-      setBusy(false);
-    }
-    await apply(t.build(v, asset), `${t.label}을 넣었습니다`);
-  }
-
-  async function runRaw() {
-    if (!picked || !made) return;
-    let params: Record<string, unknown>;
+  /** 사진은 먼저 올려 둔다. 올린 뒤에 “왼쪽 위에 그 사진” 하고 적으면 된다. */
+  async function addPic(f: File | null) {
+    if (!f || !made) return;
+    setBusy(true); setErr("");
     try {
-      const p: unknown = JSON.parse(json || "{}");
-      if (!p || typeof p !== "object" || Array.isArray(p)) throw new Error("{ … } 모양이어야 합니다");
-      params = p as Record<string, unknown>;
+      const a = await uploadAsset(made.context_id, f);
+      setPics((p) => [...p, a.original]);
     } catch (e) {
-      setErr(`값을 읽지 못했습니다: ${e instanceof Error ? e.message : String(e)}`);
-      return;
+      setErr(e instanceof Error ? e.message : String(e));
     }
-    await apply([{ command: picked.id, params }], `${picked.label || picked.id}을 실행했습니다`);
+    setBusy(false);
   }
 
   async function undo() {
@@ -317,21 +201,13 @@ export default function MakePage() {
     setBusy(true); setErr("");
     try {
       setState(await undoEdit(made.context_id));
-      setLog((l) => [...l, "한 걸음 되돌렸습니다"]);
+      setDid((d) => [...d, { label: "한 걸음 되돌렸습니다", steps: [] }]);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     }
     setBusy(false);
   }
 
-  const hits = useMemo(() => {
-    if (!cmds) return [];
-    const needle = q.trim().toLowerCase();
-    if (!needle) return cmds.slice(0, 40);
-    return cmds.filter((c) => `${c.id} ${c.label} ${c.menu.join(" ")}`.toLowerCase().includes(needle)).slice(0, 60);
-  }, [cmds, q]);
-
-  const cur = TOOLS.find((x) => x.id === tool) ?? TOOLS[0];
   const pageCount = state?.pages ?? made?.pages ?? 0;
   const off = mcp?.available === false;
 
@@ -380,49 +256,44 @@ export default function MakePage() {
           이후 단계에서 페이지와 내용을 자유롭게 추가하거나 변경할 수 있습니다.
         </p>
 
-        <button type="button" className="gs_toggle" onClick={() => setOpenSize((o) => !o)} aria-expanded={openSize}>
-          <GsMark open={openSize} /> 크기·쪽수 직접 정하기
-        </button>
-        {openSize && (
-          <form className="upload" onSubmit={(e) => { e.preventDefault(); void make("blank"); }}>
-            <label>자주 쓰는 판형
-              <select value={size} onChange={(e) => pickSize(e.target.value)}>
-                <option value={CUSTOM}>{CUSTOM}</option>
-                {FORMATS.map((g) => (
-                  <optgroup key={g.name} label={g.name}>
-                    {g.items.map((f) => <option key={f.label} value={f.label}>{f.label}</option>)}
-                  </optgroup>
-                ))}
-              </select>
-            </label>
-            <label>가로(mm)
-              <input type="number" min={10} max={2000} value={w} onChange={(e) => { setW(+e.target.value); setSize(CUSTOM); }} />
-            </label>
-            <label>세로(mm)
-              <input type="number" min={10} max={2000} value={h} onChange={(e) => { setH(+e.target.value); setSize(CUSTOM); }} />
-            </label>
-            <label>쪽수
-              <input type="number" min={1} max={64} value={pages} onChange={(e) => setPages(+e.target.value)} />
-            </label>
-            <label>여백(mm)
-              <input type="number" min={0} max={100} value={margin} onChange={(e) => setMargin(+e.target.value)} />
-            </label>
-            <label title="자를 때 가장자리에 흰 줄이 남지 않게, 바깥으로 조금 더 그려 두는 여유입니다">도련(mm)
-              <input type="number" min={0} max={20} value={bleed} onChange={(e) => setBleed(+e.target.value)} />
-            </label>
-            <label title="본문을 나란히 몇 칸으로 나눌지 정합니다. 잡지·신문은 보통 두 칸 이상입니다">단
-              <input type="number" min={1} max={10} value={columns} onChange={(e) => setColumns(+e.target.value)} />
-            </label>
-            <label>단 사이(mm)
-              <input type="number" min={0} max={50} value={gutter} onChange={(e) => setGutter(+e.target.value)} />
-            </label>
-            <label className="chk" title="켜면 두 쪽이 나란히 붙습니다(책·잡지). 끄면 한 장씩 따로입니다(전단·포스터)">
-              <input type="checkbox" checked={facing} onChange={(e) => setFacing(e.target.checked)} /> 두 쪽씩 나란히(책처럼)
-            </label>
-          </form>
-        )}
+        <form className="upload" onSubmit={(e) => { e.preventDefault(); void make("blank"); }}>
+          <label>자주 쓰는 판형
+            <select value={size} onChange={(e) => pickSize(e.target.value)}>
+              <option value={CUSTOM}>{CUSTOM}</option>
+              {FORMATS.map((g) => (
+                <optgroup key={g.name} label={g.name}>
+                  {g.items.map((f) => <option key={f.label} value={f.label}>{f.label}</option>)}
+                </optgroup>
+              ))}
+            </select>
+          </label>
+          <label>가로(mm)
+            <input type="number" min={10} max={2000} value={w} onChange={(e) => { setW(+e.target.value); setSize(CUSTOM); }} />
+          </label>
+          <label>세로(mm)
+            <input type="number" min={10} max={2000} value={h} onChange={(e) => { setH(+e.target.value); setSize(CUSTOM); }} />
+          </label>
+          <label>쪽수
+            <input type="number" min={1} max={64} value={pages} onChange={(e) => setPages(+e.target.value)} />
+          </label>
+          <label>여백(mm)
+            <input type="number" min={0} max={100} value={margin} onChange={(e) => setMargin(+e.target.value)} />
+          </label>
+          <label title="자를 때 가장자리에 흰 줄이 남지 않게, 바깥으로 조금 더 그려 두는 여유입니다">도련(mm)
+            <input type="number" min={0} max={20} value={bleed} onChange={(e) => setBleed(+e.target.value)} />
+          </label>
+          <label title="본문을 나란히 몇 칸으로 나눌지 정합니다. 잡지·신문은 보통 두 칸 이상입니다">단
+            <input type="number" min={1} max={10} value={columns} onChange={(e) => setColumns(+e.target.value)} />
+          </label>
+          <label>단 사이(mm)
+            <input type="number" min={0} max={50} value={gutter} onChange={(e) => setGutter(+e.target.value)} />
+          </label>
+          <label className="chk" title="켜면 두 쪽이 나란히 붙습니다(책·잡지). 끄면 한 장씩 따로입니다(전단·포스터)">
+            <input type="checkbox" checked={facing} onChange={(e) => setFacing(e.target.checked)} /> 두 쪽씩 나란히(책처럼)
+          </label>
+        </form>
 
-        <div className="dc_head">
+        <div className="dc_head dc_head_gap">
           <button type="button" className="pill on" disabled={busy || off} onClick={() => void make("blank")}>
             {busy && !made ? "만드는 중…" : made ? "새로 만들기" : `${kind} 만들기`}
           </button>
@@ -434,7 +305,7 @@ export default function MakePage() {
         {err && !made && <p className="warn">{err}</p>}
       </section>
 
-      {/* 2. 무엇을 넣을까 */}
+      {/* 2. 무엇을 넣을까 — 적어서 부탁하는 칸 하나다 */}
       {made && (
         <section className="panel dc_run">
           <div className="dc_head">
@@ -459,10 +330,25 @@ export default function MakePage() {
             ))}
           </div>
 
+          {/* 사진만 따로 올린다. 브라우저의 사진은 에이전트 PC에 없어 글만으로는 닿지 않는다. */}
+          <div className="filepick picpick">
+            <span className="fp_title" id="pic_l">넣을 사진이 있으면 먼저 올려 주세요 (없으면 그냥 두세요)</span>
+            <input id="pic" aria-labelledby="pic_l" type="file" disabled={busy}
+              accept=".png,.jpg,.jpeg,.tif,.tiff,.pdf,.eps,.ai,.svg,.psd"
+              onChange={(e) => { void addPic(e.target.files?.[0] ?? null); e.target.value = ""; }} />
+            {pics.length > 0 && (
+              <span className="note">
+                올린 사진: {pics.map((p, i) => <b key={i}>{i > 0 ? ", " : ""}{p}</b>)} — 이제{" "}
+                <b>“왼쪽 위에 그 사진”</b>처럼 적으면 그 자리에 넣어 드립니다.
+              </span>
+            )}
+          </div>
+
           {/* 짠 계획을 먼저 보여 준다. LLM이 틀릴 수 있으니 사람이 보고 누르는 틈을 둔다. */}
           {plan && plan.available === false && (
             <p className="warn">
-              <b>글로 적어 부탁하는 기능이 꺼져 있습니다.</b> {plan.reason} 아래 <b>‘직접 넣기’</b>로는 그대로 만들 수 있습니다.
+              <b>글로 적어 부탁하는 기능이 꺼져 있습니다.</b> {plan.reason} 에이전트를 돌리는 쪽에서{" "}
+              <code>GEMINI_API_KEY</code>를 넣고 다시 켜면 됩니다.
             </p>
           )}
           {plan?.commands?.length ? (
@@ -478,10 +364,10 @@ export default function MakePage() {
               {plan.dropped.length > 0 && (
                 <p className="note">
                   여기 빠진 <b>{plan.dropped.join(", ")}</b>는 글로 적어 부탁할 때는 쓰지 않아서 빼 두었습니다.
-                  아래 <b>‘명령 직접 쓰기’</b>에서 쓸 수 있습니다.
+                  {plan.dropped.includes("file.place") && " 사진을 넣으시려면 위에서 먼저 사진을 올려 주세요."}
                 </p>
               )}
-              <div className="dc_head">
+              <div className="dc_head dc_head_gap">
                 <button type="button" className="pill on" disabled={busy}
                   onClick={() => void apply(plan.commands, plan.says || "적어서 부탁한 것을 넣었습니다")}>이대로 넣기</button>
                 <button type="button" className="pill" disabled={busy} onClick={() => setPlan(null)}>그만두기</button>
@@ -507,123 +393,6 @@ export default function MakePage() {
               <img className="dc_shot" src={preview} alt={`${made.filename} ${page}쪽 미리보기`} />
             </>
           )}
-
-          {log.length > 1 && (
-            <>
-              <h3 className="dc_sub">지금까지 한 일</h3>
-              <ol className="dc_steps">{log.map((l, i) => <li key={i}>{l}</li>)}</ol>
-            </>
-          )}
-
-          {/* 손으로 자리를 잡고 싶을 때 */}
-          <button type="button" className="gs_toggle" onClick={() => setOpenTools((o) => !o)} aria-expanded={openTools}>
-            <GsMark open={openTools} /> 직접 넣기 — 자리와 크기를 숫자로 정하기
-          </button>
-          {openTools && (
-            <>
-              <div className="modebar" role="tablist" aria-label="직접 넣기">
-                {TOOLS.map((t) => (
-                  <button key={t.id} type="button" role="tab" aria-selected={tool === t.id}
-                    className={`pill${tool === t.id ? " on" : ""}`} onClick={() => { setTool(t.id); setErr(""); }}>
-                    {t.label}
-                  </button>
-                ))}
-              </div>
-              <form className="upload" onSubmit={(e) => { e.preventDefault(); void runTool(); }}>
-                {cur.fields.map((f) => {
-                  const key = `${cur.id}.${f.k}`;
-                  const v = val[key] ?? f.def ?? "";
-                  const set = (x: string) => setVal((o) => ({ ...o, [key]: x }));
-                  if (f.kind === "file") {
-                    return (
-                      <div className="filepick" key={key}>
-                        <span className="fp_title" id={`${key}_l`}>{f.label}</span>
-                        <input id={key} aria-labelledby={`${key}_l`} type="file"
-                          accept=".png,.jpg,.jpeg,.tif,.tiff,.pdf,.eps,.ai,.svg,.psd"
-                          onChange={(e) => setPickedFile(e.target.files?.[0] ?? null)} />
-                      </div>
-                    );
-                  }
-                  if (f.kind === "pick") {
-                    return (
-                      <label key={key}>{f.label}
-                        <select value={v} onChange={(e) => set(e.target.value)}>
-                          {(f.of ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
-                        </select>
-                      </label>
-                    );
-                  }
-                  if (f.kind === "area") {
-                    return (
-                      <label className="wide" key={key}>{f.label}
-                        <textarea className="dc_ta" rows={3} value={v} onChange={(e) => set(e.target.value)}
-                          placeholder={"줄을 바꾸면 문단이 나뉩니다."} />
-                      </label>
-                    );
-                  }
-                  return (
-                    <label key={key}>{f.label}
-                      <input type={f.kind === "num" ? "number" : "text"} value={v} onChange={(e) => set(e.target.value)} />
-                    </label>
-                  );
-                })}
-              </form>
-              <div className="dc_head">
-                <button type="button" className="pill on" disabled={busy} onClick={() => void runTool()}>{cur.label} 넣기</button>
-                <span className="note">
-                  자리는 <b>그 쪽의 왼쪽 위 모서리부터 mm로</b> 잽니다.
-                  {facing && " 이 문서는 두 쪽이 나란히 놓이는 형태라, 오른쪽 쪽에 놓으려면 왼쪽 값에 쪽 가로 폭을 더하세요."}
-                </span>
-              </div>
-            </>
-          )}
-
-          {/* 엔진이 할 수 있는 나머지 전부 */}
-          <button type="button" className="gs_toggle" onClick={() => setOpenRaw((o) => !o)} aria-expanded={openRaw}>
-            <GsMark open={openRaw} /> 명령 직접 쓰기 — 인디자인이 하는 일 전부{cmds ? ` (${cmds.length}가지)` : ""}
-          </button>
-          {openRaw && (
-            <>
-              <p className="note">
-                위에 없는 기능은 여기에 다 있습니다. 표 꾸미기, 목차, 쪽 번호, 데이터 병합, XML, 여러 문서를 책 하나로
-                엮기까지 됩니다. <b>인디자인을 다뤄 보신 분을 위한 자리</b>입니다.
-                값 설명은 인디자인이 주는 설명을 그대로 옮겼습니다.
-              </p>
-              <div className="dc_row">
-                <label className="wide">찾기
-                  <input type="search" value={q} onChange={(e) => setQ(e.target.value)}
-                    placeholder="예: table, toc, style, page, qr, place, swatch" />
-                </label>
-              </div>
-              <div className="cmdlist">
-                {hits.map((c) => (
-                  <button key={c.id} type="button" className={`pill${picked?.id === c.id ? " on" : ""}`}
-                    onClick={() => { setPicked(c); setJson("{}"); setErr(""); }} title={c.menu.join(" › ")}>
-                    <code>{c.id}</code><small>{c.label}</small>
-                  </button>
-                ))}
-                {cmds && hits.length === 0 && <span className="note">찾는 말과 맞는 항목이 없습니다.</span>}
-                {!cmds && <span className="note">목록을 불러오는 중…</span>}
-              </div>
-              {picked && (
-                <div className="cmdrun">
-                  <div className="dc_kv">
-                    <span className="chip"><code>{picked.id}</code></span>
-                    <span className="chip">{picked.label}</span>
-                    {picked.menu.length > 0 && <span className="note">{picked.menu.join(" › ")}</span>}
-                  </div>
-                  <p className="note cmdparams">{picked.params || "값이 없습니다."}</p>
-                  <label className="wide">값(JSON)
-                    <textarea className="dc_ta" rows={4} value={json} onChange={(e) => setJson(e.target.value)} spellCheck={false} />
-                  </label>
-                  <div className="dc_head">
-                    <button type="button" className="pill on" disabled={busy} onClick={() => void runRaw()}>실행</button>
-                    <span className="note">길이는 pt입니다(1mm = 2.835pt). <code>spread</code>는 0부터 셉니다.</span>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
         </section>
       )}
 
@@ -642,10 +411,34 @@ export default function MakePage() {
             검수로 넘기면 글꼴·도련·해상도·색·오탈자를 검사합니다. 고칠 것이 있으면 <b>이 문서에 반영할지 물어봅니다</b>.
             받은 인디자인 파일은 그대로 열어 이어서 작업해도 됩니다.
           </p>
-          <button type="button" className="gs_toggle" onClick={() => setShowPre((o) => !o)} aria-expanded={showPre}>
-            <GsMark open={showPre} /> 만든 문서 검사 {(state?.preflight ?? made.preflight).length}건
-          </button>
-          {showPre && <IssueRows rows={state?.preflight ?? made.preflight} empty="문제를 찾지 못했습니다." />}
+
+          {/* DesignCraft가 실제로 한 일. 명령과 그 결과를 그대로 적는다 —
+              무엇이 어떻게 만들어졌는지 보고 싶은 사람에게는 이게 제일 쓸모 있다. */}
+          <h3 className="dc_sub">DesignCraft가 한 일</h3>
+          <ol className="didlist">
+            {did.map((d, i) => (
+              <li key={i}>
+                <div className="did_head"><b>{i + 1}.</b> {d.label}</div>
+                {d.steps.length > 0 && (
+                  <ul className="did_cmds">
+                    {d.steps.map((st, k) => (
+                      <li key={k}>
+                        <code>{st.command}</code>
+                        {st.result && <span className="note">{Object.entries(st.result).map(([a, b]) => `${a} ${String(b)}`).join(" · ")}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            ))}
+          </ol>
+          <p className="note">
+            위 <code>frame.create</code>·<code>text.insert</code> 같은 것이 인디자인 엔진이 받은 명령이고,
+            그 옆은 엔진이 돌려준 결과(만들어진 것의 번호)입니다. 이 문서는 이 순서로 만들어졌습니다.
+          </p>
+
+          <h3 className="dc_sub">만든 문서 검사 {(state?.preflight ?? made.preflight).length}건</h3>
+          <IssueRows rows={state?.preflight ?? made.preflight} empty="문제를 찾지 못했습니다." />
           {/* 글꼴은 우리가 골라 만들었으니 없을 일이 드물다. 그래도 한글이 없는 글꼴로 짜였으면
               글자가 PDF에 안 찍히므로 같은 화면으로 알려 준다. 패키지 안내는 해당 없다. */}
           <FontNotice s={state ?? made} advise={false} />

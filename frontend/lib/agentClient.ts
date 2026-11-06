@@ -203,9 +203,8 @@ export type FixResult = Partial<ApplyResult> & { skipped?: boolean; asked?: numb
 /** 엔진 명령 하나. `params`는 **엔진이 적어 준 인자 설명을 그대로** 들고 온다 —
  *  우리가 547개를 번역해 둘 수는 없고, 번역해 두면 엔진이 바뀔 때 거짓말이 된다. */
 export type EngineCommand = { id: string; label: string; menu: string[]; params: string; enabled: boolean };
-/** 명령표는 엔진 버전마다 고정이라 서버가 한 번 받아 들고 있다. 주인을 가리지 않는다(누구의 파일도 없다). */
-export const listCommands = async () =>
-  j<{ commands: EngineCommand[]; count: number }>(await fetch(`${orchUrl()}/designcraft/commands`));
+/** 명령표는 **화면에서 쓰지 않는다** — 명령을 찾아 쓰는 칸을 없앴다(적어서 부탁하면 되는 일이었다).
+ *  창구(`GET /designcraft/commands`)는 그대로 둔다: 클로드·커서가 MCP로 붙을 때 그쪽이 쓴다. */
 
 export type EngineStep = { command: string; params: Record<string, unknown> };
 
@@ -216,6 +215,8 @@ export type Composed = {
 };
 export const composeDocument = (ctx: string, request: string) =>
   post<Composed>(`/designcraft/${ctx}/compose`, { request });
+/** 올려 둔 그림은 서버가 그 의뢰에 적어 두고, 다음 `composeDocument`에 같이 넘긴다 —
+ *  브라우저의 사진은 에이전트 PC에 없으므로 **먼저 올려야** 말로 부탁할 때 쓸 수 있다. */
 
 /** 한 단계를 얹은 뒤의 문서. 실패하면 `ok:false`이고 **아무것도 저장되지 않는다**(전부 아니면 전무). */
 export type EditResult = FontState & {
