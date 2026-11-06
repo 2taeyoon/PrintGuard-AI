@@ -213,6 +213,16 @@ export type EngineStep = { command: string; params: Record<string, unknown> };
 export type Composed = {
   available: boolean; commands: EngineStep[]; says: string; dropped: string[]; reason?: string;
 };
+/** 만드는 동안의 한 걸음. 화면이 이걸 되풀이해 물어 **실시간으로** 따라간다 —
+ *  한 번에 다 하고 끝에 보여 주면, 20초 동안 멈춘 것인지 도는 것인지 알 수가 없다. */
+export type MakeStep = {
+  id: number; at: string; kind: string;
+  payload: { phase: string; at?: number; total?: number; command?: string; error?: string;
+    result?: Record<string, unknown> | null; params?: Record<string, unknown>;
+    pages?: number; items?: number };
+};
+export const makeProgress = (ctx: string) => call(`/designcraft/${ctx}/progress`).then((r) => j<MakeStep[]>(r));
+
 export const composeDocument = (ctx: string, request: string) =>
   post<Composed>(`/designcraft/${ctx}/compose`, { request });
 /** 올려 둔 그림은 서버가 그 의뢰에 적어 두고, 다음 `composeDocument`에 같이 넘긴다 —

@@ -584,7 +584,7 @@ small, .pcard small { font-size: 1.4rem; }
 .agent_side, .map, .shoplist a, .viewer, .sheet, .qa, .qa > summary::before, .ev_kpis div, .qa_shot img,
 .box, .question, .loading_box, .progress, .progress span, .b_track, .b_fill, .wf_track, .wf_bar,
 input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, .ap_steps li,
-.planbox, .didlist li, .dc_fontlist li { border-radius: 0; }
+.planbox, .livebox, .planlist li, .didlist li, .dc_fontlist li { border-radius: 0; }
 @media (hover: hover) {
   .ev_toc a:hover, .qa_more a:hover, .qa_body a:hover, .modebar a:hover, .src_name a:hover,
   .card:hover, .shoplist a:hover, button:hover, .pill:hover, .topmenu a:hover { border-radius: 0; }
@@ -719,6 +719,22 @@ input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, 
 .picpick { margin: 12px 0; padding: 12px 14px; background: var(--bgSurface); border: 1px solid var(--borderSubtle); }
 .picpick .fp_title { font-size: 1.4rem; color: var(--blacklight); }
 .picpick input[type="file"] { max-width: 320px; font-size: 1.5rem; }
+/* 짠 계획 — 사람 말이 앞, 명령 이름은 작게 뒤 */
+.planlist { list-style: none; counter-reset: pl; margin: 10px 0; padding: 0;
+  display: flex; flex-direction: column; gap: 4px; }
+.planlist li { counter-increment: pl; display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px;
+  padding: 8px 12px; background: var(--white); font-size: 1.5rem; }
+.planlist li::before { content: counter(pl) "."; color: var(--blacklight); font-size: 1.3rem; min-width: 16px; }
+.pl_detail { color: var(--blacklight); font-size: 1.4rem; }
+.pl_cmds { margin-left: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.2rem; color: var(--blacklight); opacity: 0.7; }
+/* 만드는 동안 — 한 단계가 끝날 때마다 한 줄 */
+.livebox { margin: 12px 0; padding: 14px 16px; border: 1px solid var(--thema); background: var(--themaLight); }
+.livebox .dc_kv strong { color: var(--thema); }
+.livelist { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px;
+  max-height: 180px; overflow: auto; }
+.livelist li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; font-size: 1.4rem; }
+.livelist li.bad b { color: var(--redBright); }
 /* 엔진이 실제로 한 일 */
 .didlist { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .didlist > li { padding: 10px 14px; background: var(--bgSurface); border: 1px solid var(--borderSubtle); }

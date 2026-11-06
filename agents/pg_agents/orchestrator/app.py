@@ -729,6 +729,18 @@ async def dc_compose(ctx: str, body: dict[str, Any], authorization: str | None =
     return {"data": r.get("output") or {}, "meta": {"status": r.get("status")}}
 
 
+@app.get("/designcraft/{ctx}/progress")
+async def dc_progress(ctx: str, authorization: str | None = Auth) -> dict[str, Any]:
+    """만드는 동안 무엇을 하고 있는지. 화면이 0.8초마다 물어 따라간다.
+
+    흐름(SSE)을 새로 만들지 않았다 — 한 단계마다 공통 로그에 남으므로 그걸 읽으면 된다.
+    `/logs`로는 안 보인다(그쪽은 검수 의뢰만 본다). 주인만 볼 수 있게 여기서 가린다.
+    """
+    _dc_owned(ctx, _who(authorization))
+    rows = [r for r in query(limit=200, contexts={ctx}) if r["kind"] == "dc_step"]
+    return {"data": rows[:40], "meta": {}}
+
+
 @app.post("/designcraft/{ctx}/asset")
 async def dc_asset(ctx: str, file: UploadFile = File(...), authorization: str | None = Auth) -> dict[str, Any]:
     """문서에 넣을 사진을 의뢰 폴더에 둔다. 돌려주는 경로를 `file.place`에 그대로 쓴다.
