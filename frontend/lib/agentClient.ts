@@ -225,6 +225,24 @@ export type MakeStep = {
 };
 export const makeProgress = (ctx: string) => call(`/designcraft/${ctx}/progress`).then((r) => j<MakeStep[]>(r));
 
+/** 지켜보기 — 에이전트가 만들고 있는 문서의 지금 모습. 클로드·커서가 MCP로 만든 것도
+ *  **번호만 알면** 볼 수 있다(그 번호는 난수라 찍어 맞힐 수 없다). 보는 것만 되고,
+ *  고치는 창구는 그대로 주인만 들어간다. */
+export type Watch = {
+  context_id: string; filename: string; pages: number | null; shots: string[];
+  preflight: number; width_mm?: number | null; height_mm?: number | null; steps: MakeStep[];
+};
+export const watchDoc = (ctx: string) => call(`/designcraft/${ctx}/watch`).then((r) => j<Watch>(r));
+export const myDocs = () =>
+  call("/designcraft/jobs").then((r) => j<{ context_id: string; filename: string; created: number;
+    pages: number | null; made: boolean }[]>(r));
+/** 지켜보기용 쪽 그림. 열쇠 헤더가 필요해 blob으로 받아 쓴다. */
+export async function watchShot(ctx: string, name: string) {
+  const r = await call(`/designcraft/${ctx}/watch/${encodeURIComponent(name)}`);
+  if (!r.ok) throw new Error(`${r.status}`);
+  return URL.createObjectURL(await r.blob());
+}
+
 export const composeDocument = (ctx: string, request: string) =>
   post<Composed>(`/designcraft/${ctx}/compose`, { request });
 /** 올려 둔 그림은 서버가 그 의뢰에 적어 두고, 다음 `composeDocument`에 같이 넘긴다 —
