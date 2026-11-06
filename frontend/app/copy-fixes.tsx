@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 
 import type { Issue } from "@/lib/analyze";
@@ -11,7 +10,8 @@ type Kind = "report" | "fixes";
 /** 검수 결과를 가져가는 두 가지 방법.
  *
  *  - **검수 결과 전체**: 사람이 읽는 글. 메일·메모·메신저에 그대로 붙여 씁니다.
- *  - **교정 목록**: 기계가 읽는 줄. '원본 수정' 화면에 붙여 넣으면 인디자인 원본에서 그 글자를 찾아 고칩니다.
+ *  - **교정 목록**: 기계가 읽는 줄. 다른 도구에 넣어 쓸 때를 위한 것입니다 — 이 앱에서 원본에 반영하는 데는
+ *    복사가 필요 없습니다. 편집 파일(IDML)로 검수를 맡기면 검수 끝에 '원본에 반영할까요?'를 묻습니다.
  *
  *  둘을 한 자리에 둔 이유는, 쓰임이 다른 두 글을 화면 여기저기에 흩어 두면 어느 것을 눌러야 하는지
  *  알 수 없어서입니다. 버튼 이름으로 가릅니다.
@@ -71,10 +71,10 @@ export default function CopyFixes({ issues, filename, pages, mode }:
           <button type="button" className="pill" onClick={() => show("fixes")} aria-expanded={open === "fixes"}>
             {open === "fixes" ? "접기" : "내용 보기"}
           </button>
-          <Link className="pill" href="/fix">원본 수정 →</Link>
           <span className="note">
             {editable > 0
-              ? <>편집 파일(IDML)에서 그 글자를 찾아 고칩니다. <b>PDF와 INDD는 고칠 수 없습니다.</b></>
+              ? <>다른 도구에 넣어 쓰실 때만 복사하시면 됩니다 — <b>편집 파일(.idml)로 검수를 맡기면</b> 이 목록을
+                원본에 반영할지 검수가 끝난 자리에서 물어봅니다. <b>PDF와 INDD는 고칠 수 없습니다.</b></>
               : "이번 검수에는 기계가 그대로 반영할 교정이 없습니다(여백·수치처럼 사람이 판단할 항목뿐)."}
           </span>
         </div>

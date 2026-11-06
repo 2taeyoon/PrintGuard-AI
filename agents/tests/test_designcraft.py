@@ -94,9 +94,10 @@ def test_only_formats_we_can_hand_back_are_accepted():
 
 def test_card_grades():
     g = {s.id: s.grade for s in dc.CARD.skills}
-    assert g == {"mcp_status": "read", "inspect_source": "read", "apply_fixes": "A"}
-    apply = next(s for s in dc.CARD.skills if s.id == "apply_fixes")
-    assert apply.allowed_requesters == ["orchestrator"], "파일을 쓰는 skill은 오케스트레이터만 부를 수 있다"
+    assert g == {"mcp_status": "read", "inspect_source": "read", "apply_fixes": "A", "create_document": "A"}
+    for sid in ("apply_fixes", "create_document"):
+        s = next(x for x in dc.CARD.skills if x.id == sid)
+        assert s.allowed_requesters == ["orchestrator"], "파일을 쓰는 skill은 오케스트레이터만 부를 수 있다"
 
 
 # ---------- MCP 가두기 ----------
@@ -221,3 +222,37 @@ def test_src_path_refuses_escaping_the_upload_folder(tmp_path, monkeypatch):
     (src / "secret.idml").write_bytes(b"x")
     with pytest.raises((ValueError, FileNotFoundError)):
         dc._src_path("tok", "../secret.idml")
+
+
+# ---------- 고치기 전에 묻는다 ----------
+def _dummy_src(tmp_path, monkeypatch):
+    src = tmp_path / "src"
+    monkeypatch.setattr(dc, "SRC", src)
+    (src / "tok").mkdir(parents=True)
+    (src / "tok" / "a.idml").write_bytes(b"x")
+    return src
+
+
+def test_asks_before_touching_the_original(tmp_path, monkeypatch):
+    """원본을 고치는 것은 되돌릴 수 없다. 검수를 맡겼다고 원본을 고쳐도 된다는 뜻은 아니므로,
+    confirm 없이 오면 **파일을 열기 전에** 묻는다(MCP를 띄우지 않는다)."""
+    _dummy_src(tmp_path, monkeypatch)
+    req = AgentRequest(meta=meta(), skill="apply_fixes",
+                       input={"src_ref": "tok", "filename": "a.idml",
+                              "fixes": [{"original": "읍니다", "suggestion": "습니다"}]})
+    r = asyncio.run(dc.apply_fixes(req))
+    assert r["status"] == "input-required"
+    assert r["question"]["field"] == "apply_fixes"
+    assert [o["value"] for o in r["question"]["options"]] == ["yes", "no"]
+    assert "a.idml" in r["question"]["text"]
+
+
+def test_no_means_the_original_is_left_alone(tmp_path, monkeypatch):
+    """'검수만 하기'를 고르면 아무것도 쓰지 않고 끝난다. 다시 묻지 않는다 — 그러면 답할 길이 없다."""
+    _dummy_src(tmp_path, monkeypatch)
+    req = AgentRequest(meta=meta(), skill="apply_fixes",
+                       input={"src_ref": "tok", "filename": "a.idml", "confirm": "no",
+                              "fixes": [{"original": "읍니다", "suggestion": "습니다"}]})
+    r = asyncio.run(dc.apply_fixes(req))
+    assert r["status"] == "completed" and r["output"]["skipped"] is True
+    assert r["output"]["applied"] == [] and r["output"]["asked"] == 1

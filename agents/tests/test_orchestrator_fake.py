@@ -107,3 +107,71 @@ def test_other_browser_cannot_see_or_answer_my_job():
         assert b.get("/logs", params={"context_id": ctx}).json()["data"] == []
     with client() as c:  # 또 다른 토큰에도 안 보인다
         assert c.get(f"/jobs/{ctx}").status_code == 404
+
+
+# ---------- 원본 수정은 편집 파일로 의뢰했을 때만 ----------
+def _job(**opts):
+    from pg_agents.orchestrator.engine import Job
+    j = Job(context_id="ctx_job_t", idempotency_key="k", options=opts, pdf_ref="sha", filename="a.pdf")
+    j.results["proofread"] = {"suggestions": [{"key": "pr-1", "page": 2, "original": "읍니다", "suggestion": "습니다"},
+                                              {"key": "pr-2", "page": 3, "original": "", "suggestion": "x"},
+                                              {"key": "pr-3", "page": 4, "original": "같다", "suggestion": "같다"}]}
+    return j
+
+
+def test_pdf_job_never_runs_the_fix_step():
+    """PDF로 올린 의뢰에는 고칠 원본이 없다. 설 수 없는 단계를 세워 두고 매번 실패시키지 않는다."""
+    from pg_agents.orchestrator import plan as P
+    assert P.can_fix(_job()) is False
+    steps = P.build_plan({"preflight", "color", "paper", "guide", "proofread", "designcraft"})
+    fix = [c for stage in steps for c in stage if c.agent == "designcraft"]
+    assert len(fix) == 1, "단계는 늘 있고, 설지 말지는 when이 정한다"
+    assert fix[0].when(_job()) is False
+
+
+def test_idml_job_runs_the_fix_step_with_only_the_fixable_suggestions():
+    from pg_agents.orchestrator import plan as P
+    j = _job(src_ctx="ctx_dc_1", src_ref="tok", src_doc="내 잡지/a.idml")
+    assert P.can_fix(j) is True
+    inp = P._fix(j)
+    assert inp["filename"] == "내 잡지/a.idml" and inp["src_ref"] == "tok"
+    assert [f["key"] for f in inp["fixes"]] == ["pr-1"], "원문이 비었거나 고칠 내용이 같은 제안은 보내지 않는다"
+    assert inp["confirm"] == "", "아직 묻지 않았다"
+    j.answers["apply_fixes"] = "yes"
+    assert P._fix(j)["confirm"] == "yes"
+
+
+def test_fix_step_is_skipped_when_there_is_nothing_to_fix():
+    from pg_agents.orchestrator import plan as P
+    j = _job(src_ref="tok", src_doc="a.idml")
+    j.results["proofread"] = {"suggestions": []}
+    assert P.can_fix(j) is False
+
+
+# ---------- 원본으로 연 의뢰 ----------
+def _seed_source(ctx="ctx_dc_seed", owner=KEY):
+    from pg_agents.orchestrator import app as A
+    A.DCJOBS[ctx] = {"client": owner, "src_ref": "tok", "filename": "a.idml", "doc": "pkg/a.idml",
+                     "files": 1, "created": time.time(), "result": None, "inspect": {"pdf_ref": "sha-from-idml"}}
+    return ctx
+
+
+def test_job_can_be_opened_from_an_uploaded_source():
+    ctx = _seed_source()
+    with client() as c:
+        r = c.post("/jobs", data={"source": ctx, "options": json.dumps({"finish": "none", "paper_id": "art"})})
+        assert r.status_code == 200, r.text
+        j = wait(c, r.json()["data"]["context_id"], {"completed", "completed_partial"})
+        assert j["filename"] == "a.idml" and j["pdf_ref"] == "sha-from-idml"
+        assert j["options"]["src_ref"] == "tok" and j["options"]["src_doc"] == "pkg/a.idml"
+
+
+def test_cannot_open_a_job_from_someone_elses_source():
+    ctx = _seed_source("ctx_dc_other", owner="someone-else")
+    with client() as c:
+        assert c.post("/jobs", data={"source": ctx}).status_code == 404
+
+
+def test_job_without_file_or_source_is_refused():
+    with client() as c:
+        assert c.post("/jobs", data={"options": "{}"}).status_code == 400

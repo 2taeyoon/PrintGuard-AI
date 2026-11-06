@@ -19,11 +19,16 @@ const secs = (ms: number) => `${(ms / 1000).toFixed(ms < 10000 ? 2 : 1)}초`;
 const ORDER = ["orchestrator", "preflight", "color", "paper", "guide", "proofread", "report", "safety", "designcraft"];
 const rank = (n: string) => { const i = ORDER.indexOf(n.replace("(fake)", "")); return i < 0 ? ORDER.length : i; };
 
-// 이 PDF 검수에 **실제로 참여하는** 에이전트. 나머지는 켜져 있어도 이 검사에서는 한 번도 불리지 않는다.
-// 한 목록에 섞어 두면 "이 검사가 쟤도 쓰는구나"로 읽힌다 — 인쇄소·원본 수정은 다른 화면의 기능이다.
+// 이 검수에 **실제로 참여하는** 에이전트. 나머지는 켜져 있어도 이 검사에서는 한 번도 불리지 않는다.
+// 한 목록에 섞어 두면 "이 검사가 쟤도 쓰는구나"로 읽힌다.
+//
+// designcraft만 **의뢰에 따라 자리가 바뀐다.** 편집 파일(IDML)로 맡긴 검수에서는 안전 관문 다음에
+// 서서 교정을 원본에 반영하고, PDF로 맡긴 검수에서는 고칠 원본이 없어 서지 않는다. 그 둘을 한
+// 목록에 똑같이 적어 두면, 되는 날과 안 되는 날이 같은 화면으로 보인다.
 const IN_PLAN = new Set(["orchestrator", "preflight", "color", "paper", "guide", "proofread", "report", "safety"]);
 const ELSEWHERE: Record<string, string> = {
-  designcraft: "원본 수정 탭에서 씁니다. PDF는 고칠 수 없어 이 검수에는 참여하지 않습니다",
+  designcraft: "PDF로 맡긴 검수라 참여하지 않습니다. PDF에서는 글자를 집을 수 없어 고칠 수가 없습니다 — "
+    + "편집 파일(.idml)로 맡기면 검수가 끝난 뒤 이 에이전트가 원본을 고칩니다",
 };
 // 공통 로그의 시각은 UTC로 남는다. 화면에는 한국 시간으로 '2026년 10월 27일 오전 9시 30분 20초'처럼 적는다
 const KST = new Intl.DateTimeFormat("ko-KR", {
@@ -113,7 +118,8 @@ function AgentRow({ name, a, open, toggle, why }:
   );
 }
 
-export default function AgentsView({ initialCtx = "", showWarn = true }: { initialCtx?: string; showWarn?: boolean }) {
+export default function AgentsView({ initialCtx = "", showWarn = true, withFix = false }:
+  { initialCtx?: string; showWarn?: boolean; withFix?: boolean }) {
   // initialCtx가 바뀌면(검사 중에 새 의뢰가 생기면) 그 의뢰로 따라간다. 사용자가 직접 고른 뒤에는 그대로 둔다.
   const [up, setUp] = useState<boolean | null>(null);
   const [agents, setAgents] = useState<Record<string, AgentInfo>>({});
@@ -155,8 +161,9 @@ export default function AgentsView({ initialCtx = "", showWarn = true }: { initi
   }, [ctx]);
 
   const list = Object.entries(agents).sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b));
-  const inPlan = list.filter(([n]) => IN_PLAN.has(n.replace("(fake)", "")));
-  const other = list.filter(([n]) => !IN_PLAN.has(n.replace("(fake)", "")));
+  const plan = withFix ? new Set([...IN_PLAN, "designcraft"]) : IN_PLAN;
+  const inPlan = list.filter(([n]) => plan.has(n.replace("(fake)", "")));
+  const other = list.filter(([n]) => !plan.has(n.replace("(fake)", "")));
   const onCount = inPlan.filter(([, a]) => a.status !== "off").length;
 
   return (

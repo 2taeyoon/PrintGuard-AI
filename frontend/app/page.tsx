@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { FormEvent, Suspense, useEffect, useRef, useState } from "react";
+import { FormEvent, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import type { Analysis, Issue, Sev } from "@/lib/analyze";
 import type { IntentName } from "@/lib/color";
 import type { Guide, Hit } from "@/lib/guide";
@@ -17,7 +17,10 @@ import { measure, type Measured } from "@/lib/pagesize";
 import { assess, inputFrom, type Risk } from "@/lib/risk";
 import CopyFixes from "./copy-fixes";
 import { SignInNote } from "./sign-in";
-import { answerJob, createJob, hostedOrch, orchestratorUp, toScreen, waitJob, type JobView } from "@/lib/agentClient";
+import FixResultPanel from "./fix-result";
+import { IssueRows } from "./dc-shared";
+import { answerJob, createJob, dcFile, getSource, hostedOrch, orchestratorUp, toScreen, uploadSource, waitJob,
+  type FixResult, type JobView, type SourceView } from "@/lib/agentClient";
 
 const LEVEL_LABEL = { check: "확인 필요", none: "해당 없음", na: "판단 불가" } as const;
 
@@ -59,6 +62,12 @@ function Home() {
   const [whiteIn, setWhiteIn] = useState(""); // 측정한 종이 흰색 "L, a, b" (선택). 비워 두면 보정하지 않는다
   const [read, setRead] = useState<Measured | null>(null);   // 파일에서 읽은 완성 크기·도련
   const [readFail, setReadFail] = useState(false);
+  // 편집 파일(IDML)로 맡길 때만 채워진다. 이 번호가 있으면 검수 뒤에 **원본 수정까지** 간다.
+  const srcParam = sp.get("src");   // '작업 만들기'에서 넘어온 길(`/?src=…`)
+  const [srcCtx, setSrcCtx] = useState("");
+  const [srcInfo, setSrcInfo] = useState<SourceView | null>(null);
+  // 주소에 번호를 달고 들어왔으면 **처음부터** 여는 중이다. 효과 안에서 켜면 렌더가 한 번 더 돈다.
+  const [srcBusy, setSrcBusy] = useState(!!srcParam);
   const [risks, setRisks] = useState<(Risk & { hits: Hit[] })[]>([]);
   const [usedPaper, setUsedPaper] = useState<Paper | null>(null);
   const paper = db?.papers.find((p) => p.id === paperId) ?? null;
@@ -168,9 +177,51 @@ function Home() {
   /** 파일을 고르면 완성 크기·도련을 그 파일에서 읽어 칸을 채운다.
    *  손으로 적던 칸이라 오타 한 번에 "페이지 크기가 설정과 다름"이 모든 쪽에 떴다. 값은 이미 파일 안에 있다.
    *  사람이 적어 둔 값도 덮어쓴다 — 대신 무엇을 어디서 읽었는지 칸 아래에 적어, 틀렸으면 되돌릴 수 있게 한다. */
+  /** 원본(IDML)에서 뽑아 둔 검수용 PDF를 받아 **화면이 쓰는 PDF로 삼는다.**
+   *  크기를 재는 것도(lib/pagesize), 결과에서 쪽을 그리는 것도(pdf.js) 그 PDF로 한다. 그래서
+   *  이 뒤로는 PDF를 올린 것과 한 글자도 다르지 않게 흐른다 — 다른 점은 `srcCtx`가 있다는 것뿐이고,
+   *  그 하나가 '검수 뒤에 원본을 고칠 수 있다'를 가른다. */
+  const adoptSource = useCallback(async (s: SourceView) => {
+    setSrcCtx(s.context_id); setSrcInfo(s);
+    const blob = await dcFile(s.context_id, "inspect.pdf");
+    const pdf = new File([blob], s.filename.replace(/\.[^.]+$/, "") + ".pdf", { type: "application/pdf" });
+    setFile(pdf);
+    const m = await measure(pdf);
+    if (!m) { setReadFail(true); return; }
+    setRead(m);
+    setW(m.widthMm); setH(m.heightMm);
+    if (m.bleedMm !== null) setBleed(m.bleedMm);
+    const hit = match(m.widthMm, m.heightMm);
+    setSize(hit && !hit.rotated ? hit.format.label : CUSTOM);
+  }, []);
+
+  // 번호 하나만 들고 와서 여기서 다시 집어 온다(쪽수·미리보기를 주소에 실어 나르지 않는다).
+  useEffect(() => {
+    if (!srcParam) return;
+    let alive = true;
+    getSource(srcParam)
+      .then((s) => { if (alive) return adoptSource(s); })
+      .catch((e: unknown) => { if (alive) setErr(`만든 문서를 불러오지 못했습니다. (${e instanceof Error ? e.message : e})`); })
+      .finally(() => { if (alive) setSrcBusy(false); });
+    return () => { alive = false; };
+  }, [srcParam, adoptSource]);
+
+  async function openSource(fs: File[]) {
+    setSrcBusy(true); setErr("");
+    try {
+      await adoptSource(await uploadSource(fs));
+    } catch (e) {
+      setErr(`원본을 열지 못했습니다. 편집 파일은 에이전트가 켜져 있어야 열 수 있습니다. (${e instanceof Error ? e.message : e})`);
+      setFile(null);
+    }
+    setSrcBusy(false);
+  }
+
   async function pickFile(f: File | null) {
-    setFile(f); setRead(null); setReadFail(false);
+    setFile(f); setRead(null); setReadFail(false); setSrcCtx(""); setSrcInfo(null);
     if (!f) return;
+    // 편집 파일은 브라우저가 열지 못한다. 에이전트에 올려 DesignCraft로 열고, 거기서 뽑은 PDF로 검수한다.
+    if (/\.(idml|designcraft)$/i.test(f.name)) return openSource([f]);
     const m = await measure(f);
     if (!m) { setReadFail(true); return; }   // 암호가 걸렸거나 깨진 파일. 검사 단계에서 제대로 된 오류가 난다
     setRead(m);
@@ -230,7 +281,8 @@ function Home() {
       const opts = { width_mm: w, height_mm: h, bleed_mm: bleed, paper_id: paperId, profile: profileKey, intent, tac_limit: tac,
         paper_color: paperColor, finish, gsm,
         ...(parseWhite(whiteIn) ? { substrate_white: parseWhite(whiteIn) } : {}) };
-      const { context_id } = await createJob(f, opts);
+      // 원본으로 맡기면 파일을 다시 올리지 않는다 — 서버가 이미 그 원본과 거기서 뽑은 PDF를 들고 있다.
+      const { context_id } = await createJob(srcCtx ? null : f, opts, srcCtx);
       await settle(await waitJob(context_id, setAgentJob));
     } catch (x) {
       setErr(`에이전트 검사에 실패했습니다. 에이전트가 켜져 있는지 확인하세요. (${x instanceof Error ? x.message : x})`);
@@ -311,7 +363,7 @@ function Home() {
             <span className="note">누가 어떤 일을 할 수 있고(skill), 이번 의뢰를 누가 언제 얼마나 처리했는지 그대로 보여 줍니다.</span>
             <GsMark open={showAgents} />
           </button>
-          {showAgents && <div className="gs_body"><AgentsView initialCtx={agentJob?.context_id ?? ""} showWarn={false} /></div>}
+          {showAgents && <div className="gs_body"><AgentsView initialCtx={agentJob?.context_id ?? ""} showWarn={false} withFix={!!srcCtx} /></div>}
         </section>
       )}
 
@@ -321,9 +373,29 @@ function Home() {
 
       <form className="upload panel" onSubmit={submit}>
         <label className="wide">검수할 파일
-          <input type="file" accept="application/pdf" onChange={(e) => pickFile(e.target.files?.[0] ?? null)} />
+          <input type="file" accept=".pdf,.idml,.designcraft,application/pdf" disabled={srcBusy}
+            onChange={(e) => pickFile(e.target.files?.[0] ?? null)} />
+          {srcBusy && <span className="note">원본을 여는 중입니다… DesignCraft가 열어 검수용 PDF를 뽑습니다(10초쯤).</span>}
           {read && <ReadHint m={read} />}
           {readFail && <span className="note">파일에서 크기를 읽지 못했습니다. 암호가 걸렸거나 깨진 PDF일 수 있습니다. 아래 칸을 직접 채워 주세요.</span>}
+          {/* 무엇을 올리면 무엇까지 되는지는 **고르기 전에** 알아야 한다. 고른 뒤에 알려 주면 늦다. */}
+          {!srcInfo && !srcBusy && (
+            <span className="note">
+              PDF로 올리면 <b>검수까지</b>, 편집 파일(<code>.idml</code>)로 올리면 검수가 끝난 뒤{" "}
+              <b>원본 수정까지</b> 이어집니다. PDF에서는 글자를 집을 수 없어 고치지 못합니다.
+            </span>
+          )}
+        </label>
+        {/* IDML은 사진을 링크로만 들고 있다. 파일 하나만 받으면 인쇄용 사진이 빠진 채로 검수하게 된다. */}
+        <label className="wide">편집 파일은 폴더째도 됩니다 (선택)
+          {/* webkitdirectory는 React 타입에 없어서 속성으로 직접 준다 */}
+          <input type="file" disabled={srcBusy}
+            ref={(el) => { if (el) { el.setAttribute("webkitdirectory", ""); el.setAttribute("directory", ""); } }}
+            onChange={(e) => { const fs = e.target.files; if (fs?.length) { setRead(null); setReadFail(false); void openSource(Array.from(fs)); } }} />
+          <span className="note">
+            InDesign의 <b>파일 → 패키지</b>로 만든 폴더를 통째로 올리면 옆의 <code>Links</code> 사진과{" "}
+            <code>Document fonts</code> 글꼴까지 같이 올라가 그대로 열립니다. 파일 하나만 올리면 인쇄용 사진이 따라오지 않습니다.
+          </span>
         </label>
         <label>완성 크기
           <select value={size} onChange={(e) => pickSize(e.target.value)}>
@@ -408,6 +480,9 @@ function Home() {
         )}
       </form>
 
+      {/* 원본(IDML)으로 맡길 때만. PDF만 봐서는 알 수 없는 것들이 여기서 나온다 —
+          넘친 글자는 PDF에 아예 안 찍히고, 끊긴 사진은 빈 칸으로 보일 뿐이다. */}
+      {srcInfo && <SourcePanel s={srcInfo} />}
 
       {mode === "agent" && agentJob && <AgentProgress job={agentJob} />}
       {mode === "agent" && agentJob?.status === "input-required" && agentJob.question && (
@@ -433,6 +508,10 @@ function Home() {
             <span className="note">{mode === "agent" ? "오탈자는 교정 에이전트(규칙+Kiwi)가 제안만 합니다. 자동으로 고치지 않습니다." : "AI 문맥 교정(LLM)은 연결하지 않았습니다. 표기·수치 검사는 규칙 기반입니다."}</span>
           </div>
           <CopyFixes issues={res.issues} filename={res.filename} pages={res.pages} mode={mode} />
+          {/* 검수의 마지막 — 원본을 고쳤는가. 편집 파일로 맡겼을 때만 이 자리가 생긴다. */}
+          {agentJob?.results?.fix && (
+            <FixResultPanel ctx={agentJob.context_id} filename={agentJob.filename} r={agentJob.results.fix as FixResult} />
+          )}
           {res.colorReport && (
             <div className="summary colorrep panel">
               <strong>인쇄 색 차이 ({res.colorReport.profile || "선택한 프로파일"})</strong>
@@ -538,6 +617,47 @@ function ReadHint({ m }: { m: Measured }) {
       </>}
       {m.mixed && <> — 쪽마다 크기가 다릅니다. 1쪽 기준으로 채웠습니다.</>}
     </span>
+  );
+}
+
+/** 편집 파일을 열어 본 결과. 검수(PDF)와 **다른 것을 보는 눈**이라 따로 적는다.
+ *  넘친 글자는 PDF에 안 찍히고, 끊긴 사진은 빈 칸으로 보일 뿐이며, 없는 글꼴은 대체되어 그려진다 —
+ *  셋 다 PDF만 봐서는 알 수 없고, 원본을 열었기 때문에 잡힌다. */
+function SourcePanel({ s }: { s: SourceView }) {
+  const [open, setOpen] = useState(true);
+  const errs = s.preflight.filter((i) => i.severity === "error").length;
+  return (
+    <section className="panel dc_src">
+      <div className="dc_head">
+        <strong>원본 파일</strong>
+        <span className="chip">{s.filename}</span>
+        <span className="chip">쪽<b>{s.pages}</b></span>
+        <span className="chip">글 덩어리<b>{s.stories.length}</b></span>
+        <span className="chip">넘친 글<b className={s.stories.some((x) => x.overset) ? "sev-high" : ""}>{s.stories.filter((x) => x.overset).length}</b></span>
+        <span className="chip">원본 검사<b className={errs ? "sev-high" : ""}>{s.preflight.length}</b></span>
+      </div>
+      <p className="note">
+        편집 파일로 맡기셨습니다. 검수는 이 원본에서 뽑은 PDF로 하고, 검수가 끝나면{" "}
+        <b>고칠 것을 원본에 반영할지 물어봅니다</b>.
+      </p>
+      {s.preflight.some((i) => i.kind === "missingLink") && (
+        <p className="warn">
+          <b>사진 링크가 끊겼습니다.</b> IDML 파일만 올려서 그렇습니다 — 사진은 그 파일 안에 없습니다.
+          지금 보이는 그림은 IDML이 품고 있는 <b>저해상 미리보기</b>라서, 이대로 내보낸 PDF는 인쇄에 쓸 수 없습니다.
+          글자 교정만 하실 거면 그대로 두셔도 됩니다.
+        </p>
+      )}
+      {s.missing_fonts.length > 0 && (
+        <p className="warn">
+          <b>이 PC에 없는 글꼴 {s.missing_fonts.length}개</b>: {s.missing_fonts.join(", ")} — 대체 글꼴로 열렸습니다.
+          글자 너비가 달라져 <b>줄바꿈과 넘침이 원본과 다르게 보일 수 있습니다.</b>
+        </p>
+      )}
+      <button type="button" className="gs_toggle" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+        <GsMark open={open} /> 원본 검사(preflight) {s.preflight.length}건
+      </button>
+      {open && <IssueRows rows={s.preflight} empty="원본에서 발견된 문제가 없습니다." />}
+    </section>
   );
 }
 
