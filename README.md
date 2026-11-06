@@ -69,7 +69,13 @@ cd frontend && npm install          # tsx 포함(Node 에이전트 실행용)
 
 설치는 끝났고 꺼진 것을 되살리기만 하면 되는 상황이라면 [RUN.md](RUN.md)로 가세요 — 켜는 명령과 증상별(502·530) 판별표만 모아 둔 짧은 문서입니다.
 
-**먼저 `conda activate dev`를 합니다.** `run_agents.py`는 자기를 실행한 파이썬으로 자식 에이전트를 띄우기 때문에, 환경을 켜지 않고 `python`을 치면 패키지가 없는 시스템 파이썬이 잡혀 **파이썬 에이전트 6개가 전부 코드 1로 죽습니다**(로그에는 `ModuleNotFoundError: No module named 'uvicorn'`). Node 에이전트 3개는 그대로 떠 있어서 절반만 죽은 것처럼 보입니다.
+**먼저 `conda activate dev`를 합니다.** `run_agents.py`는 자기를 실행한 파이썬으로 자식 에이전트를 띄우는데, 의존성은 그 환경에만 있습니다. 환경을 켜지 않고 `python`을 치면 패키지가 없는 시스템 파이썬이 잡힙니다. 그때는 런처가 **아무것도 띄우지 않고 멈추면서** 어느 파이썬이 잡혔는지 적습니다.
+
+```
+[멈춤] 이 파이썬에는 에이전트 의존성이 없습니다: C:\Users\...\Python312\python.exe
+```
+
+이미 떠 있는 에이전트가 있으면 그것도 켜기 전에 알려 주고 건드리지 않습니다(`[이미 떠 있음] color (8703)`). 겹쳐 띄우면 `EADDRINUSE`로 죽는데, 화면에서는 먼저 띄운 쪽이 멀쩡히 답하고 있어서 왜 죽었는지가 안 보입니다.
 
 ```bash
 conda activate dev                   # 빼먹으면 에이전트가 안 뜹니다
@@ -87,6 +93,8 @@ cd frontend && npm run dev -- -H 127.0.0.1 -p 8752
 ```bash
 "$HOME/miniforge3/envs/dev/python.exe" agents/run_agents.py   # Windows
 ```
+
+매번 적기 번거로우면 `agents/.env`에 **`PG_PYTHON`**으로 그 경로를 한 번 적어 두면 됩니다. 그러면 어느 파이썬으로 런처를 불러도 자식 에이전트는 그 파이썬으로 뜹니다.
 
 `python agents/run_agents.py guide color`처럼 이름을 적으면 일부만 켭니다. 끄는 것은 Ctrl+C 한 번이면 전부 내려갑니다.
 
