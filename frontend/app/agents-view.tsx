@@ -102,15 +102,9 @@ function AgentRow({ name, a, open, toggle, why }:
           {a.card ? (
             <>
               <p className="note">{a.card.description}</p>
-              {/* 받는 일이 없는 에이전트가 있다(총괄). 빈 목록을 '없음'으로만 적으면 아무것도
-                  안 하는 쪽으로 읽힌다 — 실제로는 **이쪽이 다 시킨다.** 무엇을 시키는지는 바로 위
-                  카드 설명이 적고 있으므로, 여기서는 목록이 왜 비었는지만 잇는다(같은 말을 두 번
-                  하면 둘 다 안 읽힌다). */}
-              {a.card.skills.length === 0 ? (
-                <p className="note">
-                  <b>목록이 비어 있는 것이 맞습니다</b> — 시키는 쪽이라 요청받는 자리가 없습니다.
-                </p>
-              ) : (
+              {/* 받는 일이 없는 에이전트(총괄)는 목록 자리를 비워 둔다. 무엇을 하는지는 바로 위
+                  카드 설명이 적고 있으므로, 없는 목록을 설명하는 줄을 따로 두지 않는다. */}
+              {a.card.skills.length > 0 && (
                 <ul className="skills">
                   {a.card.skills.map((s) => (
                     <li key={s.id}>

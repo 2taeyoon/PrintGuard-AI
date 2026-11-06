@@ -94,7 +94,8 @@ def test_only_formats_we_can_hand_back_are_accepted():
 
 def test_card_grades():
     g = {s.id: s.grade for s in dc.CARD.skills}
-    assert g == {"mcp_status": "read", "inspect_source": "read", "apply_fixes": "A", "create_document": "A"}
+    assert g == {"mcp_status": "read", "inspect_source": "read", "list_commands": "read",
+                 "apply_fixes": "A", "edit_document": "A", "create_document": "A"}
     for sid in ("apply_fixes", "create_document"):
         s = next(x for x in dc.CARD.skills if x.id == sid)
         assert s.allowed_requesters == ["orchestrator"], "파일을 쓰는 skill은 오케스트레이터만 부를 수 있다"
@@ -367,3 +368,104 @@ def test_fixing_text_leaves_the_original_font_name_in_the_file(tmp_path):
                 names |= set(re.findall(r"Yoon Myungjo 330|Source Sans 3|Malgun Gothic",
                                         z.read(n).decode("utf-8", "replace")))
     assert names == {"Yoon Myungjo 330"}, f"글꼴 이름이 바뀌었다: {sorted(names)}"
+
+# ---------- 엔진 명령(작업 만들기) ----------
+# 이 화면은 "판형을 잡아 주는 곳"이 아니라 **인디자인이 하는 일 전부를 여는 곳**이다. 그래서
+# 지킬 것이 둘이다. ① 한 단계는 전부 아니면 전무여야 한다(절반 들어간 문서는 되돌릴 자리가 흐려진다).
+# ② 되돌리기는 한 단계만 가야 한다(어디까지 돌아갔는지 모르는 것이 더 무섭다).
+def test_edit_refuses_a_shape_that_is_not_a_command_list():
+    for bad in ([], "frame.create", [{"params": {}}], [{"command": "", "params": {}}],
+                [{"command": "frame.create", "params": "rect=1"}]):
+        req = AgentRequest(meta=meta(), skill="edit_document",
+                           input={"src_ref": "tok", "filename": "a.idml", "commands": bad})
+        r = asyncio.run(dc.edit_document(req))
+        assert r["status"] == "rejected", bad
+        assert r["outcome"] == "INVALID_INPUT", bad
+
+
+def test_edit_refuses_more_commands_than_it_will_run():
+    many = [{"command": "layout.pages.insert", "params": {"count": 1}}] * (dc.MAX_EDIT_CMDS + 1)
+    req = AgentRequest(meta=meta(), skill="edit_document",
+                       input={"src_ref": "tok", "filename": "a.idml", "commands": many})
+    r = asyncio.run(dc.edit_document(req))
+    assert r["status"] == "rejected" and r["outcome"] == "INVALID_INPUT"
+    assert str(dc.MAX_EDIT_CMDS) in r["output"]["message"]
+
+
+@needs_cli
+def test_the_whole_engine_is_on_offer_not_a_handful_of_wrapped_tools():
+    """우리가 감싼 몇 가지만 내주면 감싼 것만 할 수 있는 앱이 된다. 엔진이 받는 것을 그대로 내준다."""
+    r = dc._commands_blocking()
+    assert r["count"] > 500, r["count"]
+    ids = {c["id"] for c in r["commands"]}
+    # 글·도형·표·쪽·스타일·색·목차 — 한 분야만 되는 것이 아니다
+    for must in ("frame.create", "file.place", "table.insert", "layout.pages.insert",
+                 "style.paragraph.create", "swatch.create", "toc.generate", "object.qrCode"):
+        assert must in ids, must
+    assert all(c["params"] is not None for c in r["commands"])   # 인자 설명이 같이 온다
+
+
+def _blank(tmp_path: Path) -> Path:
+    src = tmp_path / "doc.idml"
+    with Mcp(read_roots=[tmp_path], write_roots=[tmp_path]) as m:
+        m.ex("file.new", intent="print", units="points", width=595, height=842,
+             pages=1, facingPages=False, margins=36, primaryTextFrame=False)
+        m.ex("file.exportIdml", path=str(src))
+    return src
+
+
+@needs_cli
+def test_a_step_is_all_or_nothing(tmp_path):
+    """명령 하나가 실패하면 **아무것도 저장하지 않는다.** 절반만 들어간 문서를 돌려주면 무엇이
+    들어갔는지 사람이 알 수 없고, 되돌릴 자리도 흐려진다."""
+    src = _blank(tmp_path)
+    out = tmp_path / "job"
+    out.mkdir()
+    before = dc._edit_blocking(src, ".idml", out, [{"command": "layout.pages.insert", "params": {"count": 2}}])
+    assert before["ok"] and before["pages"] == 3
+
+    r = dc._edit_blocking(src, ".idml", out, [
+        {"command": "layout.pages.insert", "params": {"count": 5}},          # 되는 명령
+        {"command": "frame.create", "params": {"spread": 99, "rect": [0, 0, 1, 1]}},   # 안 되는 명령
+    ])
+    assert r["ok"] is False
+    assert r["failed"]["command"] == "frame.create"
+    # 앞의 '쪽 5개 추가'까지 저장됐다면 쪽수가 늘어 있을 것이다
+    again = dc._edit_blocking(src, ".idml", out, [{"command": "layout.pages.insert", "params": {"count": 1}}])
+    assert again["pages"] == 4, f"실패한 단계가 절반 저장됐다: {again['pages']}쪽"
+
+
+@needs_cli
+def test_undo_goes_back_one_step_and_no_further(tmp_path):
+    """되돌리기는 **한 단계만** 간다. 두 번 눌러 더 과거로 가면 어디까지 돌아갔는지 알 수 없다."""
+    src = _blank(tmp_path)
+    out = tmp_path / "job"
+    out.mkdir()
+    dc._edit_blocking(src, ".idml", out, [{"command": "layout.pages.insert", "params": {"count": 3}}])
+    r = dc._edit_blocking(src, ".idml", out, [{"command": "layout.pages.insert", "params": {"count": 4}}])
+    assert r["pages"] == 8
+
+    back = dc._undo_blocking(src, ".idml", out)
+    assert back["pages"] == 4 and back["can_undo"] is False
+    with pytest.raises(FileNotFoundError):
+        dc._undo_blocking(src, ".idml", out)
+
+
+@needs_cli
+def test_a_new_text_box_gets_a_hangul_font_without_touching_the_rest(tmp_path):
+    """기본 글꼴에는 한글이 없다. 글을 넣기 **전에** 글꼴을 세우면 그 상자만 바뀐다 —
+    다 넣고 font.replace를 하면 문서의 다른 글까지 갈아 버린다."""
+    src = _blank(tmp_path)
+    out = tmp_path / "job"
+    out.mkdir()
+    r = dc._edit_blocking(src, ".idml", out, [
+        {"command": "frame.create", "params": {"spread": 0, "rect": [60, 60, 400, 150], "content": "text"}},
+        {"command": "text.insert", "params": {"text": "Latin stays"}},
+        {"command": "frame.create", "params": {"spread": 0, "rect": [60, 200, 400, 320], "content": "text"}},
+        {"command": "type.char", "params": {"attrs": {"fontFamily": dc.KO_FONT}}},
+        {"command": "text.insert", "params": {"text": "한글 두 번째"}},
+    ])
+    assert r["ok"], r.get("failed")
+    fams = {f["family"] for f in r["fonts"]}
+    assert dc.KO_FONT in fams and dc.DEFAULT_FONT in fams, fams   # 둘이 같이 산다
+    assert r["glyph_blocked"] == [], r["glyph_blocked"]           # 네모로 찍힌 글자가 없다
