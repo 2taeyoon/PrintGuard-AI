@@ -636,7 +636,10 @@ async def dc_create(body: dict[str, Any], authorization: str | None = Auth) -> d
                                   or "문서를 만들지 못했습니다")[:300])
     made = r.get("output") or {}
     DCJOBS[ctx] = {"client": who, "src_ref": made["src_ref"], "filename": made["doc"], "doc": made["doc"],
-                   "files": 1, "created": time.time(), "result": None, "made": True}
+                   "files": 1, "created": time.time(), "result": None, "made": True,
+                   # 말로 부탁할 때 자리를 잡는 데 쓴다(쪽 크기를 모르면 엉뚱한 곳에 그린다)
+                   "width_mm": made.get("width_mm"), "height_mm": made.get("height_mm"),
+                   "facing": bool(body.get("facing"))}
     while len(DCJOBS) > MAX_JOBS:
         DCJOBS.pop(min(DCJOBS, key=lambda k: DCJOBS[k]["created"]), None)
     ins = await _ask("designcraft", "inspect_source", ctx, {"src_ref": made["src_ref"], "filename": made["doc"]})
@@ -694,6 +697,34 @@ async def dc_edit(ctx: str, body: dict[str, Any], authorization: str | None = Au
         keep = {k: v for k, v in out.items() if k not in ("decision", "applied", "failed", "ok", "undone")}
         j["inspect"] = {**(j.get("inspect") or {}), **keep}
     return {"data": out, "meta": {"status": r.get("status")}}
+
+
+@app.post("/designcraft/{ctx}/compose")
+async def dc_compose(ctx: str, body: dict[str, Any], authorization: str | None = Auth) -> dict[str, Any]:
+    """말로 부탁한 것을 엔진 명령으로 **짜 주기만** 한다. 고치지는 않는다.
+
+    짜는 일과 고치는 일을 나눈 이유가 있다. LLM은 틀릴 수 있으므로, 무엇이 일어날지 사람이
+    먼저 보고 눌러야 한다. 실제로 고치는 것은 `/edit`이고 그쪽이 safety 관문을 거친다.
+    """
+    j = _dc_owned(ctx, _writer(authorization).subject)
+    if not j.get("made"):
+        raise HTTPException(409, "만든 문서에만 쓸 수 있습니다")
+    request = str(body.get("request") or "").strip()
+    if not request:
+        raise HTTPException(400, "무엇을 만들지 적어 주세요")
+    if len(request) > 2000:
+        raise HTTPException(413, "부탁이 너무 깁니다(2000자까지)")
+    ins = j.get("inspect") or {}
+    r = await _ask("designcraft", "compose", ctx, {
+        "request": request, "pages": ins.get("pages"),
+        "width_mm": j.get("width_mm") or ins.get("width_mm"),
+        "height_mm": j.get("height_mm") or ins.get("height_mm"),
+        "facing": bool(j.get("facing")),
+    })
+    if r.get("status") != "completed":
+        raise HTTPException(502, (((r.get("output") or {}).get("reason") or (r.get("output") or {}).get("message"))
+                                  or "명령을 짜지 못했습니다")[:300])
+    return {"data": r.get("output") or {}, "meta": {"status": r.get("status")}}
 
 
 @app.post("/designcraft/{ctx}/asset")

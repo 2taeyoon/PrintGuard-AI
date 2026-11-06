@@ -227,30 +227,3 @@ export function SetupGuide({ reason }: { reason: string }) {
   );
 }
 
-/** 같은 MCP를 클로드·커서에 **직접** 붙이는 길. 이 화면을 거치지 않아도 되는 일이라 적어 둔다.
- *  같이 적는 경고가 더 중요하다 — 가두는 플래그를 빼면 디스크 전체가 열린다(확인했다). */
-export function DirectConnect() {
-  return (
-    <details className="dc_direct">
-      <summary>이 MCP를 클로드·커서에 직접 붙이려면</summary>
-      <p className="note">
-        위 연결은 DesignCraft 자체 기능이라, 같은 MCP를 AI 코딩 도구에 바로 붙여 대화로 고치게 할 수도 있습니다.
-        도구 26개가 그대로 붙어서 <code>file.openIdml</code> → <code>find.change</code> → <code>file.exportPdf</code>를
-        스스로 합니다. 아래 두 폴더는 <b>읽기·쓰기를 가두는 값</b>이니 본인 폴더로 바꿔 주세요.
-      </p>
-      <Cmd note="두 폴더를 반드시 같이 주세요">
-        claude mcp add designcraft -- designcraft-cli mcp --automation-read-root C:\work\idml --automation-write-root C:\work\out
-      </Cmd>
-      <p className="warn">
-        <b>두 폴더를 빼면 디스크 전체가 열립니다.</b> 문서의 “Without either flag nothing changes”는 <i>가두지 않는다</i>는
-        뜻입니다. 실제로 확인해 보니, 플래그 없이 띄운 MCP가 임의의 폴더에 있는 파일을 읽고 임의의 자리에 파일을 썼습니다.
-        그래서 PrintGuard는 두 폴더가 없으면 MCP를 <b>아예 띄우지 않습니다</b>.
-      </p>
-      <p className="note">
-        직접 붙이면 PrintGuard가 하던 것들은 빠집니다. 같은 글자가 여러 쪽에 있을 때 <b>쪽으로 가리기</b>,
-        한 건 고칠 때마다 <b>다시 찾기</b>, 항목별 실패 이유, 승인 관문, 고친 뒤 재검사 다섯입니다.
-        (한글은 한 자가 3바이트라, 한 번 바꾸면 뒤쪽 위치가 모두 밀립니다. 그래서 건마다 다시 찾습니다.)
-      </p>
-    </details>
-  );
-}

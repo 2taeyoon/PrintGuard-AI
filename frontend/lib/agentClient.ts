@@ -208,6 +208,15 @@ export const listCommands = async () =>
   j<{ commands: EngineCommand[]; count: number }>(await fetch(`${orchUrl()}/designcraft/commands`));
 
 export type EngineStep = { command: string; params: Record<string, unknown> };
+
+/** 말로 부탁한 것을 명령으로 **짜 준** 결과. 짜 주기만 하고 고치지는 않는다 —
+ *  LLM이 틀릴 수 있으니 사람이 무엇이 일어날지 보고 누르는 틈을 둔다. */
+export type Composed = {
+  available: boolean; commands: EngineStep[]; says: string; dropped: string[]; reason?: string;
+};
+export const composeDocument = (ctx: string, request: string) =>
+  post<Composed>(`/designcraft/${ctx}/compose`, { request });
+
 /** 한 단계를 얹은 뒤의 문서. 실패하면 `ok:false`이고 **아무것도 저장되지 않는다**(전부 아니면 전무). */
 export type EditResult = FontState & {
   ok: boolean;
