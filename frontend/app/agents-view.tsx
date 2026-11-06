@@ -19,16 +19,18 @@ const secs = (ms: number) => `${(ms / 1000).toFixed(ms < 10000 ? 2 : 1)}초`;
 const ORDER = ["orchestrator", "preflight", "color", "paper", "guide", "proofread", "report", "safety", "designcraft"];
 const rank = (n: string) => { const i = ORDER.indexOf(n.replace("(fake)", "")); return i < 0 ? ORDER.length : i; };
 
-// 이 검수에 **실제로 참여하는** 에이전트. 나머지는 켜져 있어도 이 검사에서는 한 번도 불리지 않는다.
-// 한 목록에 섞어 두면 "이 검사가 쟤도 쓰는구나"로 읽힌다.
+// **한 목록이다.** 전에는 '참여'와 '참여하지 않는'으로 갈라 뒀는데, 거기 갈 에이전트가
+// designcraft 하나뿐이었다. 원본 수정이 검수 흐름 안으로 들어온 뒤로는 그것도 참여하므로,
+// 빈 칸만 남은 둘째 묶음을 없앴다. 모르는 이름이 와도 이 목록에 그대로 선다 — 걸러 내면
+// 새로 붙인 에이전트가 화면에서 조용히 사라진다.
 //
-// designcraft만 **의뢰에 따라 자리가 바뀐다.** 편집 파일(IDML)로 맡긴 검수에서는 안전 관문 다음에
-// 서서 교정을 원본에 반영하고, PDF로 맡긴 검수에서는 고칠 원본이 없어 서지 않는다. 그 둘을 한
-// 목록에 똑같이 적어 두면, 되는 날과 안 되는 날이 같은 화면으로 보인다.
-const IN_PLAN = new Set(["orchestrator", "preflight", "color", "paper", "guide", "proofread", "report", "safety"]);
-const ELSEWHERE: Record<string, string> = {
-  designcraft: "PDF로 맡긴 검수라 참여하지 않습니다. PDF에서는 글자를 집을 수 없어 고칠 수가 없습니다 — "
-    + "편집 파일(.idml)로 맡기면 검수가 끝난 뒤 이 에이전트가 원본을 고칩니다",
+// designcraft만 **의뢰에 따라 할 일이 달라진다.** 편집 파일(IDML)로 맡기면 안전 관문 다음에
+// 서서 교정을 원본에 반영하고, PDF로 맡기면 고칠 원본이 없어 그 단계가 서지 않는다. 목록에서
+// 빼는 대신 **그 줄에 조건을 적는다** — 빼 버리면 왜 없는지 알 수가 없다.
+const COND: Record<string, (withFix: boolean) => string | undefined> = {
+  designcraft: (withFix) => withFix
+    ? "편집 파일로 맡기셨으니 참여합니다 — 검수가 끝나면 교정을 원본에 반영할지 묻고 고칩니다"
+    : "편집 파일(.idml)로 맡길 때만 원본을 고칩니다. PDF에서는 글자를 집을 수 없습니다",
 };
 // 공통 로그의 시각은 UTC로 남는다. 화면에는 한국 시간으로 '2026년 10월 27일 오전 9시 30분 20초'처럼 적는다
 const KST = new Intl.DateTimeFormat("ko-KR", {
@@ -80,12 +82,12 @@ export function AgentHealth() {
 }
 
 /** 에이전트 한 줄. 누르면 그 자리에서 할 수 있는 일(skill)과 등급이 펼쳐진다.
- *  `why`는 이 검수에 참여하지 않는 에이전트에만 붙는다 — 왜 여기 있는지 말해 주지 않으면
- *  '켜짐'만 보고 이 검사가 쓰는 줄로 읽는다. */
+ *  `why`는 할 일에 조건이 붙는 에이전트에만 달린다(지금은 원본 수정 하나) — 적어 주지 않으면
+ *  '켜짐'만 보고 늘 고쳐 주는 줄로 읽는다. */
 function AgentRow({ name, a, open, toggle, why }:
   { name: string; a: AgentInfo; open: boolean; toggle: (n: string) => void; why?: string }) {
   return (
-    <li className={`aitem ${a.status}${open ? " open" : ""}${why ? " aside_of_plan" : ""}`}>
+    <li className={`aitem ${a.status}${open ? " open" : ""}`}>
       <button type="button" className="aitem_head" aria-expanded={open} onClick={() => toggle(name)}>
         <span className={`dot ${a.status}`} aria-hidden="true" />
         <b>{agentLabel(name)}</b>
@@ -161,10 +163,7 @@ export default function AgentsView({ initialCtx = "", showWarn = true, withFix =
   }, [ctx]);
 
   const list = Object.entries(agents).sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b));
-  const plan = withFix ? new Set([...IN_PLAN, "designcraft"]) : IN_PLAN;
-  const inPlan = list.filter(([n]) => plan.has(n.replace("(fake)", "")));
-  const other = list.filter(([n]) => !plan.has(n.replace("(fake)", "")));
-  const onCount = inPlan.filter(([, a]) => a.status !== "off").length;
+  const onCount = list.filter(([, a]) => a.status !== "off").length;
 
   return (
     <>
@@ -175,27 +174,15 @@ export default function AgentsView({ initialCtx = "", showWarn = true, withFix =
         <aside className="agent_side">
           <div className="side_head">
             <strong>이 검수에 참여</strong>
-            <span className="chip">{onCount}/{inPlan.length} 켜짐</span>
+            <span className="chip">{onCount}/{list.length} 켜짐</span>
           </div>
           <ul className="agent_list">
-            {inPlan.map(([name, a]) => <AgentRow key={name} name={name} a={a} open={opened.includes(name)} toggle={toggle} />)}
+            {list.map(([name, a]) => (
+              <AgentRow key={name} name={name} a={a} open={opened.includes(name)} toggle={toggle}
+                why={COND[name.replace("(fake)", "")]?.(withFix)} />
+            ))}
             {list.length === 0 && <li className="aitem"><span className="note">에이전트를 불러오는 중…</span></li>}
           </ul>
-
-          {other.length > 0 && (
-            <>
-              <div className="side_head side_head2">
-                <strong>이 검수에 참여하지 않는 에이전트</strong>
-              </div>
-              <p className="note side_note">켜져 있어도 <b>이 검수에서는 한 번도 불리지 않습니다.</b> 같은 A2A 계약으로 돌지만 부르는 쪽이 다릅니다.</p>
-              <ul className="agent_list">
-                {other.map(([name, a]) => (
-                  <AgentRow key={name} name={name} a={a} open={opened.includes(name)} toggle={toggle}
-                    why={ELSEWHERE[name.replace("(fake)", "")]} />
-                ))}
-              </ul>
-            </>
-          )}
         </aside>
 
         {/* 오른쪽: 의뢰를 하나 고르면 추적과 기록이 그 의뢰로 좁혀진다 */}
