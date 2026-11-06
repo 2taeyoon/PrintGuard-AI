@@ -584,7 +584,7 @@ small, .pcard small { font-size: 1.4rem; }
 .agent_side, .map, .shoplist a, .viewer, .sheet, .qa, .qa > summary::before, .ev_kpis div, .qa_shot img,
 .box, .question, .loading_box, .progress, .progress span, .b_track, .b_fill, .wf_track, .wf_bar,
 input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, .ap_steps li,
-.planbox, .livebox, .planlist li, .didlist li, .dc_fontlist li { border-radius: 0; }
+.planbox, .livebox, .planlist li, .didlist li, .dc_fontlist li, .dc_editor, .dc_cmd { border-radius: 0; }
 @media (hover: hover) {
   .ev_toc a:hover, .qa_more a:hover, .qa_body a:hover, .modebar a:hover, .src_name a:hover,
   .card:hover, .shoplist a:hover, button:hover, .pill:hover, .topmenu a:hover { border-radius: 0; }
@@ -706,6 +706,13 @@ input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, 
 .dc_warnbox summary { cursor: pointer; }
 .dc_warnbox ul { margin: 8px 0 0 16px; }
 .dc_shot { display: block; max-width: 360px; width: 100%; margin: 12px 0 0; border: 1px solid var(--borderLight); }
+/* 편집기 — DesignCraft 웹 빌드를 iframe으로 들인다 */
+.dc_editor_wrap { padding-bottom: 20px; }
+.dc_editor { display: block; width: 100%; height: 72vh; min-height: 520px; border: 1px solid var(--borderStrong);
+  background: var(--bgSurface); margin: 12px 0 0; }
+.dc_editor.tall { height: calc(100vh - 120px); }
+.dc_cmd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1.4rem;
+  background: var(--white); padding: 10px 12px; margin: 8px 0; overflow-x: auto; }
 /* 무엇을 만드나 — 판형 묶음 고르기 */
 .kindbar { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
 .kindbar .pill { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; line-height: 1.3; }
