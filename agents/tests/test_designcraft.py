@@ -94,7 +94,7 @@ def test_only_formats_we_can_hand_back_are_accepted():
 
 def test_card_grades():
     g = {s.id: s.grade for s in dc.CARD.skills}
-    assert g == {"mcp_status": "read", "inspect_source": "read", "list_commands": "read",
+    assert g == {"mcp_status": "read", "inspect_source": "read", "list_commands": "read", "compose": "read",
                  "apply_fixes": "A", "edit_document": "A", "create_document": "A"}
     for sid in ("apply_fixes", "create_document"):
         s = next(x for x in dc.CARD.skills if x.id == sid)
@@ -469,3 +469,82 @@ def test_a_new_text_box_gets_a_hangul_font_without_touching_the_rest(tmp_path):
     fams = {f["family"] for f in r["fonts"]}
     assert dc.KO_FONT in fams and dc.DEFAULT_FONT in fams, fams   # 둘이 같이 산다
     assert r["glyph_blocked"] == [], r["glyph_blocked"]           # 네모로 찍힌 글자가 없다
+
+# ---------- 말로 부탁하기 ----------
+# 명령 547개를 펼쳐 놓으면 할 수 있는 일은 많아지지만 처음 온 사람은 무엇을 눌러야 할지 모른다.
+# 그래서 LLM이 명령을 짜 준다. **LLM은 확률적이라 계속 어긋나므로, 어긋남을 코드가 바로잡는다** —
+# 프롬프트를 조이는 것보다 확실하다.
+def test_compose_only_keeps_commands_it_knows():
+    """목록에 없는 명령은 버린다. 버린 것을 돌려줘야 '모든 명령'에서 직접 쓸 수 있다."""
+    fake = lambda _: ('{"says":"넣습니다","commands":['                     # noqa: E731
+                      '{"command":"frame.create","params":{"spread":0,"rect":[1,2,3,4],"content":"text"}},'
+                      '{"command":"file.package","params":{"dir":"C:/어딘가"}},'
+                      '{"command":"지어낸명령","params":{}}]}')
+    r = dc._compose_blocking("아무거나", {"pages": 1, "width_mm": 210, "height_mm": 297, "facing": False}, client=fake)
+    assert [c["command"] for c in r["commands"]] == ["frame.create"]
+    assert r["dropped"] == ["file.package", "지어낸명령"]
+
+
+def test_compose_is_off_without_a_key(monkeypatch):
+    """LLM은 늘 선택이다. 열쇠가 없으면 꺼졌다고 말하고 끝낸다 — 앱의 나머지는 그대로 돈다."""
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    r = dc._compose_blocking("아무거나", {"pages": 1})
+    assert r["available"] is False and r["commands"] == []
+    assert "GEMINI_API_KEY" in r["reason"]
+
+
+def test_a_plan_that_puts_the_font_after_the_text_is_fixed():
+    """실측으로 본 어긋남이다. LLM은 `frame.create(text=…)` 뒤에 글꼴을 세우는데, 글이 먼저
+    들어가 버려 글꼴이 안 먹는다 — 한글이면 PDF에 한 자도 찍히지 않는다.
+    `frame.create → type.char → text.insert` 순서로 돌려 놓아야 한다."""
+    got = dc._normalize([
+        {"command": "frame.create", "params": {"spread": 0, "rect": [1, 2, 3, 4], "content": "text", "text": "한글 제목"}},
+        {"command": "type.char", "params": {"attrs": {"size": 32}}},
+    ])
+    assert [c["command"] for c in got] == ["frame.create", "type.char", "text.insert"]
+    assert "text" not in got[0]["params"]                       # 글은 떼어 냈다
+    assert got[1]["params"]["attrs"]["fontFamily"] == dc.KO_FONT  # 글꼴을 세웠다
+    assert got[1]["params"]["attrs"]["size"] == 32                # LLM이 정한 크기는 살렸다
+    assert got[2]["params"]["text"] == "한글 제목"
+
+
+def test_the_same_text_is_not_inserted_twice():
+    """LLM이 `frame.create`의 text와 `text.insert`로 같은 글을 두 번 넣는다. 한 번만 넣는다."""
+    got = dc._normalize([
+        {"command": "frame.create", "params": {"rect": [1, 2, 3, 4], "content": "text", "text": "이태윤"}},
+        {"command": "text.insert", "params": {"text": "이태윤"}},
+    ])
+    assert [c["command"] for c in got].count("text.insert") == 1
+
+
+def test_hangul_always_gets_a_font_even_when_the_plan_forgot():
+    got = dc._normalize([
+        {"command": "frame.create", "params": {"rect": [1, 2, 3, 4], "content": "text"}},
+        {"command": "text.insert", "params": {"text": "한글만 넣었다"}},
+    ])
+    assert [c["command"] for c in got] == ["frame.create", "type.char", "text.insert"]
+    assert got[1]["params"]["attrs"]["fontFamily"] == dc.KO_FONT
+
+
+def test_latin_text_is_left_alone():
+    """한글이 아니면 글꼴을 세우지 않는다 — 문서가 고른 글꼴을 우리가 바꿀 이유가 없다."""
+    got = dc._normalize([
+        {"command": "frame.create", "params": {"rect": [1, 2, 3, 4], "content": "text"}},
+        {"command": "text.insert", "params": {"text": "Latin only"}},
+    ])
+    assert [c["command"] for c in got] == ["frame.create", "text.insert"]
+
+
+def test_compose_refuses_an_empty_request():
+    req = AgentRequest(meta=meta(), skill="compose", input={"request": "   "})
+    r = asyncio.run(dc.compose(req))
+    assert r["status"] == "rejected" and r["outcome"] == "INVALID_INPUT"
+
+
+@needs_cli
+def test_the_plan_can_only_reach_commands_the_engine_really_has():
+    """허용 목록이 엔진에 실제로 있는 명령이어야 한다. 하나라도 사라지면 LLM이 그것을 짜 줄 때
+    늘 실패하는데, 그 이유가 화면에 드러나지 않는다."""
+    ids = {c["id"] for c in dc._commands_blocking()["commands"]}
+    missing = [c for c in dc.COMPOSE_OK if c not in ids]
+    assert not missing, f"엔진에 없는 명령이 허용 목록에 있다: {missing}"

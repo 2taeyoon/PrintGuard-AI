@@ -325,13 +325,22 @@ export default function WhyPage() {
         <Care>쓰임이 다른 두 글을 화면 여기저기에 흩어 두면 어느 것을 눌러야 하는지 알 수 없어 한자리에 두었습니다.</Care>
       </QA>
 
-      <QA q="다른 도구(클로드·커서)에서 이 검수를 부를 수 있나요?">
-        <Why>검수를 화면에서만 쓸 수 있으면, 원고를 고치는 자리에서 쓰려고 할 때마다 사람이 파일을 날라야 합니다.</Why>
-        <How>같은 에이전트를 <b>MCP 서버</b>로도 엽니다(<code>pg_agents.mcp_server</code>). 같은 PC에서 켜면 띄운 사람이 주인이라
-          설정만 하면 바로 돌고, 다른 PC에서 붙일 때는 <code>python -m pg_agents.mktoken</code>으로 받은 토큰이 있어야 합니다.</How>
+      <QA q="클로드·커서에서 대화로 검수하고 만들 수 있나요?">
+        <Why>화면에서만 쓸 수 있으면, 원고를 쓰는 자리에서 쓰려고 할 때마다 사람이 파일을 날라야 합니다.</Why>
+        <How><b>됩니다.</b> 같은 에이전트를 <b>MCP 서버</b>로도 엽니다(<code>pg_agents.mcp_server</code>). 같은 PC에서 켜면 띄운
+          사람이 주인이라 설정만 하면 바로 돌고, 다른 PC에서 붙일 때는 <code>python -m pg_agents.mktoken</code>으로 받은
+          토큰이 있어야 합니다.</How>
+        <Result>검수뿐 아니라 <b>만드는 일도 그 자리에서</b> 됩니다. <code>make_document</code>로 문서를 만들고,
+          <code>compose_document</code>에 “전단 맨 위에 제목” 식으로 말하면 할 일을 짜 주고,
+          <code>edit_document</code>가 그것을 문서에 넣습니다. 쓸 수 있는 것을 찾을 때는
+          <code>list_engine_commands</code>를 씁니다.</Result>
         <Result>주소로 열면 두 가지가 달라집니다 — <code>check_pdf(path=…)</code>는 막히고(그 path는 <b>서버 PC의 파일</b>이라,
           멀리서 남의 PC 파일을 고르는 길이 됩니다) 파일을 올려야 하며, 보고서 쓰기는 <b>쓰기 권한이 있는 토큰</b>만 통합니다.</Result>
         <Care>MCP는 사람 승인을 대신하지 못합니다. 사람이 승인해야 하는 등급(C)은 대기만 돌려주고, 승인은 화면에서 사람이 합니다.</Care>
+        <Care><b>DesignCraft를 클로드에 직접 붙이는 것과는 다릅니다.</b> 직접 붙이면 읽고 쓸 폴더를 가두는 두 값
+          (<code>--automation-read-root</code>·<code>--automation-write-root</code>)을 본인이 챙겨야 합니다.
+          <b>빼면 디스크 전체가 열립니다</b> — 실제로 확인해 보니 플래그 없이 띄운 MCP가 아무 폴더의 파일을 읽고
+          아무 자리에 파일을 썼습니다. 이 앱은 두 값이 없으면 아예 띄우지 않고, 의뢰마다 그 의뢰 폴더로 가둡니다.</Care>
       </QA>
 
       <QA q="‘작업 만들기’는 무엇을 하는 화면인가요?">

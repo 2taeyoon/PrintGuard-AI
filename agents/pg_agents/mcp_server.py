@@ -376,3 +376,69 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+# ---------- 인쇄물 만들기(작업 만들기 화면과 같은 길) ----------
+# 화면에서만 만들 수 있으면, 원고를 쓰는 자리에서 쓰려고 할 때마다 사람이 창을 옮겨 다녀야 한다.
+# 클로드·커서에서 **말로 부탁해 만드는** 길을 같은 창구로 연다.
+@mcp.tool()
+async def make_document(kind: str = "blank", width_mm: float = 210, height_mm: float = 297,
+                        pages: int = 1, facing: bool = False, margin_mm: float = 15,
+                        bleed_mm: float = 3, columns: int = 1, gutter_mm: float = 5) -> dict[str, Any]:
+    """인디자인 문서를 새로 만든다(명함·전단·포스터·책 무엇이든 — 크기와 쪽수로 정한다).
+
+    kind="sample"이면 짜인 샘플 문서를 받는다. 돌려주는 context_id로 edit_document를 이어 부른다.
+    """
+    body: dict[str, Any] = {"start": "sample" if kind == "sample" else "blank"}
+    if kind != "sample":
+        body |= {"width_mm": width_mm, "height_mm": height_mm, "pages": pages, "facing": facing,
+                 "margin_mm": margin_mm, "bleed_mm": bleed_mm, "columns": columns, "gutter_mm": gutter_mm}
+    r = await _orch("POST", "/designcraft/create", json=body)
+    return {"context_id": r["context_id"], "filename": r["filename"], "pages": r["pages"],
+            "width_mm": r.get("width_mm"), "height_mm": r.get("height_mm"),
+            "preflight": r.get("preflight"), "missing_fonts": r.get("missing_fonts"),
+            "note": "edit_document로 내용을 넣고, 다 되면 start_review로 검수에 넘길 수 있습니다."}
+
+
+@mcp.tool()
+async def list_engine_commands(find: str = "", limit: int = 40) -> dict[str, Any]:
+    """문서에 쓸 수 있는 엔진 명령(547개)을 찾는다. find에 글·표·쪽 같은 말이나 id 조각을 준다.
+
+    각 명령의 인자 설명은 **엔진이 적어 준 글 그대로**다. 이 설명을 보고 edit_document에 넘길 params를 만든다.
+    """
+    rows = (await _orch("GET", "/designcraft/commands")).get("commands") or []
+    q = find.strip().lower()
+    if q:
+        rows = [c for c in rows if q in f"{c['id']} {c['label']} {' '.join(c['menu'])}".lower()]
+    return {"count": len(rows), "commands": rows[:max(1, min(limit, 120))]}
+
+
+@mcp.tool()
+async def edit_document(context_id: str, commands: list[dict[str, Any]] | None = None,
+                        undo: bool = False) -> dict[str, Any]:
+    """만든 문서에 엔진 명령을 얹는다. commands는 [{"command": "frame.create", "params": {…}}] 모양이다.
+
+    **한 번에 전부 아니면 전무**다 — 하나가 실패하면 아무것도 저장되지 않고 어디서 멈췄는지 돌려준다.
+    undo=True면 바로 앞 단계로 되돌린다(한 단계만). 올린 원본은 이 도구로 고칠 수 없다(409).
+    """
+    r = await _orch("POST", f"/designcraft/{context_id}/edit",
+                    json={"commands": commands or [], "undo": undo})
+    if not r.get("ok"):
+        raise ToolError(f"{(r.get('failed') or {}).get('command')}에서 멈췄습니다: "
+                        f"{(r.get('failed') or {}).get('reason')} — 아무것도 저장하지 않았습니다")
+    return {"context_id": context_id, "pages": r["pages"], "items": r["items"], "stories": r["stories"],
+            "applied": [c["command"] for c in r.get("applied") or []],
+            "preflight": r.get("preflight"), "missing_fonts": r.get("missing_fonts"),
+            "can_undo": r.get("can_undo")}
+
+
+@mcp.tool()
+async def compose_document(context_id: str, request: str) -> dict[str, Any]:
+    """말로 부탁한 것을 엔진 명령으로 **짜 준다**(고치지는 않는다). 돌려받은 commands를 edit_document에 넘긴다.
+
+    에이전트를 돌리는 PC에 LLM 열쇠가 없으면 available=false로 돌아온다 — 그때는
+    list_engine_commands를 보고 직접 명령을 만들면 된다.
+    """
+    r = await _orch("POST", f"/designcraft/{context_id}/compose", json={"request": request})
+    return {"available": r.get("available"), "says": r.get("says"), "commands": r.get("commands"),
+            "dropped": r.get("dropped"), "reason": r.get("reason"),
+            "note": "이 도구는 짜 주기만 합니다. 실제로 넣으려면 edit_document를 부르세요."}
