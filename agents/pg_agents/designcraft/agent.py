@@ -18,7 +18,17 @@ skill
 - mcp_status      : MCP가 연결되는지, 도구가 몇 개인지 (read)
 - inspect_source  : 원본을 열어 쪽·스토리·preflight를 보고, 검수용 PDF를 뽑는다 (read)
 - apply_fixes     : 교정 목록을 반영하고 PDF/IDML로 내보낸다 (A — 묻고 나서, safety를 거친다)
-- create_document : 새 문서(빈 판형·샘플 잡지)를 만들어 IDML로 내보낸다 (A — safety를 거친다)
+- create_document : 새 문서(빈 판형·샘플)를 만들어 IDML로 내보낸다 (A — safety를 거친다)
+- list_commands   : 엔진이 받는 명령 전부(547개)와 인자 설명 (read)
+- edit_document   : 만든 문서에 엔진 명령을 적용한다 (A — safety를 거친다)
+
+**인디자인이 하는 일 전부가 `edit_document`로 온다.** 판형만 잡아 주는 것이 아니다 — 글상자·도형·선·
+사진·표·쪽·스타일·색·목차·QR·XML·데이터 병합까지 엔진의 547개 명령이 그대로 열려 있다. 우리가 명령을
+골라 담는 대신 **문서를 다시 열어 명령을 얹고 저장하는 일**만 맡는다. 그래서 할 수 있는 일의 범위는
+우리 코드가 아니라 엔진이 정한다 — 엔진이 늘면 이 앱도 같이 는다.
+
+파일 접근은 `--automation-*-root`가 막는다. 명령을 열어 줘도 **그 폴더 밖은 읽지도 쓰지도 못한다** —
+명령 하나하나를 고르는 것보다 이 울타리가 확실하다(`script.run`도 엔진 명령줄만 돌린다).
 
 **검수 흐름 안에 있다.** 편집 파일로 의뢰가 들어오면 오케스트레이터의 plan 마지막 단계가 이
 에이전트다 — 검수가 끝나고 교정 제안이 있으면 "원본에 바로 반영할까요?"를 묻고, 그렇다고 하면
@@ -31,8 +41,10 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import os
 import shutil
+import time
 from pathlib import Path
 from typing import Any
 
@@ -78,7 +90,18 @@ CARD = AgentCard.model_validate({
          "output_schema": {"applied": "[]", "failed": "[]", "pdf_ref": "sha256", "source_out": "고친 편집 파일 이름",
                            "shots": "[{page, before, after}] 바뀐 쪽의 전후 그림",
                            "fonts": "[]", "missing_fonts": "string[]", "trust": "{}"}},
-        {"id": "create_document", "description": "새 문서(빈 판형 또는 샘플 잡지)를 만들어 IDML·PDF로 내보낸다(파일 쓰기는 safety를 거친다)", "grade": "A",
+        {"id": "list_commands", "description": "DesignCraft 엔진이 받는 명령 전부(547개)와 각 명령의 인자 설명", "grade": "read",
+         "allowed_requesters": ["orchestrator", "mcp"],
+         "input_schema": {}, "output_schema": {"commands": "[{id, label, menu, params, enabled}]", "count": "number"}},
+        {"id": "edit_document", "description": "만든 문서에 엔진 명령을 적용한다 — 인디자인이 하는 일 전부가 여기로 온다(파일 쓰기는 safety를 거친다)", "grade": "A",
+         "allowed_requesters": ["orchestrator"],
+         "input_schema": {"src_ref": "sha256", "filename": "string",
+                          "commands": "[{command: 'frame.create' 같은 엔진 명령 id, params: {}}]",
+                          "undo": "boolean? 참이면 명령 대신 바로 앞 단계로 되돌린다"},
+         "output_schema": {"ok": "boolean", "applied": "[]", "failed": "{command, reason}?", "pages": "number",
+                           "preflight": "Issue[]", "pdf_ref": "sha256", "shots": "[쪽 그림 파일 이름]",
+                           "can_undo": "boolean"}},
+        {"id": "create_document", "description": "새 문서(빈 판형 또는 샘플)를 만들어 IDML·PDF로 내보낸다(파일 쓰기는 safety를 거친다)", "grade": "A",
          "allowed_requesters": ["orchestrator"],
          "input_schema": {"start": "blank | sample", "width_mm": "number", "height_mm": "number", "pages": "number",
                           "facing": "boolean", "columns": "number", "gutter_mm": "number", "margin_mm": "number",
@@ -475,6 +498,157 @@ async def apply_fixes(req: AgentRequest) -> dict[str, Any]:
                          "data_summary": f"교정 {n + bad}건 중 {n}건 반영, {bad}건 실패"}}
 
 
+# ---------- 엔진 명령 ----------
+# **인디자인이 하는 일 전부를 여기로 들인다.** 우리가 "글상자·도형·표"를 하나씩 코드로 감싸면
+# 감싼 것만 할 수 있는 앱이 된다. 엔진은 547개를 받으므로 그 목록을 그대로 내주고, 받은 명령을
+# 그대로 얹는다. 할 수 있는 일의 범위를 우리 코드가 아니라 엔진이 정하게 하는 쪽이 맞다.
+#
+# 파일 접근은 `--automation-*-root`가 막는다. 명령을 열어 줘도 **그 폴더 밖은 읽지도 쓰지도
+# 못한다** — 명령을 하나하나 고르는 것보다 이 울타리가 확실하다(`script.run`도 엔진 명령줄만 돈다).
+MAX_EDIT_CMDS = max(1, int(os.environ.get("PG_DESIGNCRAFT_MAX_CMDS", "40")))
+MAX_PREVIEW_PAGES = max(1, int(os.environ.get("PG_DESIGNCRAFT_PREVIEW_PAGES", "8")))
+
+
+def _commands_blocking() -> dict[str, Any]:
+    DC_OUT.mkdir(parents=True, exist_ok=True)
+    with Mcp(read_roots=[DC_OUT], write_roots=[DC_OUT]) as m:
+        r = m.tool("list_commands")
+    rows = (r or {}).get("commands") if isinstance(r, dict) else r
+    rows = rows if isinstance(rows, list) else []
+    return {"commands": [{"id": c.get("id"), "label": c.get("label"), "menu": c.get("menu") or [],
+                          "params": c.get("params") or "", "enabled": bool(c.get("enabled"))}
+                         for c in rows if c.get("id")],
+            "count": len(rows)}
+
+
+async def list_commands(_: AgentRequest) -> dict[str, Any]:
+    r = await asyncio.to_thread(_commands_blocking)
+    return {"status": "completed", "output": r,
+            "evidence": {"queries": [], "ref_ids": [], "data_summary": f"엔진 명령 {r['count']}개"}}
+
+
+def _state(m: Mcp, out: Path) -> dict[str, Any]:
+    """고친 뒤의 모습. 쪽수·글꼴·preflight와 쪽 그림, 그리고 내려받을 PDF."""
+    doc = m.tool("inspect_document")
+    pf = m.ex("preflight.run", minPpi=150) or {}
+    issues = pf.get("issues", [])
+    pages = int(doc.get("pageCount") or 0)
+    pdf = out / "doc.pdf"
+    m.ex("file.exportPdf", path=str(pdf))
+    shots: list[str] = []
+    for i in range(min(pages, MAX_PREVIEW_PAGES)):
+        name = f"page{i + 1}.png"
+        if _shot(m, i + 1, out / name):
+            shots.append(name)
+    return {
+        "pages": pages,
+        "shots": shots,
+        "items": sum(len(sp.get("items") or []) for sp in doc.get("spreads") or []),
+        "stories": len(doc.get("stories") or []),
+        "preflight": [{"severity": i.get("severity"), "kind": i.get("kind"), "message": i.get("message"),
+                       "page": (i["page"] + 1) if isinstance(i.get("page"), int) else None} for i in issues],
+        **_font_summary(_fonts(m), issues),
+        "pdf_path": str(pdf),
+    }
+
+
+def _edit_blocking(src: Path, ext: str, out: Path, cmds: list[dict[str, Any]]) -> dict[str, Any]:
+    """명령을 얹고, **전부 됐을 때만** 저장한다.
+
+    중간에 하나가 실패하면 아무것도 저장하지 않는다. 절반만 들어간 문서를 돌려주면 무엇이
+    들어갔는지 사람이 알 수 없고, 되돌릴 자리도 흐려진다.
+
+    되돌릴 자리(`undo`)는 **파이썬이** 만든다. MCP에는 문서가 있는 폴더 쓰기를 열지 않기
+    때문이다 — 고친 결과를 제자리에 돌려 놓는 일도 파이썬이 한다(울타리는 그대로 둔다).
+    """
+    undo = out / f"undo{ext}"
+    shutil.copyfile(src, undo)
+    with Mcp(read_roots=[_pkg_root(src), out], write_roots=[out]) as m:
+        _open(m, src, ext)
+        applied: list[dict[str, Any]] = []
+        for n, c in enumerate(cmds):
+            cmd, params = str(c.get("command") or ""), c.get("params") or {}
+            try:
+                res = m.ex(cmd, **params)
+            except McpError as e:
+                return {"ok": False, "applied": applied,
+                        "failed": {"command": cmd, "reason": str(e)[:400], "not_run": len(cmds) - n - 1},
+                        "can_undo": undo.is_file()}
+            applied.append({"command": cmd, "result": res if isinstance(res, dict) else None})
+        work = out / f"work{ext}"
+        m.ex("file.exportIdml" if ext == ".idml" else "file.saveAs", path=str(work))
+        state = _state(m, out)
+    shutil.copyfile(work, src)      # 고친 문서를 제자리로
+    return {"ok": True, "applied": applied, "failed": None, "can_undo": True, **state}
+
+
+def _undo_blocking(src: Path, ext: str, out: Path) -> dict[str, Any]:
+    """바로 앞 단계로 되돌린다. **한 단계만** 간다 — 되돌린 자리를 지워 두 번 눌러도
+    더 과거로 가지 않게 한다(어디까지 돌아갔는지 모르는 것이 더 무섭다)."""
+    undo = out / f"undo{ext}"
+    if not undo.is_file():
+        raise FileNotFoundError("되돌릴 단계가 없습니다")
+    shutil.copyfile(undo, src)
+    with Mcp(read_roots=[_pkg_root(src), out], write_roots=[out]) as m:
+        _open(m, src, ext)
+        state = _state(m, out)
+    undo.unlink(missing_ok=True)
+    return {"ok": True, "applied": [], "failed": None, "undone": True, "can_undo": False, **state}
+
+
+async def edit_document(req: AgentRequest) -> dict[str, Any]:
+    src_ref, filename = str(req.input.get("src_ref") or ""), str(req.input.get("filename") or "")
+    undo = bool(req.input.get("undo"))
+    cmds = req.input.get("commands") or []
+    if not undo:
+        if not isinstance(cmds, list) or not cmds:
+            return {"status": "rejected", "outcome": "INVALID_INPUT", "output": {"message": "적용할 명령이 없습니다"}}
+        if len(cmds) > MAX_EDIT_CMDS:
+            return {"status": "rejected", "outcome": "INVALID_INPUT",
+                    "output": {"message": f"한 번에 {MAX_EDIT_CMDS}개까지만 받습니다(받은 것 {len(cmds)}개)"}}
+        for c in cmds:
+            if not isinstance(c, dict) or not str(c.get("command") or "").strip():
+                return {"status": "rejected", "outcome": "INVALID_INPUT",
+                        "output": {"message": "명령은 {command, params} 모양이어야 합니다"}}
+            if c.get("params") is not None and not isinstance(c.get("params"), dict):
+                return {"status": "rejected", "outcome": "INVALID_INPUT",
+                        "output": {"message": f"{c.get('command')}의 params가 묶음(JSON 객체)이 아닙니다"}}
+    src, ext = _src_path(src_ref, filename)
+
+    # 파일을 쓰는 행동이므로 safety를 거친다(A 등급). 닿지 못하면 거절한다(fail-closed).
+    # 되돌리기도 같은 skill이다. 행동 이름을 따로 지어 내면 safety가 카드에서 그 skill을 못 찾아
+    # 거절한다('레지스트리에 없는 행동') — 등급은 카드에서 오고, 카드에 없는 이름은 등급이 없다.
+    what = "designcraft.edit_document"
+    # 열쇠에 시각을 섞는다. 이 화면에서는 **똑같은 명령을 일부러 여러 번** 쓴다(같은 글상자를 둘
+    # 넣는 일). 시각이 없으면 두 번째가 첫 번째의 결정을 그대로 물려받아, 기록에는 한 건만 남는다.
+    shape = json.dumps(cmds, sort_keys=True, default=str, ensure_ascii=False)
+    key = "designcraft:" + hashlib.sha256(
+        f"{req.meta.context_id}|{src_ref}|{what}|{undo}|{shape}|{time.time():.3f}".encode()).hexdigest()[:20]
+    gate = await call_agent("safety", AgentRequest(
+        meta=req.meta.model_copy(update={"idempotency_key": key}), skill="execute",
+        input={"action": what, "idempotency_key": key,
+               "params": {"context_id": req.meta.context_id, "commands": len(cmds), "ext": ext, "undo": undo}}))
+    d = gate.output if gate.status == TaskStatus.COMPLETED else None
+    if not d or d.get("decision") != "executed":
+        return {"status": "rejected", "outcome": "SAFETY_REJECTED",
+                "output": {"reason": (d or {}).get("reason", "safety에 닿지 못해 거절(fail-closed)")}}
+
+    out = _job_dir(req.meta.context_id)
+    r = (await asyncio.to_thread(_undo_blocking, src, ext, out) if undo
+         else await asyncio.to_thread(_edit_blocking, src, ext, out, cmds))
+    if p := r.pop("pdf_path", None):
+        r["pdf_ref"] = await asyncio.to_thread(_store_pdf, Path(p))
+    r["decision"] = d
+    if not r["ok"]:
+        return {"status": "completed", "outcome": "failed", "output": r,
+                "evidence": {"queries": [], "ref_ids": [d["execution_id"]],
+                             "data_summary": f"{r['failed']['command']}에서 멈춤 — 아무것도 저장하지 않았습니다"}}
+    summary = "바로 앞 단계로 되돌렸습니다" if undo else f"명령 {len(r['applied'])}개 적용"
+    return {"status": "completed", "output": r,
+            "evidence": {"queries": [], "ref_ids": [d["execution_id"], (r.get("pdf_ref") or "")[:12]],
+                         "data_summary": f"{summary}, {r['pages']}쪽"}}
+
+
 # ---------- 새 문서 만들기 ----------
 # 검수·수정은 '남이 만든 파일'을 받는 일이다. 그런데 원본이 아예 없는 사람도 있다. 그 사람에게
 # "인디자인에서 먼저 만들어 오세요"라고 하면 거기서 끝난다. DesignCraft는 문서를 만들 수도 있으므로,
@@ -586,4 +760,5 @@ async def create_document(req: AgentRequest) -> dict[str, Any]:
 
 
 app = create_agent_app(CARD, {"mcp_status": mcp_status, "inspect_source": inspect_source, "apply_fixes": apply_fixes,
-                              "create_document": create_document})
+                              "create_document": create_document,
+                                "list_commands": list_commands, "edit_document": edit_document})

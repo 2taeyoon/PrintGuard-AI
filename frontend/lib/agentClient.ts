@@ -195,6 +195,42 @@ export const applyFixes = (ctx: string, fixes: Fix[]) =>
 /** 검수 흐름 안에서 원본을 고친 결과(`job.results.fix`). 고치지 않기로 했으면 `skipped`만 온다. */
 export type FixResult = Partial<ApplyResult> & { skipped?: boolean; asked?: number };
 
+/* ---------- 인디자인이 하는 일 전부 ----------
+   DesignCraft 엔진은 547개 명령을 받는다. 우리가 그중 몇 개를 코드로 감싸면 감싼 것만 할 수 있는
+   앱이 된다. 그래서 **명령표를 그대로 받아** 화면에 펼치고, 고른 명령을 그대로 얹는다.
+   할 수 있는 일의 범위를 우리 코드가 아니라 엔진이 정하게 하는 쪽이 맞다. */
+
+/** 엔진 명령 하나. `params`는 **엔진이 적어 준 인자 설명을 그대로** 들고 온다 —
+ *  우리가 547개를 번역해 둘 수는 없고, 번역해 두면 엔진이 바뀔 때 거짓말이 된다. */
+export type EngineCommand = { id: string; label: string; menu: string[]; params: string; enabled: boolean };
+/** 명령표는 엔진 버전마다 고정이라 서버가 한 번 받아 들고 있다. 주인을 가리지 않는다(누구의 파일도 없다). */
+export const listCommands = async () =>
+  j<{ commands: EngineCommand[]; count: number }>(await fetch(`${orchUrl()}/designcraft/commands`));
+
+export type EngineStep = { command: string; params: Record<string, unknown> };
+/** 한 단계를 얹은 뒤의 문서. 실패하면 `ok:false`이고 **아무것도 저장되지 않는다**(전부 아니면 전무). */
+export type EditResult = FontState & {
+  ok: boolean;
+  applied: { command: string; result: Record<string, unknown> | null }[];
+  failed: { command: string; reason: string; not_run: number } | null;
+  undone?: boolean; can_undo: boolean;
+  pages: number; shots: string[]; items: number; stories: number;
+  preflight: PreflightIssue[]; pdf_ref?: string;
+};
+export const editDocument = (ctx: string, commands: EngineStep[]) =>
+  post<EditResult>(`/designcraft/${ctx}/edit`, { commands });
+/** 바로 앞 단계로. **한 단계만** 간다 — 어디까지 돌아갔는지 모르는 것이 더 무섭다. */
+export const undoEdit = (ctx: string) => post<EditResult>(`/designcraft/${ctx}/edit`, { undo: true });
+
+/** 문서에 넣을 사진을 의뢰 폴더에 둔다. 돌려주는 `path`를 `file.place`에 그대로 쓴다.
+ *  브라우저의 사진은 에이전트 PC에 없으므로, 먼저 그 폴더 안으로 올려야 엔진이 읽는다. */
+export async function uploadAsset(ctx: string, file: File) {
+  const fd = new FormData();
+  fd.append("file", file);
+  return j<{ path: string; name: string; bytes: number; original: string }>(
+    await call(`/designcraft/${ctx}/asset`, { method: "POST", body: fd }));
+}
+
 /** 새 문서를 만든다(빈 판형 또는 샘플 잡지). 돌아오는 것이 **올린 원본과 같은 모양**이라
  *  그대로 검수에 넘길 수 있다(`createJob(null, opts, context_id)`). */
 export type MadeDoc = SourceView & { made: true; width_mm: number; height_mm: number };

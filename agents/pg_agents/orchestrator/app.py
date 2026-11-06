@@ -54,8 +54,7 @@ CARD = AgentCard.model_validate({
     "name": NAME,
     "description": "나머지 에이전트를 시키는 쪽. 올린 파일에 맞는 차례(plan)를 세우고 부서 에이전트를 그 차례대로 "
                    "불러 결과를 모은다. 중간에 누가 물으면 사람에게 옮기고, 답을 받아 그 단계만 다시 부른다. "
-                   "되돌릴 수 없는 일은 안전 관문을 거치게 한다. 시키는 쪽이라 요청받는 일(skill)은 없다 — "
-                   "이 에이전트를 부르는 것은 브라우저다.",
+                   "되돌릴 수 없는 일은 안전 관문을 거치게 한다.",
     "url": f"http://127.0.0.1:{PORTS[NAME]}",
     "skills": [],
 })
@@ -470,6 +469,23 @@ async def report(ctx: str, authorization: str | None = Auth) -> dict[str, Any]:
 # 의뢰 번호는 PDF 검수(ctx_job_…)와 따로 쓴다(ctx_dc_…). 주인 가리기는 PDF 쪽과 같은 열쇠를 쓴다.
 MAX_SOURCE = max(1, int(os.environ.get("PG_MAX_SOURCE_MB", "60"))) * 1024 * 1024
 MAX_FIXES = max(1, int(os.environ.get("PG_MAX_FIXES", "300")))
+MAX_ASSET = max(1, int(os.environ.get("PG_MAX_ASSET_MB", "20"))) * 1024 * 1024
+ASSET_EXT = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".pdf", ".eps", ".ai", ".svg", ".psd"}
+# 엔진 명령표는 버전마다 고정이다. 한 번 받아 들고 있는다(물을 때마다 MCP가 새로 뜬다).
+_CMD_CACHE: dict[str, Any] | None = None
+# 문서 고치기는 한 번에 MCP 프로세스 하나를 띄우고 PDF·그림까지 뽑는다. 연타로 부르면 PC가 멈춘다.
+_EDIT_AT: dict[str, float] = {}
+EDIT_GAP = float(os.environ.get("PG_DESIGNCRAFT_EDIT_GAP", "1.0"))
+
+
+def _too_often_edit(ctx: str) -> None:
+    now = time.time()
+    if now - _EDIT_AT.get(ctx, 0.0) < EDIT_GAP:
+        raise HTTPException(429, "조금 빠릅니다. 한 단계가 끝나고 눌러 주세요")
+    _EDIT_AT[ctx] = now
+    for k, t in list(_EDIT_AT.items()):     # 오래된 자리는 버린다
+        if now - t > 3600:
+            _EDIT_AT.pop(k, None)
 # INDD는 받지 않는다 — 고친 결과를 INDD로 돌려줄 수 없어서다(자세한 이유는 designcraft 에이전트에).
 DC_EXT = {".idml", ".designcraft"}
 DC_REFUSED = {
@@ -630,6 +646,86 @@ async def dc_create(body: dict[str, Any], authorization: str | None = Auth) -> d
     return {"data": {"context_id": ctx, "filename": made["doc"], "made": True,
                      "width_mm": made.get("width_mm"), "height_mm": made.get("height_mm"),
                      **(ins.get("output") or {})}, "meta": {}}
+
+
+@app.get("/designcraft/commands")
+async def dc_commands() -> dict[str, Any]:
+    """엔진이 받는 명령 전부(547개)와 인자 설명.
+
+    **한 번 받아서 들고 있는다.** 명령표는 엔진 버전마다 고정이고, 한 번 물을 때마다 MCP 프로세스가
+    새로 뜬다(1초쯤). 화면이 검색할 때마다 띄울 이유가 없다.
+    주인을 가리지 않는다 — 누구의 파일도 담기지 않은 '엔진이 뭘 할 수 있나'이기 때문이다.
+    """
+    global _CMD_CACHE
+    if _CMD_CACHE is None:
+        r = await _ask("designcraft", "list_commands", "ctx_dc_commands", {})
+        if r.get("status") != "completed":
+            raise HTTPException(502, "명령 목록을 받지 못했습니다. 원본 수정 에이전트가 켜져 있는지 보세요")
+        _CMD_CACHE = r.get("output") or {}
+    return {"data": _CMD_CACHE, "meta": {}}
+
+
+@app.post("/designcraft/{ctx}/edit")
+async def dc_edit(ctx: str, body: dict[str, Any], authorization: str | None = Auth) -> dict[str, Any]:
+    """만든 문서에 엔진 명령을 얹는다 — 인디자인이 하는 일 전부가 이 창구로 온다.
+
+    **만든 문서만 고친다.** 올린 원본을 이 창구로 고치면 올린 사람의 파일을 제자리에서 덮어쓰게
+    된다 — 되돌릴 것이 없어진다. 올린 원본을 고치는 길은 검수 끝의 `apply_fixes` 하나뿐이고,
+    그쪽은 올린 파일을 그대로 두고 **사본**을 내준다.
+    """
+    j = _dc_owned(ctx, _writer(authorization).subject)
+    if not j.get("made"):
+        raise HTTPException(409, "올리신 원본은 이 창구로 고치지 않습니다. 올린 파일은 그대로 두고, "
+                                 "검수가 끝난 자리에서 사본을 고쳐 드립니다")
+    _too_often_edit(ctx)
+    undo = bool(body.get("undo"))
+    cmds = body.get("commands")
+    if not undo and (not isinstance(cmds, list) or not cmds):
+        raise HTTPException(400, "적용할 명령이 없습니다")
+    r = await _ask("designcraft", "edit_document", ctx,
+                   {"src_ref": j["src_ref"], "filename": j.get("doc") or j["filename"],
+                    "commands": cmds or [], "undo": undo})
+    if r.get("status") != "completed":
+        raise HTTPException(502, (((r.get("output") or {}).get("reason") or (r.get("output") or {}).get("message"))
+                                  or "문서를 고치지 못했습니다")[:300])
+    out = r.get("output") or {}
+    # 고쳐진 모습으로 보관된 상태를 갈아 둔다. 그래야 검수로 넘길 때와 새로 고쳐 열 때 같은 것을 본다.
+    if out.get("ok"):
+        keep = {k: v for k, v in out.items() if k not in ("decision", "applied", "failed", "ok", "undone")}
+        j["inspect"] = {**(j.get("inspect") or {}), **keep}
+    return {"data": out, "meta": {"status": r.get("status")}}
+
+
+@app.post("/designcraft/{ctx}/asset")
+async def dc_asset(ctx: str, file: UploadFile = File(...), authorization: str | None = Auth) -> dict[str, Any]:
+    """문서에 넣을 사진을 의뢰 폴더에 둔다. 돌려주는 경로를 `file.place`에 그대로 쓴다.
+
+    사진 없이는 '인디자인으로 만들 수 있는 모든 것'이 말이 안 된다. 그런데 브라우저의 사진은
+    에이전트 PC에 없으므로, 먼저 **의뢰 폴더 안으로** 받아 둬야 엔진이 읽을 수 있다
+    (MCP는 그 폴더 밖을 읽지 못한다 — 그래서 여기로 받는다).
+    """
+    j = _dc_owned(ctx, _writer(authorization).subject)
+    if not j.get("made"):
+        raise HTTPException(409, "만든 문서에만 사진을 넣습니다")
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in ASSET_EXT:
+        raise HTTPException(400, f"넣을 수 없는 그림 형식입니다: {ext or '(확장자 없음)'} — "
+                                 f"{', '.join(sorted(ASSET_EXT))} 중 하나여야 합니다")
+    d = DC_OUT / ctx / "assets"
+    d.mkdir(parents=True, exist_ok=True)
+    name = f"{secrets.token_hex(6)}{ext}"
+    dest = d / name
+    size = 0
+    with dest.open("wb") as w:
+        while blk := await file.read(1 << 20):
+            size += len(blk)
+            if size > MAX_ASSET:
+                dest.unlink(missing_ok=True)
+                raise HTTPException(413, f"그림이 너무 큽니다(최대 {MAX_ASSET // (1024 * 1024)}MB)")
+            w.write(blk)
+    log_event(ctx, "dc_asset_added", source=NAME, payload={"bytes": size, "ext": ext})
+    return {"data": {"path": str(dest), "name": name, "bytes": size,
+                     "original": file.filename or name}, "meta": {}}
 
 
 @app.get("/designcraft/{ctx}")

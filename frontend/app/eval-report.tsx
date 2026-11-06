@@ -95,11 +95,11 @@ export default function EvalReport() {
     <>
       <Head />
       <p className="ev_lead">이 앱이 고른 설정은 여섯입니다 — 검색 모델, 자르기, 가중치, 색 변환, 종이 흰색 보정, 교정 탐지기.
-        각각을 무엇과 비교해서 골랐는지 전부 수치로 적었습니다.</p>
+        각각을 무엇과 비교해서 골랐는지 전부 수치로 적었습니다. 여기에 <b>글꼴이 없을 때 결과가 어디까지 맞는가</b>를 엔진으로 직접 잰 값도 더했습니다.</p>
       <p className="ev_lead">화면의 숫자는 저장소의 평가 스크립트가 남긴 산출물을 그대로 읽은 값입니다. 다시 재면 이 화면도 같이 바뀝니다.</p>
 
       <Toc items={[{ id: "search", label: "가이드 검색" }, { id: "color", label: "색 변환 검증" }, { id: "profiles", label: "종이별 색 차이" },
-        { id: "substrate", label: "종이 흰색 보정" }, { id: "proof", label: "교정 탐지기" }, { id: "notread", label: "재지 않은 것" }]} />
+        { id: "substrate", label: "종이 흰색 보정" }, { id: "proof", label: "교정 탐지기" }, { id: "fonts", label: "글꼴이 없을 때" }, { id: "notread", label: "재지 않은 것" }]} />
 
       {s && (
         <Section id="search" title="1. 가이드 검색 — 어떤 자르기·어떤 모델·어떤 가중치인가"
@@ -331,7 +331,87 @@ export default function EvalReport() {
         </Section>
       )}
 
-      <Section id="notread" title="6. 재지 않은 것" lead="평가에 넣지 못한 것들입니다. 없는 것을 있는 것처럼 적지 않으려고 따로 모았습니다.">
+      {/* 이 칸의 수치는 평가 스크립트가 아니라 **엔진을 직접 돌려** 잰 값이다. 그래서 산출물
+          파일에서 읽어 오지 않고 여기 적는다 — 어디서 나온 값인지 아래 '측정'에 그대로 밝힌다. */}
+      <Section id="fonts" title="6. 글꼴이 없을 때 — 무엇이 멀쩡하고 무엇이 거짓인가"
+        lead="편집 파일은 글꼴을 담아 오지 않고 이름으로만 가리킵니다. 올린 PC에는 있고 검수하는 PC에는 없는 일이 흔한데, 그때 결과가 어디까지 맞는지를 엔진으로 직접 재 봤습니다."
+        source="DesignCraft 0.17.0을 직접 돌려 측정(엔진 명령 font.list · preflight.run · PDF 글자 추출)">
+        <Pick>
+          수치를 지우지 않고 <b>어디까지 믿을 수 있는지</b>를 같이 냅니다. 글꼴이 대체되면
+          줄바꿈 관련 수치는 원본의 값이 아니라고 적고, 색·해상도·종이는 그대로 맞다고 적습니다.
+        </Pick>
+        <h3>두 경우가 전혀 다르다</h3>
+        <table className="ev_table">
+          <thead>
+            <tr><th>경우</th><th>PDF에 글이 남나</th><th>교정이 읽나</th><th>줄바꿈</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>글꼴이 아예 없다(<code>missingFont</code>)</td>
+              <td>남는다 — 한글 50자 중 50자</td><td>정상</td><td><b>밀린다</b></td>
+            </tr>
+            <tr>
+              <td>글꼴은 있는데 그 글자가 없다(<code>missingGlyphs</code>)</td>
+              <td><b>안 남는다 — 29자 중 8자</b>(공백·마침표뿐)</td>
+              <td><b>아무것도 못 읽는다</b></td><td>그대로</td>
+            </tr>
+          </tbody>
+        </table>
+        <p className="note">
+          첫 줄은 대체 글꼴이 그려 주고 없는 글자는 폴백이 메꿔서 글이 그대로 뽑힙니다(실측: 한글은 Batang,
+          라틴은 Source Sans 3). 둘째 줄이 위험합니다 — 글자가 PDF에 남지 않으니 <b>“고칠 것 없음”이라는
+          거짓 결과</b>가 나옵니다. 그래서 둘을 따로 적고, 둘째 줄은 원본의 흠으로 표시합니다.
+        </p>
+
+        <h3>대체되면 줄이 얼마나 밀리나</h3>
+        <p className="note">같은 상자(200×140pt)에 같은 글 1,350자를 넣고 글꼴만 바꿨을 때 넘친 글자 수입니다.</p>
+        <table className="ev_table">
+          <thead><tr><th>글꼴</th><th>넘친 글자</th></tr></thead>
+          <tbody>
+            <tr><td>맑은 고딕</td><td>372자</td></tr>
+            <tr><td>굴림</td><td>365자</td></tr>
+            <tr><td>바탕</td><td>365자</td></tr>
+          </tbody>
+        </table>
+        <p className="note">
+          같은 글·같은 상자인데 <b>7자가 다릅니다.</b> 그래서 대체 글꼴로 본 넘침·쪽 배분은 원본의 값이 아닙니다.
+        </p>
+
+        <h3>글꼴을 받는 길 — 패키지가 먼저 읽힌다</h3>
+        <p className="note">
+          서버에 세상의 글꼴을 다 깔 수는 없고, 상용 글꼴을 깔아 두고 남의 파일에 쓰는 것은 라이선스 문제입니다.
+          인디자인의 <b>파일 → 패키지</b>가 만드는 <code>Document Fonts/</code>를 엔진이 문서보다 <b>먼저</b> 읽는지
+          재 봤습니다 — 같은 글꼴이 PC에도 깔려 있는 상태로 시험했습니다.
+        </p>
+        <table className="ev_table">
+          <thead><tr><th>올린 모양</th><th>실려 온 글꼴</th><th>쓰인 출처</th></tr></thead>
+          <tbody>
+            <tr><td>문서 하나만</td><td>0개</td><td><code>installed</code> (PC에 깔린 것)</td></tr>
+            <tr><td>패키지 폴더째</td><td><b>1개</b></td><td><b><code>document</code></b> (올린 글꼴)</td></tr>
+          </tbody>
+        </table>
+        <p className="note">
+          패키지로 올리면 PC에 깔린 글꼴을 <b>밀어내고</b> 올린 글꼴을 씁니다. 설치하지 않고 그 폴더에서만 읽습니다.
+        </p>
+
+        <h3>고친 파일에 글꼴 이름이 남나</h3>
+        <p className="note">
+          이 PC에 없는 글꼴(<code>Yoon Myungjo 330</code>)을 가리키는 IDML의 글자를 고쳐 내보낸 뒤,
+          나온 IDML 안의 글꼴 이름을 전부 긁어 봤습니다.
+        </p>
+        <table className="ev_table">
+          <thead><tr><th>고친 결과</th><th>파일에 남은 글꼴 이름</th></tr></thead>
+          <tbody>
+            <tr><td>교정 1건 반영, 실패 0</td><td><b><code>Yoon Myungjo 330</code> 하나뿐</b> (대체한 이름은 안 적힘)</td></tr>
+          </tbody>
+        </table>
+        <p className="note">
+          <b>원본이 깨지는 일은 없습니다.</b> 글자만 바꾸고 글꼴은 손대지 않으니, 그 글꼴이 있는 PC에서 열면
+          원본대로 보입니다. 이 시험은 <code>agents/tests/test_designcraft.py</code>에 묶여 있어 깨지면 바로 걸립니다.
+        </p>
+      </Section>
+
+      <Section id="notread" title="7. 재지 않은 것" lead="평가에 넣지 못한 것들입니다. 없는 것을 있는 것처럼 적지 않으려고 따로 모았습니다.">
         <ul className="ev_list">
           <li><b>실물 인쇄 측색</b> — 모든 색 수치는 프로파일 기준 계산값입니다. 실제로 찍어 재지 않았습니다.
             <p className="note">재려면 세 가지를 해야 합니다.
