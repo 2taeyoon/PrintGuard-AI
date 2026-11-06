@@ -372,8 +372,13 @@ function Home() {
       <TermsPanel />
 
       <form className="upload panel" onSubmit={submit}>
-        <label className="wide">검수할 파일
-          <input type="file" accept=".pdf,.idml,.designcraft,application/pdf" disabled={srcBusy}
+        {/* 파일 고르기는 **‘파일 선택’을 눌렀을 때만** 열려야 한다. `<label>`은 품은 input을
+            대신 누르므로, label 안에 설명이나 제목을 두면 그 글자를 눌러도 파일 창이 뜬다 —
+            읽으려고 누른 사람 앞에 창이 열린다. 그래서 글자는 `<span>`으로 두고, 이름은
+            `aria-labelledby`로 input에 묶는다(읽어 주는 프로그램에는 그대로 들린다). */}
+        <div className="wide filepick">
+          <span className="fp_title" id="pick_doc_l">검수할 파일</span>
+          <input id="pick_doc" aria-labelledby="pick_doc_l" type="file" accept=".pdf,.idml,.designcraft,application/pdf" disabled={srcBusy}
             onChange={(e) => pickFile(e.target.files?.[0] ?? null)} />
           {srcBusy && <span className="note">원본을 여는 중입니다… DesignCraft가 열어 검수용 PDF를 뽑습니다(10초쯤).</span>}
           {read && <ReadHint m={read} />}
@@ -381,24 +386,27 @@ function Home() {
           {/* 무엇을 올리면 무엇까지 되는지는 **고르기 전에** 알아야 한다. 고른 뒤에 알려 주면 늦다. */}
           {!srcInfo && !srcBusy && (
             <span className="note">
-              PDF로 올리면 <b>검수까지</b>, 편집 파일(<code>.idml</code>)로 올리면 검수가 끝난 뒤{" "}
-              <b>원본 수정까지</b> 이어집니다. PDF에서는 글자를 집을 수 없어 고치지 못합니다.
+              <b>원본 수정까지 가시려면 편집 파일(<code>.idml</code>)이어야 합니다.</b> PDF로 올리면 검수까지만 됩니다 —
+              PDF에서는 글자를 집을 수 없어 고치지 못합니다.
             </span>
           )}
-        </label>
-        {/* IDML은 사진을 링크로만 들고 있다. 파일 하나만 받으면 인쇄용 사진이 빠진 채로 검수하게 된다. */}
-        <label className="wide">편집 파일은 폴더째도 됩니다 (선택)
+        </div>
+        {/* IDML은 사진을 링크로만 들고 있고 글꼴은 이름으로만 들고 있다. 파일 하나만 받으면
+            인쇄용 사진도 글꼴도 빠진 채로 검수하게 된다. */}
+        <div className="wide filepick">
+          <span className="fp_title" id="pick_pkg_l">편집 파일은 폴더째도 됩니다</span>
           {/* webkitdirectory는 React 타입에 없어서 속성으로 직접 준다 */}
-          <input type="file" disabled={srcBusy}
+          <input id="pick_pkg" aria-labelledby="pick_pkg_l" type="file" disabled={srcBusy}
             ref={(el) => { if (el) { el.setAttribute("webkitdirectory", ""); el.setAttribute("directory", ""); } }}
             onChange={(e) => { const fs = e.target.files; if (fs?.length) { setRead(null); setReadFail(false); void openSource(Array.from(fs)); } }} />
           <span className="note">
-            InDesign의 <b>파일 → 패키지</b>로 만든 폴더를 통째로 올리면 옆의 <code>Links</code> 사진과{" "}
-            <code>Document Fonts</code> 글꼴까지 같이 올라가 <b>원본 그대로</b> 열립니다.
-            파일 하나만 올리면 인쇄용 사진이 따라오지 않고, <b>글꼴도 이 PC에 있는 것으로 대체됩니다</b>{" "}
-            — 글은 멀쩡하지만 줄바꿈이 원본과 달라집니다.
+            고치는 것은 파일 하나로도 됩니다. 다만 <b>검수 결과를 원본대로 보시려면 폴더째가 맞습니다</b> —
+            InDesign의 <b>파일 → 패키지</b>로 만든 폴더를 올리면 옆의 <code>Links</code> 사진과{" "}
+            <code>Document Fonts</code> 글꼴까지 같이 올라갑니다.
+            파일 하나만 올리면 인쇄용 사진이 따라오지 않고 글꼴도 이 PC에 있는 것으로 대체되어,{" "}
+            <b>넘침·줄바꿈·해상도가 원본과 다르게 나옵니다.</b>
           </span>
-        </label>
+        </div>
         <label>완성 크기
           <select value={size} onChange={(e) => pickSize(e.target.value)}>
             {FORMATS.map((g) => (
@@ -454,9 +462,10 @@ function Home() {
             {FINISHES.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
           </select>
         </label>
-        <label>인쇄소 CMYK 프로파일(ICC)
-          <input type="file" accept=".icc,.icm" onChange={(e) => setIccFile(e.target.files?.[0] ?? null)} title={`비워 두면 ${profile?.name ?? "선택한 종이의 프로파일"}을 씁니다`} />
-        </label>
+        <div className="filepick">
+          <span className="fp_title" id="pick_icc_l">인쇄소 CMYK 프로파일(ICC)</span>
+          <input id="pick_icc" aria-labelledby="pick_icc_l" type="file" accept=".icc,.icm" onChange={(e) => setIccFile(e.target.files?.[0] ?? null)} title={`비워 두면 ${profile?.name ?? "선택한 종이의 프로파일"}을 씁니다`} />
+        </div>
         <label>변환 방식
           <select value={intent} onChange={(e) => setIntent(e.target.value as IntentName)}>
             <option value="relative">상대 비색(로고·단색)</option>

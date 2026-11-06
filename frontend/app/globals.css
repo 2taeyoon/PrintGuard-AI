@@ -92,6 +92,12 @@ form.upload label.chk { flex-direction: row; align-items: center; gap: 8px; min-
    다만 칸 자체까지 늘리면 '파일 선택' 단추 옆이 허옇게 비어서, 입력만 글 길이에 맞춰 줄인다 */
 form.upload label.wide { flex-basis: 100%; align-items: flex-start; }
 form.upload label.wide input[type="file"] { width: auto; max-width: 320px; }
+/* 파일 고르기 칸. 전에는 <label>이 input을 품어서 설명 글귀를 눌러도 파일 창이 떴다.
+   지금은 제목만 label이고 input·설명은 그 바깥이라, 칸 모양을 여기서 맡는다. */
+form.upload .filepick { display: flex; flex-direction: column; gap: 4px; font-size: 1.4rem; color: var(--blacklight); }
+form.upload .filepick > .fp_title { width: fit-content; }
+form.upload .filepick.wide { flex-basis: 100%; align-items: flex-start; }
+form.upload .filepick.wide input[type="file"] { width: auto; max-width: 320px; }
 .read_hint { font-size: 1.4rem; line-height: 160%; color: var(--blacklight); }
 .read_hint b { color: var(--thema); margin-right: 4px; }
 form.ask label { flex: 1; min-width: 240px; }
@@ -648,9 +654,6 @@ input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, 
 /* 에이전트 목록: 이 검수에 참여하는 것과 다른 화면 것을 갈라 둔다 */
 /* 두 번째 머리는 첫 번째와 **같은 모양**이어야 한다. 위에 굵은 선만 더해 갈라 놓는다
    (margin-top·padding-top을 따로 주면 .side_head의 패딩과 겹쳐 혼자 어긋난다) */
-.side_head2 { border-top: 1px solid var(--borderStrong); }
-.side_note { margin: 0; padding: 10px 16px; border-bottom: 1px solid var(--borderSubtle); background: var(--bgSurface); }
-.aitem.aside_of_plan { background: var(--bgMuted); }
 /* 설명은 에이전트 이름과 줄을 맞춘다 — 머리의 패딩 16 + 점 8 + 사이 8 */
 .aitem_why { margin: 0; padding: 0 16px 12px 32px; }
 .copyfix_text { width: 100%; margin-top: 12px; padding: 12px; border: 1px solid var(--borderLight);
