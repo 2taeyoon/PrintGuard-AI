@@ -17,6 +17,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import secrets
 import time
 from collections.abc import AsyncIterator
@@ -699,6 +700,59 @@ async def dc_edit(ctx: str, body: dict[str, Any], authorization: str | None = Au
         keep = {k: v for k, v in out.items() if k not in ("decision", "applied", "failed", "ok", "undone")}
         j["inspect"] = {**(j.get("inspect") or {}), **keep}
     return {"data": out, "meta": {"status": r.get("status")}}
+
+
+@app.get("/designcraft/jobs")
+async def dc_jobs(authorization: str | None = Auth) -> dict[str, Any]:
+    """내가 만든 문서 목록. 브라우저에서 시작한 것이 바로 보이게 하는 데 쓴다."""
+    who = _who(authorization)
+    rows = [{"context_id": c, "filename": j.get("filename"), "created": j.get("created"),
+             "pages": ((j.get("inspect") or {}).get("pages")), "made": bool(j.get("made"))}
+            for c, j in DCJOBS.items() if who and j.get("client") == who]
+    rows.sort(key=lambda r: -(r["created"] or 0))
+    return {"data": rows[:20], "meta": {}}
+
+
+def _watchable(ctx: str) -> dict[str, Any]:
+    """번호를 아는 쪽에 열어 주는 '보기 전용' 문. 고치는 창구는 그대로 주인만 들어간다.
+
+    `ctx_dc_` 뒤 24자리는 난수다. 찍어 맞힐 수 없고, 그 번호는 사용자가 쓰는 도구(클로드의
+    답, 이 화면)에만 찍힌다. 그래서 공유 링크와 같은 세기로 본다 — 대신 내주는 것은 쪽 그림과
+    단계뿐이고, 파일 자체는 주인만 받는다.
+    """
+    j = DCJOBS.get(ctx)
+    if not j:
+        raise HTTPException(404, "없는 문서")
+    return j
+
+
+@app.get("/designcraft/{ctx}/watch")
+async def dc_watch(ctx: str, authorization: str | None = Auth) -> dict[str, Any]:
+    """지금 그 문서가 어떻게 생겼고, 에이전트가 무엇을 하고 있는지."""
+    if not _who(authorization):
+        raise HTTPException(401, "로그인이 필요합니다")
+    j = _watchable(ctx)
+    ins = j.get("inspect") or {}
+    steps = [r for r in query(limit=200, contexts={ctx}) if r["kind"] == "dc_step"]
+    return {"data": {"context_id": ctx, "filename": j.get("filename"),
+                     "pages": ins.get("pages"), "shots": ins.get("shots") or [],
+                     "preflight": len(ins.get("preflight") or []),
+                     "width_mm": j.get("width_mm"), "height_mm": j.get("height_mm"),
+                     "steps": steps[:40]}, "meta": {}}
+
+
+@app.get("/designcraft/{ctx}/watch/{name}")
+async def dc_watch_file(ctx: str, name: str, authorization: str | None = Auth) -> FileResponse:
+    """지켜보기용 쪽 그림. **그림만** 내준다 — 편집 파일과 PDF는 주인만 받는다."""
+    if not _who(authorization):
+        raise HTTPException(401, "로그인이 필요합니다")
+    _watchable(ctx)
+    if not re.fullmatch(r"(page\d{1,3}|page1)\.png", name):
+        raise HTTPException(404, "지켜보기로는 쪽 그림만 볼 수 있습니다")
+    p = (DC_OUT / ctx / name).resolve()
+    if (DC_OUT / ctx).resolve() not in p.parents or not p.is_file():
+        raise HTTPException(404, "없는 그림")
+    return FileResponse(p, media_type="image/png")
 
 
 @app.post("/designcraft/{ctx}/compose")

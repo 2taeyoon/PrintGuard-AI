@@ -23,6 +23,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { mcpStatus, type McpStatus } from "@/lib/agentClient";
 import { SetupGuide } from "../dc-shared";
+import WatchDoc from "../watch-doc";
 import { SignInNote } from "../sign-in";
 
 /** 편집기가 깔려 있는지. 없으면 `prebuild`가 아직 못 받은 것이다. */
@@ -115,6 +116,10 @@ export default function MakePage() {
         {mcp?.available === false && <SetupGuide reason={mcp.reason ?? ""} />}
         {mcp?.available === false && mcp.hint && <p className="note">{mcp.hint}</p>}
       </section>
+
+      {/* 에이전트가 하는 일을 따라 보는 칸. 편집기 캔버스는 조종도 구경도 할 수 없어서,
+          그려진 쪽을 쫓아 보여 준다. */}
+      <WatchDoc />
 
       {/* 편집기 */}
       <section className="panel dc_editor_wrap">
