@@ -104,14 +104,35 @@ export default function WatchDoc() {
       </div>
 
       <p className="note">
-        클로드·커서에서 <code>make_document</code>로 문서를 만들면 <b>번호</b>가 나옵니다.
-        그 번호를 여기에 넣으면, 에이전트가 글상자를 놓고 글을 넣는 것이 <b>한 걸음씩 그대로</b> 보입니다.
-        아래 편집기와는 다른 문서입니다 — 편집기는 손으로 만드는 자리이고, 여기는 에이전트가 만드는 것을 보는 자리입니다.
+        에이전트가 글상자를 놓고 글을 넣는 것이 <b>한 걸음씩 그대로</b> 보이는 자리입니다.
+        아래 편집기와는 다른 문서입니다 — 편집기는 <b>손으로</b> 만드는 자리이고, 여기는{" "}
+        <b>에이전트가</b> 만드는 것을 보는 자리입니다.
       </p>
+      {/* 번호를 넣으라고만 하고 어디서 나오는지 말하지 않으면 칸이 있으나 마나다. */}
+      <details className="dc_warnbox">
+        <summary>번호는 어디서 나오나요?</summary>
+        <p className="note">
+          <b>이 화면에서 만들었다면</b> 아래 ‘내가 만든 것’에 바로 뜹니다. 붙여 넣을 것이 없습니다.
+        </p>
+        <p className="note">
+          <b>클로드·커서에서 만들었다면</b> 그 답에 번호가 들어 있습니다. “명함 하나 만들어 줘” 하고
+          시키면 <code>make_document</code>가 돌면서 이렇게 답합니다 —
+        </p>
+        <pre className="dc_cmd">문서 번호는 ctx_dc_7aa971b1a64e2926059337 입니다.
+이 번호를 사람에게 그대로 알려 주세요 …</pre>
+        <p className="note">
+          <code>ctx_dc_</code>로 시작하는 그 줄을 통째로 복사해 위 칸에 넣으시면 됩니다.
+          붙여 넣은 번호는 이 브라우저가 기억하므로, 다음에 오시면 그대로 이어서 보입니다.
+        </p>
+        <p className="note">
+          붙이는 법은 <b>도움말</b>에 적어 두었습니다. 아직 안 붙이셨다면 이 칸은 비워 두셔도 됩니다 —
+          아래 편집기는 그대로 쓰실 수 있습니다.
+        </p>
+      </details>
 
       <div className="dc_row">
         <label className="wide">문서 번호
-          <input type="text" value={typed} spellCheck={false} placeholder="ctx_dc_…"
+          <input type="text" value={typed} spellCheck={false} placeholder="ctx_dc_ 로 시작하는 번호를 붙여 넣으세요"
             onChange={(e) => setTyped(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") open(typed); }} />
         </label>
