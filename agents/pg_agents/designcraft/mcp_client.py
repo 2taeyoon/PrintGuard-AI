@@ -47,6 +47,30 @@ def cli_path() -> str | None:
     return next((str(p) for p in _GUESSES if p.exists()), None)
 
 
+def app_port() -> int | None:
+    """켜 둔 DesignCraft 앱에 붙을 포트. **환경변수로 켤 때만** 값이 나온다.
+
+    앱은 `designcraft --control 7979`로 띄운다. 붙으면 사람이 그 화면에서 보고 있는 문서에
+    그대로 작업이 간다 — 대신 폴더 울타리가 없어지므로, 켜는 일은 사람이 한다.
+    """
+    v = os.environ.get("PG_DESIGNCRAFT_CONNECT", "").strip()
+    if not v:
+        return None
+    try:
+        n = int(v)
+    except ValueError:
+        return None
+    return n if 1 <= n <= 65535 else None
+
+
+def app_listening(port: int, timeout: float = 0.4) -> bool:
+    """그 포트에 무언가 듣고 있나. 앱이 꺼져 있는데 붙으러 가면 한참 기다리다 실패한다."""
+    import socket
+    with socket.socket() as sk:
+        sk.settimeout(timeout)
+        return sk.connect_ex(("127.0.0.1", port)) == 0
+
+
 class Mcp:
     """한 번 쓰고 닫는 MCP 세션. `with Mcp(...) as m:` 으로 쓴다."""
 
@@ -54,14 +78,22 @@ class Mcp:
         exe = cli_path()
         if not exe:
             raise McpError("designcraft-cli를 찾을 수 없습니다. PG_DESIGNCRAFT_CLI에 경로를 넣어 주세요.")
-        args = [exe, "mcp"]
-        for r in read_roots:
-            args += ["--automation-read-root", str(r)]
-        for w in write_roots:
-            args += ["--automation-write-root", str(w)]
-        # 가두지 않은 채로는 띄우지 않는다. 플래그가 없으면 디스크 전체가 열린다.
-        if not read_roots or not write_roots:
-            raise McpError("읽기·쓰기 폴더를 모두 지정해야 합니다(가두지 않은 MCP는 띄우지 않습니다).")
+        port = app_port()
+        if port:
+            # 켜 둔 앱에 붙는다. 이때는 **가둘 수 없다** — 가두기 플래그는 이 프로세스가 엔진을
+            # 품을 때만 듣고, 돌고 있는 앱은 그 울타리 밖이다(CLI 도움말에 그렇게 적혀 있다).
+            # 그래서 환경변수로 켠 사람만 이 길로 온다. 켠 사람은 자기 앱을 자기가 띄운 사람이다.
+            args = [exe, "mcp", "--connect", str(port)]
+        else:
+            args = [exe, "mcp"]
+            for r in read_roots:
+                args += ["--automation-read-root", str(r)]
+            for w in write_roots:
+                args += ["--automation-write-root", str(w)]
+            # 가두지 않은 채로는 띄우지 않는다. 플래그가 없으면 디스크 전체가 열린다.
+            if not read_roots or not write_roots:
+                raise McpError("읽기·쓰기 폴더를 모두 지정해야 합니다(가두지 않은 MCP는 띄우지 않습니다).")
+        self.port = port
         self.exe = exe
         self._n = 0
         self._err: list[str] = []
@@ -185,11 +217,21 @@ def probe() -> dict[str, Any]:
     tmp = Path(os.environ.get("TEMP", "/tmp")) / "pg-designcraft-probe"
     tmp.mkdir(parents=True, exist_ok=True)
     try:
+        port = app_port()
+        if port and not app_listening(port):
+            return {"available": False, "cli": exe, "version": version, "mode": "app",
+                    "app_port": port, "app_running": False,
+                    "reason": f"켜 둔 DesignCraft 앱을 {port} 포트에서 찾지 못했습니다",
+                    "hint": f"앱을 `designcraft --control {port}`로 띄우거나, "
+                            "PG_DESIGNCRAFT_CONNECT를 비우면 창 없이 돕니다"}
         with Mcp([tmp], [tmp]) as m:
             info = m.info or {}
             srv = info.get("serverInfo", {})
-            return {"available": True, "cli": exe, "version": version, "mode": "headless",
+            return {"available": True, "cli": exe, "version": version,
+                    "mode": "app" if port else "headless",
+                    "app_port": port, "app_running": bool(port),
                     "protocol": info.get("protocolVersion"), "server": srv.get("name"),
                     "server_version": srv.get("version"), "tools": m.tools()}
     except McpError as e:
-        return {"available": False, "reason": str(e)[:300], "cli": exe, "version": version}
+        return {"available": False, "reason": str(e)[:300], "cli": exe, "version": version,
+                "mode": "app" if app_port() else "headless", "app_port": app_port()}

@@ -134,6 +134,8 @@ export const compileReport = (ctx: string) => post<AgentReply>(`/jobs/${ctx}/rep
 export type McpStatus = {
   available: boolean; reason?: string; hint?: string; cli?: string | null; version?: string; mode?: string;
   protocol?: string; server?: string; server_version?: string; tools?: string[];
+  /** 창 없이 도는가(headless), 켜 둔 DesignCraft 앱에 붙었는가(app). */
+  app_port?: number | null; app_running?: boolean;
 };
 /** 토큰을 붙이지 않는다 — 주인이 따로 없는 정보(에이전트가 DesignCraft에 닿는가)라서,
  *  연결 상태를 보려고 로그인부터 하게 만들 이유가 없다. */
