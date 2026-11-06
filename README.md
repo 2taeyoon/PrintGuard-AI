@@ -206,8 +206,22 @@ PC 파일을 고르는 길이 되기 때문입니다.
 
 전에는 화면이 둘이었습니다(검수에서 교정 목록을 복사 → '원본 수정'에 붙여넣기). 그 붙여넣기는
 사람이 하던 일이지 기계가 못 할 일이 아니어서 없앴습니다. 비어 있는 '원본 수정' 자리는
-**작업 만들기**(`/make`)가 되었습니다 — 원본이 아예 없는 사람이 새 문서나 샘플 잡지를 만들어
-그대로 검수로 넘기는 화면입니다(`designcraft.create_document`).
+**작업 만들기**(`/make`)가 되었습니다 — 원본이 아예 없는 사람을 위한 자리입니다.
+
+만드는 일은 **클로드·커서가 MCP로** 합니다(`make_document` → `edit_document`). 화면이 하는 일은
+둘입니다. 하나는 **글로 따라 보기** — 엔진이 걸음마다 남기는 기록(`dc_step`)을 되풀이해 물어
+'글 넣기 "ATELIER" · 1쪽 · 왼쪽에서 12mm…'처럼 적습니다. 또 하나는 **넘기기** — 그 문서를 IDML·PDF로
+받거나 그대로 인쇄 검수로 보냅니다.
+
+클로드가 만든 문서는 그 도구가 주인이라 브라우저와 다릅니다. 그래서 **번호로** 엽니다
+(`POST /designcraft/{ctx}/adopt`) — `ctx_dc_` 뒤 24자리는 난수이고 그 번호는 만든 사람의 도구에만
+찍히므로, 번호를 들고 왔다는 것을 '내가 만든 것'으로 봅니다. 가져가도 원래 주인은 **밀려나지
+않습니다**(밀어내면 클로드가 그 문서를 이어서 못 고칩니다).
+
+한때 이 자리에 DesignCraft **웹 편집기**(릴리스의 `designcraft-web-*.zip`)를 띄워 봤지만 걷어냈습니다 —
+브라우저 안에서 혼자 도는 프로그램이라 바깥에서 조종할 수도 들여다볼 수도 없고(글루 JS에
+`postMessage`도 `WebSocket`도 없습니다), 거기서 손으로 만든 것이 에이전트에게 가지 않았습니다.
+62MB짜리 wasm을 내려받아 가며 띄울 값이 없었습니다.
 
 | 포맷 | 열기 | 돌려주기 |
 |---|---|---|
@@ -439,21 +453,13 @@ LangSmith로 나가는 것은 공통 로그로 만든 추적(에이전트·skill
 
 ## 저장소에 없는 파일
 
-라이선스나 용량 때문에 올리지 않았습니다. 넷 다 없어도 앱은 뜨지만, 모델과 wasm은 CDN에서 받아 오느라 느려지고 ICC가 없으면 색 차이를 재지 못합니다.
+라이선스나 용량 때문에 올리지 않았습니다. 셋 다 없어도 앱은 뜨지만, 모델과 wasm은 CDN에서 받아 오느라 느려지고 ICC가 없으면 색 차이를 재지 못합니다.
 
 1. **임베딩 모델** → `frontend/public/models/Xenova/multilingual-e5-small/`
    Hugging Face `Xenova/multilingual-e5-small`에서 `config.json`, `tokenizer.json`, `tokenizer_config.json`, `special_tokens_map.json`, `sentencepiece.bpe.model`, `quant_config.json`, `onnx/model_quantized.onnx`를 받습니다. 없으면 브라우저는 Hugging Face CDN에서, 에이전트는 `huggingface_hub`로 받아 씁니다.
 2. **onnxruntime-web wasm** → `frontend/public/ort/`
    `npm install` 후 `node_modules/onnxruntime-web/dist/`의 `ort-wasm-simd-threaded*.{mjs,wasm}`를 복사합니다. 없으면 transformers.js 기본 CDN을 씁니다.
-3. **DesignCraft 웹 빌드** → `frontend/public/designcraft/` (wasm 하나가 62MB)
-   ```bash
-   cd frontend && npm run fetch:designcraft   # GitHub 릴리스에서 받아 SHA256을 대조한 뒤 풉니다
-   ```
-   빌드·개발을 시작할 때도 자동으로 받습니다(`prebuild`·`predev`). 못 받으면 멈추지 않고
-   '작업 만들기' 화면의 편집기 자리에 받는 법이 뜹니다. 이 편집기는 **브라우저 안에서 혼자
-   도는 것**이라 에이전트가 조종하지 못합니다 — 에이전트가 하는 일을 화면에서 보려면
-   데스크톱 앱을 `designcraft --control 7979`로 띄우고 `PG_DESIGNCRAFT_CONNECT=7979`를 넣습니다.
-4. **ICC 프로파일** → `frontend/public/icc/` (재배포 금지라 직접 받아야 합니다)
+3. **ICC 프로파일** → `frontend/public/icc/` (재배포 금지라 직접 받아야 합니다)
    ```bash
    python deploy/fetch_icc.py          # 12개를 ECI·ICC 레지스트리에서 받아 넣습니다
    ```

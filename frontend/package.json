@@ -6,10 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
-    "fetch:designcraft": "node scripts/fetch-designcraft.mjs",
-    "prebuild": "node scripts/fetch-designcraft.mjs",
-    "predev": "node scripts/fetch-designcraft.mjs"
+    "lint": "eslint"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.3.1",

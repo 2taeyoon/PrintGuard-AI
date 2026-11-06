@@ -499,8 +499,13 @@ DCJOBS: dict[str, dict[str, Any]] = {}
 
 
 def _dc_owned(ctx: str, client: str) -> dict[str, Any]:
+    """주인이거나, 번호를 들고 와 자기 화면으로 가져온 사람(`also`)이면 통과.
+
+    주인이 하나여야 할 이유가 없다. 클로드가 만든 문서를 사람이 자기 화면에서 받고 검수로
+    넘기려면 둘 다 주인이어야 한다 — 한쪽을 밀어내면 그 뒤로 클로드가 그 문서를 못 고친다.
+    """
     j = DCJOBS.get(ctx)
-    if not j or not client or j.get("client") != client:
+    if not j or not client or (j.get("client") != client and client not in (j.get("also") or [])):
         raise HTTPException(404, "없는 의뢰")
     return j
 
@@ -695,10 +700,24 @@ async def dc_edit(ctx: str, body: dict[str, Any], authorization: str | None = Au
         raise HTTPException(502, (((r.get("output") or {}).get("reason") or (r.get("output") or {}).get("message"))
                                   or "문서를 고치지 못했습니다")[:300])
     out = r.get("output") or {}
-    # 고쳐진 모습으로 보관된 상태를 갈아 둔다. 그래야 검수로 넘길 때와 새로 고쳐 열 때 같은 것을 본다.
+    # 고친 뒤의 '보관된 모습'은 **문서를 다시 열어 본 것**으로 갈아 둔다. 그래야 검수로 넘길 때와
+    # 새로 열 때 같은 것을 본다.
+    #
+    # 고치기가 돌려주는 것을 그대로 덮어쓰면 안 된다. 두 모양이 다르다 — 고치기의 `stories`는
+    # 글 덩어리 **개수**이고, 열어 보기의 `stories`는 글 덩어리 **목록**이다(쪽·글자 수·넘침).
+    # 개수를 목록 자리에 얹으면 그 문서를 검수로 넘기는 순간 화면이 깨지고(`stories.some is not a
+    # function`), 교정이 집을 글도 사라진다. 다시 여는 값은 MCP 한 번이고, 틀린 것을 보관하는
+    # 값보다 싸다.
     if out.get("ok"):
-        keep = {k: v for k, v in out.items() if k not in ("decision", "applied", "failed", "ok", "undone")}
-        j["inspect"] = {**(j.get("inspect") or {}), **keep}
+        ins = await _ask("designcraft", "inspect_source", ctx,
+                         {"src_ref": j["src_ref"], "filename": j.get("doc") or j["filename"]})
+        if ins.get("status") == "completed":
+            fresh = dict(ins.get("output") or {})
+            # 쪽 그림만은 고치기 쪽이 더 많이 뽑는다(열어 보기는 1쪽만 그린다). 그 목록은 살린다 —
+            # 여러 쪽짜리에서 2쪽부터가 사라지면 따라 보는 칸이 1쪽만 보여 준다.
+            if out.get("shots"):
+                fresh["shots"] = out["shots"]
+            j["inspect"] = fresh
     return {"data": out, "meta": {"status": r.get("status")}}
 
 
@@ -708,7 +727,8 @@ async def dc_jobs(authorization: str | None = Auth) -> dict[str, Any]:
     who = _who(authorization)
     rows = [{"context_id": c, "filename": j.get("filename"), "created": j.get("created"),
              "pages": ((j.get("inspect") or {}).get("pages")), "made": bool(j.get("made"))}
-            for c, j in DCJOBS.items() if who and j.get("client") == who]
+            for c, j in DCJOBS.items()
+            if who and (j.get("client") == who or who in (j.get("also") or []))]
     rows.sort(key=lambda r: -(r["created"] or 0))
     return {"data": rows[:20], "meta": {}}
 
@@ -735,10 +755,15 @@ async def dc_watch(ctx: str, authorization: str | None = Auth) -> dict[str, Any]
     ins = j.get("inspect") or {}
     steps = [r for r in query(limit=200, contexts={ctx}) if r["kind"] == "dc_step"]
     return {"data": {"context_id": ctx, "filename": j.get("filename"),
-                     "pages": ins.get("pages"), "shots": ins.get("shots") or [],
+                     "pages": ins.get("pages"),
+                     # 갓 만든 문서는 쪽 그림이 `png` 한 장뿐이다(열어 볼 때 1쪽만 그린다).
+                     # 고치고 나면 `shots`로 여러 장이 생긴다. 있는 쪽을 쓴다.
+                     "shots": ins.get("shots") or ([ins["png"]] if ins.get("png") else []),
                      "preflight": len(ins.get("preflight") or []),
                      "width_mm": j.get("width_mm"), "height_mm": j.get("height_mm"),
-                     "steps": steps[:40]}, "meta": {}}
+                     # 기록은 오래된 것부터 온다. 앞에서 자르면 40걸음째부터 **새 걸음이 안 보인다** —
+                     # 지금 무엇을 하고 있는지가 알고 싶은 것이므로 뒤에서 자른다.
+                     "steps": steps[-60:]}, "meta": {}}
 
 
 @app.get("/designcraft/{ctx}/watch/{name}")
@@ -753,6 +778,28 @@ async def dc_watch_file(ctx: str, name: str, authorization: str | None = Auth) -
     if (DC_OUT / ctx).resolve() not in p.parents or not p.is_file():
         raise HTTPException(404, "없는 그림")
     return FileResponse(p, media_type="image/png")
+
+
+@app.post("/designcraft/{ctx}/adopt")
+async def dc_adopt(ctx: str, authorization: str | None = Auth) -> dict[str, Any]:
+    """번호를 들고 온 사람을 그 문서의 주인으로 **더한다**(원래 주인은 그대로 둔다).
+
+    지켜보기만으로는 받을 수도, 검수로 넘길 수도 없다. 그런데 그 번호는 만든 사람의 도구에만
+    찍히므로, 번호를 들고 왔다는 것 자체가 '내가 만든 것'이라는 뜻이다 — 공유 링크와 같은
+    세기로 본다. 밀어내지 않고 곁에 두는 이유는, 밀어내면 클로드가 그 문서를 이어서 못 고치기
+    때문이다. 누가 가져갔는지는 기록에 남긴다.
+    """
+    who = _writer(authorization).subject
+    j = DCJOBS.get(ctx)
+    if not j:
+        raise HTTPException(404, "없는 문서")
+    if j.get("client") != who and who not in (j.get("also") or []):
+        j.setdefault("also", []).append(who)
+        j["also"] = j["also"][-8:]
+        log_event(ctx, "dc_adopted", source=NAME, payload={"total": len(j["also"]) + 1})
+    ins = j.get("inspect") or {}
+    return {"data": {"context_id": ctx, "filename": j.get("filename"), "made": bool(j.get("made")),
+                     **ins}, "meta": {}}
 
 
 @app.post("/designcraft/{ctx}/compose")

@@ -106,7 +106,7 @@ const GROUPS: Group[] = [
       { name: "PyMuPDF", use: "교정 에이전트의 쪽별 글과 위치 추출", url: "https://pymupdf.readthedocs.io" },
       { name: "onnxruntime · tokenizers · NumPy", use: "가이드 에이전트의 임베딩·점수 계산. 브라우저와 같은 int8 ONNX 모델을 서버에서도 그대로 돌립니다", url: "https://onnxruntime.ai" },
       { name: "Model Context Protocol (MCP)", use: "외부 LLM 도구가 이 앱의 조회·요청 기능을 쓰게 하는 서버, 그리고 DesignCraft를 부르는 통로", url: "https://modelcontextprotocol.io" },
-      { name: "DesignCraft (storytold/designcraft)", use: "인디자인 엔진. ‘인쇄 검수’가 편집 파일을 열고 교정을 반영할 때, ‘작업 만들기’가 인쇄물을 만들 때 씁니다. designcraft-cli의 MCP 서버를 자식 프로세스로 띄워 IDML을 열고, 글자를 찾아 바꾸고, PDF로 내보냅니다. ‘작업 만들기’는 이 엔진이 받는 **547개 명령**을 화면에 그대로 펼칩니다 — 할 수 있는 일의 범위를 저희 코드가 아니라 엔진이 정합니다. 읽고 쓰는 범위는 의뢰 폴더로 가둬 띄웁니다(--automation-read-root/--automation-write-root). 재배포하지 않고 쓰는 사람이 직접 설치합니다", url: "https://github.com/storytold/designcraft" },
+      { name: "DesignCraft (storytold/designcraft)", use: "인디자인 엔진. ‘인쇄 검수’가 편집 파일을 열고 교정을 반영할 때, ‘작업 만들기’가 인쇄물을 만들 때 씁니다. designcraft-cli의 MCP 서버를 자식 프로세스로 띄워 IDML을 열고, 글자를 찾아 바꾸고, PDF로 내보냅니다. ‘작업 만들기’는 클로드·커서가 MCP로 시킨 일을 글로 따라 보는 화면입니다 — 엔진이 받는 **547개 명령**이 그대로 열려 있어, 할 수 있는 일의 범위를 저희 코드가 아니라 엔진이 정합니다. 읽고 쓰는 범위는 의뢰 폴더로 가둬 띄웁니다(--automation-read-root/--automation-write-root). 재배포하지 않고 쓰는 사람이 직접 설치합니다", url: "https://github.com/storytold/designcraft" },
       { name: "krilla · hayro · usvg (DesignCraft 안)", use: "위 엔진이 PDF를 쓰고 읽는 데 쓰는 라이브러리 — 내보낸 PDF의 글자·색 처리는 이쪽이 합니다", url: "https://github.com/storytold/designcraft" },
       { name: "LangSmith", use: "선택 기능인 추적 내보내기 — 사용자가 키를 직접 넣을 때만 켜집니다", url: "https://smith.langchain.com" },
       { name: "SQLite", use: "공통 로그와 안전 관문 기록 저장", url: "https://www.sqlite.org" },

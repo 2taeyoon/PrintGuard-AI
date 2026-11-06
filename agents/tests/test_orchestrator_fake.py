@@ -172,6 +172,39 @@ def test_cannot_open_a_job_from_someone_elses_source():
         assert c.post("/jobs", data={"source": ctx}).status_code == 404
 
 
+# ---------- 번호를 들고 와 가져오기 ----------
+# 클로드·커서가 MCP로 만든 문서는 그 도구가 주인이다. 사람이 브라우저에서 그 문서를 받고 검수로
+# 넘기려면 **주인이 둘**이어야 한다 — 밀어내면 그 뒤로 클로드가 그 문서를 이어서 못 고친다.
+def test_someone_elses_document_stays_closed_until_you_bring_the_number():
+    ctx = _seed_source("ctx_dc_byclaude", owner="claude-mcp")
+    with client() as c:
+        assert c.get(f"/designcraft/{ctx}").status_code == 404        # 번호를 넣기 전
+        assert c.post(f"/designcraft/{ctx}/adopt").status_code == 200  # 번호를 들고 왔다
+        r = c.get(f"/designcraft/{ctx}")
+        assert r.status_code == 200 and r.json()["data"]["filename"] == "a.idml"
+
+
+def test_taking_a_document_does_not_push_the_maker_out():
+    ctx = _seed_source("ctx_dc_shared", owner="claude-mcp")
+    with client() as c:
+        assert c.post(f"/designcraft/{ctx}/adopt").status_code == 200
+    with client("claude-mcp") as c:
+        assert c.get(f"/designcraft/{ctx}").status_code == 200       # 만든 쪽도 그대로
+
+
+def test_a_taken_document_shows_up_in_my_list():
+    ctx = _seed_source("ctx_dc_inlist", owner="claude-mcp")
+    with client() as c:
+        assert [r["context_id"] for r in c.get("/designcraft/jobs").json()["data"] if r["context_id"] == ctx] == []
+        c.post(f"/designcraft/{ctx}/adopt")
+        assert ctx in [r["context_id"] for r in c.get("/designcraft/jobs").json()["data"]]
+
+
+def test_a_number_nobody_made_is_not_adoptable():
+    with client() as c:
+        assert c.post("/designcraft/ctx_dc_nosuchthing/adopt").status_code == 404
+
+
 def test_job_without_file_or_source_is_refused():
     with client() as c:
         assert c.post("/jobs", data={"options": "{}"}).status_code == 400

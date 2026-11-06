@@ -1,21 +1,20 @@
 "use client";
 
-// 작업 만들기 — DesignCraft 편집기를 이 페이지 안에서 연다.
+// 작업 만들기 — DesignCraft를 MCP로 붙여 두고, 에이전트가 만드는 것을 따라 보는 화면.
 //
-// 전에는 '무엇을 만들까요 → 무엇을 넣을까요 → 다 됐으면' 세 칸이었다. 판형을 고르고 글로 부탁해
-// 만드는 길이었는데, **엔진이 웹 빌드를 내준다는 것을 뒤늦게 알았다.** 인디자인처럼 생긴 그
-// 화면이 브라우저에서 그대로 돈다면, 흉내 낸 칸을 늘어놓을 이유가 없다. 진짜를 띄운다.
+// 이 화면은 두 번 크게 바뀌었다. 처음에는 '무엇을 만들까요 → 무엇을 넣을까요 → 다 됐으면' 세 칸이
+// 있었다. 다음에는 그 자리에 DesignCraft 웹 편집기를 띄웠다 — 인디자인처럼 생긴 그 화면이
+// 브라우저에서 그대로 돈다는 것을 알고 나서다.
 //
-// 편집기는 `public/designcraft/`에 있고 저장소에는 없다(wasm 하나가 62MB다). `prebuild`가
-// GitHub 릴리스에서 받아 푼다 — `public/models`·`public/ort`와 같은 방식이다. 못 받았으면
-// 편집기 자리에 받는 법을 적는다.
+// **편집기를 다시 걷어냈다.** 그 편집기는 브라우저 안에서 혼자 돈다. 바깥에서 조종할 수도,
+// 들여다볼 수도 없다(글루 JS에 `postMessage`도 `WebSocket`도 없다 — 찾아봤다). 그래서 거기서
+// 손으로 만든 것은 에이전트에게 가지 않고, 에이전트가 하는 일도 거기에 비치지 않는다.
+// 62MB짜리 wasm을 받아 가며 띄울 값이 없었다.
 //
-// **에이전트는 이 편집기를 조종하지 못한다.** 웹 빌드에는 바깥과 통하는 길이 없다(wasm 안을
-// 뒤져 확인했다 — MCP도 제어 포트도 없다). 브라우저 안에서 혼자 도는 편집기다.
-// 에이전트가 하는 일이 **눈앞에서 바뀌는 것을 보려면** 데스크톱 앱을 `--control`로 띄우고
-// 에이전트를 거기에 붙여야 한다. 그 길도 열어 두었고, 아래에 적는다.
+// 남긴 것은 **MCP 연결 하나**다. 클로드·커서가 그 연결로 문서를 만들고 고치면, 걸음마다 기록이
+// 쌓인다. 이 화면은 그것을 **글로** 적고, 그 문서를 그대로 인쇄 검수로 넘긴다.
 //
-// 만드는 길(`compose`·`edit_document`)은 그대로 둔다 — 클로드·커서가 MCP로 쓰고, 화면에서만
+// 만드는 창구(`compose`·`edit_document`)는 그대로 둔다 — 클로드·커서가 MCP로 쓴다. 화면에서만
 // 걷어낸 것이다.
 
 import Link from "next/link";
@@ -26,24 +25,9 @@ import { SetupGuide } from "../dc-shared";
 import WatchDoc from "../watch-doc";
 import { SignInNote } from "../sign-in";
 
-/** 편집기가 깔려 있는지. 없으면 `prebuild`가 아직 못 받은 것이다. */
-function useEditor() {
-  const [ready, setReady] = useState<boolean | null>(null);
-  useEffect(() => {
-    let alive = true;
-    fetch("/designcraft/index.html", { method: "HEAD" })
-      .then((r) => { if (alive) setReady(r.ok); })
-      .catch(() => { if (alive) setReady(false); });
-    return () => { alive = false; };
-  }, []);
-  return ready;
-}
-
 export default function MakePage() {
   const [mcp, setMcp] = useState<McpStatus | null>(null);
   const [mcpBusy, setMcpBusy] = useState(true);
-  const [big, setBig] = useState(false);
-  const editor = useEditor();
 
   const check = useCallback(
     () => mcpStatus()
@@ -65,9 +49,9 @@ export default function MakePage() {
       <div className="page_head">
         <h1>작업 만들기</h1>
         <p className="lead">
-          인디자인 같은 편집기를 이 쪽에서 바로 씁니다. 명함·전단·포스터·책·잡지 — 판형을 고르고
-          글상자와 사진을 놓아 만드시면 됩니다. 만든 것을 <code>.idml</code>로 내려받아{" "}
-          <Link href="/">인쇄 검수</Link>에 올리면 검수와 교정 반영까지 이어집니다.
+          클로드·커서에 “명함 하나 만들어 줘” 하고 시키면, DesignCraft 엔진이 인디자인 문서를
+          만듭니다. 그 일이 어떻게 되어 가는지 이 쪽에서 <b>한 걸음씩 글로</b> 보입니다.
+          다 되면 <Link href="/">인쇄 검수</Link>로 바로 넘겨 글꼴·도련·색·오탈자를 받아 보세요.
         </p>
       </div>
 
@@ -94,77 +78,30 @@ export default function MakePage() {
           </div>
         )}
         <p className="note">
-          이 연결은 <b>검수와 교정 반영</b>에 쓰입니다. 아래 편집기는 브라우저 안에서 혼자 돌기 때문에
-          이 연결과는 따로입니다 — <b>아래에서 만든 것이 에이전트에게 저절로 가지는 않습니다.</b>{" "}
-          <code>.idml</code>로 내려받아 <Link href="/">인쇄 검수</Link>에 올려 주세요.
+          이 연결로 <b>문서를 만들고, 고치고, 검수 결과를 반영</b>합니다. 클로드·커서를 이 앱에
+          붙이는 방법은 <Link href="/help">도움말</Link>에 적어 두었습니다.
         </p>
         {mcp?.available && !appMode && (
           <p className="note">
-            <b>에이전트가 하는 일을 눈앞에서 보고 싶다면</b> 데스크톱 앱을 쓰십시오.
-            앱을 <code>designcraft --control 7979</code>로 띄우고 에이전트 쪽{" "}
-            <code>agents/.env</code>에 <code>PG_DESIGNCRAFT_CONNECT=7979</code>를 넣으면,
-            말로 부탁한 것과 교정 반영이 <b>그 앱 창에서 실시간으로</b> 일어납니다.
+            지금은 <b>창 없이</b> 돕니다 — 문서를 파일로만 다루고, 쪽 그림을 뽑아 아래에 보여 줍니다.
+            만들어지는 것을 <b>눈앞에서</b> 보고 싶으시면 데스크톱 앱을{" "}
+            <code>designcraft --control 7979</code>로 띄우고 에이전트 쪽 <code>agents/.env</code>에{" "}
+            <code>PG_DESIGNCRAFT_CONNECT=7979</code>를 넣으세요. 그러면 그 앱 창에서 바로 일어납니다.
             다만 그때는 폴더 울타리가 없어집니다(돌고 있는 앱은 가둘 수 없습니다).
           </p>
         )}
         {appMode && (
           <p className="note">
-            <b>켜 두신 앱에 붙어 있습니다.</b> 에이전트가 하는 일은 그 <b>앱 창</b>에서 실시간으로 보입니다
-            (아래 편집기가 아니라 따로 뜬 그 창입니다). 이 모드에서는 폴더 울타리가 없습니다.
+            <b>켜 두신 앱에 붙어 있습니다.</b> 에이전트가 하는 일이 그 <b>앱 창</b>에서 바로 일어납니다.
+            이 모드에서는 폴더 울타리가 없습니다.
           </p>
         )}
         {mcp?.available === false && <SetupGuide reason={mcp.reason ?? ""} />}
         {mcp?.available === false && mcp.hint && <p className="note">{mcp.hint}</p>}
       </section>
 
-      {/* 에이전트가 하는 일을 따라 보는 칸. 편집기 캔버스는 조종도 구경도 할 수 없어서,
-          그려진 쪽을 쫓아 보여 준다. */}
+      {/* 하는 일(글) + 그 문서(검수로 넘기기·파일 받기·쪽 미리보기·검사). */}
       <WatchDoc />
-
-      {/* 편집기 */}
-      <section className="panel dc_editor_wrap">
-        <div className="dc_head">
-          <strong>편집기</strong>
-          {editor === true && <span className="chip">DesignCraft 웹</span>}
-          {editor === null && <span className="note">여는 중…</span>}
-          <span className="grow" />
-          <button type="button" className="pill" onClick={() => setBig((b) => !b)}>
-            {big ? "낮게 보기" : "높게 보기"}
-          </button>
-          <a className="pill" href="/designcraft/index.html" target="_blank" rel="noreferrer">새 탭에서 열기</a>
-        </div>
-
-        {editor === false && (
-          <div className="warn">
-            <p><b>편집기를 아직 받지 않았습니다.</b> 저장소에 넣지 않습니다 — 파일 하나가 62MB입니다.</p>
-            <p>앱을 돌리는 자리에서 한 번 받으면 됩니다:</p>
-            <pre className="dc_cmd">cd frontend &amp;&amp; npm run fetch:designcraft</pre>
-            <p className="note">
-              GitHub 릴리스에서 받아 공개된 SHA256과 대조한 뒤 <code>public/designcraft/</code>에 풉니다.
-              빌드할 때도 자동으로 받습니다(<code>prebuild</code>).
-            </p>
-          </div>
-        )}
-
-        {editor === true && (
-          <>
-            <iframe
-              className={`dc_editor${big ? " tall" : ""}`}
-              src="/designcraft/index.html"
-              title="DesignCraft 편집기"
-              allow="fullscreen; clipboard-read; clipboard-write"
-              // 내려받기(저장·내보내기)와 저장소(환경 설정)가 있어야 한다. 그 둘이 빠지면
-              // 만든 것을 꺼낼 수도, 설정을 기억할 수도 없다.
-              sandbox="allow-scripts allow-same-origin allow-downloads allow-popups allow-popups-to-escape-sandbox allow-modals"
-              allowFullScreen
-            />
-            <p className="note">
-              처음 열 때 한 번 크게 받습니다(조금 걸립니다). 글쇠는 편집기를 한 번 누른 뒤부터 그쪽으로 갑니다.
-              만든 것은 <b>File → Export</b>로 <code>.idml</code>이나 PDF로 내려받으세요.
-            </p>
-          </>
-        )}
-      </section>
     </main>
   );
 }

@@ -14,8 +14,6 @@ __pycache__/
 # 용량이 큰 모델·런타임 파일 (README의 받는 법 참고)
 frontend/public/models/
 frontend/public/ort/
-# DesignCraft 웹 빌드(wasm 하나가 62MB) — frontend의 prebuild가 릴리스에서 받아 푼다
-frontend/public/designcraft/
 
 # 로컬 환경
 .env*

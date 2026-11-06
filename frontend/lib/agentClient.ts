@@ -198,23 +198,17 @@ export const applyFixes = (ctx: string, fixes: Fix[]) =>
 export type FixResult = Partial<ApplyResult> & { skipped?: boolean; asked?: number };
 
 /* ---------- 인디자인이 하는 일 전부 ----------
-   DesignCraft 엔진은 547개 명령을 받는다. 우리가 그중 몇 개를 코드로 감싸면 감싼 것만 할 수 있는
-   앱이 된다. 그래서 **명령표를 그대로 받아** 화면에 펼치고, 고른 명령을 그대로 얹는다.
-   할 수 있는 일의 범위를 우리 코드가 아니라 엔진이 정하게 하는 쪽이 맞다. */
+   DesignCraft 엔진은 547개 명령을 받는다. 그 명령을 **화면에서 짜지 않는다** — 만드는 일은
+   클로드·커서가 MCP로 한다(`compose_document`·`edit_document`·`make_document`). 브라우저는
+   그 결과를 **따라 보고**(`watch`), 그 문서를 검수로 넘긴다.
 
-/** 엔진 명령 하나. `params`는 **엔진이 적어 준 인자 설명을 그대로** 들고 온다 —
- *  우리가 547개를 번역해 둘 수는 없고, 번역해 두면 엔진이 바뀔 때 거짓말이 된다. */
-export type EngineCommand = { id: string; label: string; menu: string[]; params: string; enabled: boolean };
-/** 명령표는 **화면에서 쓰지 않는다** — 명령을 찾아 쓰는 칸을 없앴다(적어서 부탁하면 되는 일이었다).
- *  창구(`GET /designcraft/commands`)는 그대로 둔다: 클로드·커서가 MCP로 붙을 때 그쪽이 쓴다. */
+   한때는 판형을 고르고 명령을 찾아 얹는 칸이 여기 있었고, 그다음에는 DesignCraft 웹 편집기를
+   띄웠다. 둘 다 걷어냈다 — 명령을 찾아 쓰는 일은 인디자인을 아는 사람도 이 화면에서 하고
+   싶지 않고, 웹 편집기는 브라우저 안에서 혼자 돌아 에이전트와 이어지지 않는다.
+   그래서 아래에는 **따라 보기와 넘기기**에 쓰는 것만 남는다. */
 
 export type EngineStep = { command: string; params: Record<string, unknown> };
 
-/** 말로 부탁한 것을 명령으로 **짜 준** 결과. 짜 주기만 하고 고치지는 않는다 —
- *  LLM이 틀릴 수 있으니 사람이 무엇이 일어날지 보고 누르는 틈을 둔다. */
-export type Composed = {
-  available: boolean; commands: EngineStep[]; says: string; dropped: string[]; reason?: string;
-};
 /** 만드는 동안의 한 걸음. 화면이 이걸 되풀이해 물어 **실시간으로** 따라간다 —
  *  한 번에 다 하고 끝에 보여 주면, 20초 동안 멈춘 것인지 도는 것인지 알 수가 없다. */
 export type MakeStep = {
@@ -223,8 +217,6 @@ export type MakeStep = {
     result?: Record<string, unknown> | null; params?: Record<string, unknown>;
     pages?: number; items?: number };
 };
-export const makeProgress = (ctx: string) => call(`/designcraft/${ctx}/progress`).then((r) => j<MakeStep[]>(r));
-
 /** 지켜보기 — 에이전트가 만들고 있는 문서의 지금 모습. 클로드·커서가 MCP로 만든 것도
  *  **번호만 알면** 볼 수 있다(그 번호는 난수라 찍어 맞힐 수 없다). 보는 것만 되고,
  *  고치는 창구는 그대로 주인만 들어간다. */
@@ -243,49 +235,18 @@ export async function watchShot(ctx: string, name: string) {
   return URL.createObjectURL(await r.blob());
 }
 
-export const composeDocument = (ctx: string, request: string) =>
-  post<Composed>(`/designcraft/${ctx}/compose`, { request });
-/** 올려 둔 그림은 서버가 그 의뢰에 적어 두고, 다음 `composeDocument`에 같이 넘긴다 —
- *  브라우저의 사진은 에이전트 PC에 없으므로 **먼저 올려야** 말로 부탁할 때 쓸 수 있다. */
+/** 번호를 들고 와 그 문서를 **내 화면으로 가져온다.** 원래 주인은 그대로 두고 곁에 선다 —
+ *  이걸 해야 파일을 받고 검수로 넘길 수 있다(지켜보기만으로는 보기만 된다). */
+export const adoptDoc = (ctx: string) => post<SourceView & { made: boolean }>(`/designcraft/${ctx}/adopt`);
 
-/** 한 단계를 얹은 뒤의 문서. 실패하면 `ok:false`이고 **아무것도 저장되지 않는다**(전부 아니면 전무). */
-export type EditResult = FontState & {
-  ok: boolean;
-  applied: { command: string; result: Record<string, unknown> | null }[];
-  failed: { command: string; reason: string; not_run: number } | null;
-  undone?: boolean; can_undo: boolean;
-  pages: number; shots: string[]; items: number; stories: number;
-  preflight: PreflightIssue[]; pdf_ref?: string;
-};
-export const editDocument = (ctx: string, commands: EngineStep[]) =>
-  post<EditResult>(`/designcraft/${ctx}/edit`, { commands });
-/** 바로 앞 단계로. **한 단계만** 간다 — 어디까지 돌아갔는지 모르는 것이 더 무섭다. */
-export const undoEdit = (ctx: string) => post<EditResult>(`/designcraft/${ctx}/edit`, { undo: true });
-
-/** 문서에 넣을 사진을 의뢰 폴더에 둔다. 돌려주는 `path`를 `file.place`에 그대로 쓴다.
- *  브라우저의 사진은 에이전트 PC에 없으므로, 먼저 그 폴더 안으로 올려야 엔진이 읽는다. */
-export async function uploadAsset(ctx: string, file: File) {
-  const fd = new FormData();
-  fd.append("file", file);
-  return j<{ path: string; name: string; bytes: number; original: string }>(
-    await call(`/designcraft/${ctx}/asset`, { method: "POST", body: fd }));
-}
-
-/** 새 문서를 만든다(빈 판형 또는 샘플 잡지). 돌아오는 것이 **올린 원본과 같은 모양**이라
- *  그대로 검수에 넘길 수 있다(`createJob(null, opts, context_id)`). */
-export type MadeDoc = SourceView & { made: true; width_mm: number; height_mm: number };
-export type MakeSpec = {
-  start: "blank" | "sample"; width_mm?: number; height_mm?: number; pages?: number; facing?: boolean;
-  columns?: number; gutter_mm?: number; margin_mm?: number; bleed_mm?: number; text?: string;
-};
-export const createDocument = (spec: MakeSpec) => post<MadeDoc>("/designcraft/create", spec);
+/* 짜 주기(`compose`)·고치기(`edit`)·사진 올리기(`asset`)·새로 만들기(`create`) 창구는 그대로
+   돈다. 브라우저에서 부르는 곳이 없어 감싼 것만 걷어냈다 — 클로드·커서가 MCP로 그 길을 쓴다. */
 
 /** 올려 둔(또는 만들어 둔) 원본을 다시 집어 온다. '작업 만들기'에서 검수로 넘어올 때 쓴다. */
 export const getSource = async (ctx: string) => j<SourceView>(await call(`/designcraft/${ctx}`));
 
 /** 작업 폴더의 결과물 주소(전후 PNG, 고친 PDF/IDML). 주인만 받을 수 있다. */
 const dcFilePath = (ctx: string, name: string) => `/designcraft/${ctx}/file/${encodeURIComponent(name)}`;
-export const dcFileUrl = (ctx: string, name: string) => `${orchUrl()}${dcFilePath(ctx, name)}`;
 
 /** 이미지·파일은 <img src>로 바로 못 건다 — 열쇠 헤더가 필요해서 받아서 blob URL로 바꾼다. */
 export async function dcFileBlob(ctx: string, name: string): Promise<string> {
