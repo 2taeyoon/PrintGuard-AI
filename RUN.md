@@ -21,19 +21,22 @@ python agents/run_agents.py
 C:\Users\403\miniforge3\envs\dev\python.exe agents\run_agents.py   # PowerShell·cmd
 ```
 
-**환경을 켜는 걸 빼먹으면 절반만 뜹니다.** `run_agents.py`는 자기를 실행한 파이썬으로 자식 에이전트를 띄웁니다. 의존성은 conda 환경 `dev`에만 있으므로, 시스템 파이썬(`C:\Users\403\AppData\Local\Programs\Python\Python312\python.exe`)이 잡히면 파이썬 6개가 전부 죽고 Node 3개(preflight·color·paper)만 살아남습니다. 런처 화면에 이렇게 찍힙니다.
+**환경을 켜는 걸 빼먹으면 런처가 멈춥니다.** `run_agents.py`는 자기를 실행한 파이썬으로 자식 에이전트를 띄웁니다. 의존성은 conda 환경 `dev`에만 있으므로, 시스템 파이썬(`C:\Users\403\AppData\Local\Programs\Python\Python312\python.exe`)이 잡히면 아무것도 띄우지 않고 이렇게 적습니다.
 
 ```
-[종료됨] orchestrator (코드 1) — agents\.data\logs\orchestrator.log 확인
+[멈춤] 이 파이썬에는 에이전트 의존성이 없습니다: C:\Users\403\AppData\Local\Programs\Python\Python312\python.exe
 ```
 
-그 로그 끝에 있는 문구가 판정입니다.
+`conda activate dev`를 하고 다시 치거나, `agents/.env`의 `PG_PYTHON`에 그 파이썬 경로를 적어 두면 됩니다.
+
+**이미 떠 있는 것은 건드리지 않습니다.** 포트가 잡혀 있으면 켜기 전에 이름과 포트를 적고 그 에이전트는 넘깁니다.
 
 ```
-ModuleNotFoundError: No module named 'uvicorn'
+[이미 떠 있음] color (8703) — 끄려면 그 에이전트를 띄운 창에서 Ctrl+C
+[그대로] 켜려던 에이전트가 모두 이미 떠 있습니다.
 ```
 
-이 상태가 고약한 건 포트 3개가 열려 있어서 "뜬 것처럼" 보이는데, 바깥 창구인 orchestrator(8700)가 없어서 앱에서는 아무것도 안 된다는 점입니다. 포트를 셀 때 9개인지 보는 이유입니다.
+이 두 가지는 전에 **`[종료됨] (코드 1)` 한 줄로만 보였습니다.** 그 줄은 원인을 적지 않는데 화면에서는 먼저 띄운 에이전트가 멀쩡히 답하고 있어서, 죽은 것과 떠 있는 것이 같은 화면에 섞여 보였습니다. 지금은 켜기 전에 판정합니다.
 
 ## 터널
 
@@ -67,7 +70,8 @@ PowerShell에서는 `curl`이 `Invoke-WebRequest`의 별칭이라 `-s` 같은 �
 | `curl.exe -s http://127.0.0.1:8700/health`가 무응답 | 에이전트 | 위 "에이전트 9개 켜기" |
 | 공개 주소가 **502** | 에이전트 (**터널은 정상**) | 위 "에이전트 9개 켜기" |
 | 공개 주소가 **530** | 터널 | `cloudflared tunnel run printguard` |
-| 포트는 9개가 아니라 3개 | 파이썬 6개가 죽음 | 환경을 켜고 다시 — 위 함정 절 |
+| 런처가 `[멈춤]`을 적고 끝남 | 시스템 파이썬이 잡힘 | `conda activate dev`, 또는 `agents/.env`의 `PG_PYTHON` |
+| 런처가 `[이미 떠 있음]`만 적음 | 꺼진 것 없음 | 그대로 쓰면 됩니다 |
 | 로컬·터널 다 200인데 화면만 안 붙음 | CORS | `agents/.env`의 `PG_CORS_ORIGIN_REGEX` |
 
 상태 코드 대신 `000`이 나오면 HTTP 응답을 아예 못 받은 것입니다(502·530과 달리 Cloudflare까지 가지도 못한 상태). 간헐적으로 나므로 먼저 한 번 더 해 보고, 계속 그러면 네트워크나 DNS를 봅니다.
