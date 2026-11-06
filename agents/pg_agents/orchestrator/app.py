@@ -1,7 +1,7 @@
 """오케스트레이터(총괄) :8700.
 
 앱용 API
-- POST /jobs (multipart: file=PDF, options=JSON)  → {context_id, status}. 같은 PDF·같은 옵션이면 이전 job을 돌려준다(멱등성)
+- POST /jobs (multipart: file=PDF 또는 source=원본 의뢰 번호, options=JSON) → {context_id, status}. 같은 입력·같은 옵션이면 이전 job을 돌려준다(멱등성)
 - GET  /jobs/{context_id}                         → 상태·단계·결과·질문
 - POST /jobs/{context_id}/answer  {"value": …}    → input-required 답
 - GET  /agents                                     → Agent Card 레지스트리와 상태
@@ -263,22 +263,42 @@ async def trace(context_id: str, limit: int = 2000, authorization: str | None = 
 
 
 @app.post("/jobs")
-async def create_job(file: UploadFile = File(...), options: str = Form("{}"), authorization: str | None = Auth) -> dict[str, Any]:
+async def create_job(file: UploadFile | None = File(None), options: str = Form("{}"), source: str = Form(""),
+                     authorization: str | None = Auth) -> dict[str, Any]:
+    """검수 의뢰를 연다. 들어오는 길이 둘이다.
+
+    - `file`: PDF를 그대로 올린 경우.
+    - `source`: **편집 파일(IDML)로 먼저 올린 경우**(`POST /designcraft/source`가 내준 의뢰 번호).
+      그 원본에서 뽑아 둔 PDF로 검수하고, 검수가 끝나면 그 원본을 고칠 수 있다(plan의 마지막 단계).
+      PDF만 올린 의뢰에는 고칠 원본이 없어서 그 단계가 서지 않는다.
+    """
     set_agent_name(NAME)
-    # 통째로 읽고 나서 크기를 재면 이미 메모리에 들어온 뒤다. 한도를 넘는 순간 끊는다
-    buf, size = [], 0
-    while blk := await file.read(1 << 20):
-        size += len(blk)
-        if size > MAX_UPLOAD:
-            raise HTTPException(413, f"PDF가 너무 큽니다(최대 {MAX_UPLOAD // (1024 * 1024)}MB)")
-        buf.append(blk)
-    data = b"".join(buf)
-    if not data.startswith(b"%PDF"):
-        raise HTTPException(400, "PDF 파일이 아닙니다")
-    opts = json.loads(options or "{}")
-    sha = hashlib.sha256(data).hexdigest()
-    (STORE / f"{sha}.pdf").write_bytes(data)
     who = _who(authorization)
+    opts = json.loads(options or "{}")
+    if source:
+        dc = _dc_owned(source, who)      # 남의 원본으로 의뢰를 열 수 없다
+        sha = str((dc.get("inspect") or {}).get("pdf_ref") or "")
+        if not sha:
+            raise HTTPException(409, "원본에서 뽑아 둔 PDF가 없습니다. 원본을 다시 올려 주세요")
+        name = dc["filename"]
+        # 고칠 때 필요한 것(어느 폴더의 어느 문서인가)을 의뢰에 적어 둔다. plan이 이 값으로 단계를 세운다.
+        opts = {**opts, "src_ctx": source, "src_ref": dc["src_ref"], "src_doc": dc.get("doc") or dc["filename"]}
+    else:
+        if file is None:
+            raise HTTPException(400, "검수할 파일이 없습니다")
+        # 통째로 읽고 나서 크기를 재면 이미 메모리에 들어온 뒤다. 한도를 넘는 순간 끊는다
+        buf, size = [], 0
+        while blk := await file.read(1 << 20):
+            size += len(blk)
+            if size > MAX_UPLOAD:
+                raise HTTPException(413, f"PDF가 너무 큽니다(최대 {MAX_UPLOAD // (1024 * 1024)}MB)")
+            buf.append(blk)
+        data = b"".join(buf)
+        if not data.startswith(b"%PDF"):
+            raise HTTPException(400, "PDF 파일이 아닙니다")
+        sha = hashlib.sha256(data).hexdigest()
+        (STORE / f"{sha}.pdf").write_bytes(data)
+        name = file.filename or "upload.pdf"
     # 주인을 키에 섞는다. 안 그러면 같은 PDF를 올린 다른 사람에게 남의 의뢰가 돌아간다
     # 멱등성 키를 세 값의 배열로 묶어서 만든다. 이어 붙이면 경계가 모호해져 다른 조합이 같은 키가 될 수 있다
     key = hashlib.sha256(json.dumps([sha, opts, who], sort_keys=True).encode()).hexdigest()[:24]
@@ -292,7 +312,7 @@ async def create_job(file: UploadFile = File(...), options: str = Form("{}"), au
         raise HTTPException(429, f"이미 진행 중인 검사가 {active}건입니다. 끝난 뒤에 다시 맡겨 주세요")
     _evict()
     ctx = f"ctx_job_{secrets.token_hex(12)}"
-    job = Job(context_id=ctx, idempotency_key=key, options=opts, pdf_ref=sha, filename=file.filename or "upload.pdf", client=who)
+    job = Job(context_id=ctx, idempotency_key=key, options=opts, pdf_ref=sha, filename=name, client=who)
     JOBS[ctx], BY_KEY[key] = job, ctx
     reg = await registry()
     available = {d for d, v in reg.items() if v["status"] in ("on", "fake")}
@@ -437,6 +457,15 @@ def _dc_owned(ctx: str, client: str) -> dict[str, Any]:
     return j
 
 
+def _dc_or_job(ctx: str, client: str) -> None:
+    """결과 파일의 주인 확인. 원본 수정은 두 곳에서 돈다 — 원본만 올린 의뢰(ctx_dc_…)와
+    검수 흐름 안(ctx_job_…). 작업 폴더 이름이 그 의뢰 번호라서 둘 다 받아야 한다."""
+    if ctx.startswith("ctx_job_"):
+        _owned(ctx, client)
+        return
+    _dc_owned(ctx, client)
+
+
 @app.get("/designcraft/status")
 async def dc_status() -> dict[str, Any]:
     """MCP가 연결되는지. 안 되는 이유를 **고칠 수 있는 말로** 돌려준다 — 에이전트가 안 떴는지,
@@ -539,6 +568,48 @@ async def dc_source(files: list[UploadFile] = File(...), paths: str = Form("[]")
                      **(r.get("output") or {})}, "meta": {}}
 
 
+@app.post("/designcraft/create")
+async def dc_create(body: dict[str, Any], authorization: str | None = Auth) -> dict[str, Any]:
+    """새 문서를 만든다(빈 판형 또는 샘플 잡지).
+
+    만든 것을 **올린 원본과 똑같이** 다룬다 — 같은 보관 폴더에 두고, 같은 `inspect_source`로 열어 보고,
+    같은 의뢰 번호로 검수에 넘긴다. 그래야 '만든 파일'만 다른 길로 흐르는 일이 없다.
+    """
+    set_agent_name(NAME)
+    who = _writer(authorization).subject
+    active = sum(1 for j in DCJOBS.values() if j.get("client") == who)
+    if active >= MAX_ACTIVE * 3:
+        raise HTTPException(429, "만든 문서가 너무 많습니다. 잠시 뒤에 다시 해 주세요")
+    ensure_dirs()
+    ctx = f"ctx_dc_{secrets.token_hex(12)}"
+    log_event(ctx, "dc_create_opened", source=NAME, payload={"start": str(body.get("start") or "blank")})
+    r = await _ask("designcraft", "create_document", ctx, body)
+    if r.get("status") != "completed":
+        raise HTTPException(502, (((r.get("output") or {}).get("reason") or (r.get("output") or {}).get("message"))
+                                  or "문서를 만들지 못했습니다")[:300])
+    made = r.get("output") or {}
+    DCJOBS[ctx] = {"client": who, "src_ref": made["src_ref"], "filename": made["doc"], "doc": made["doc"],
+                   "files": 1, "created": time.time(), "result": None, "made": True}
+    while len(DCJOBS) > MAX_JOBS:
+        DCJOBS.pop(min(DCJOBS, key=lambda k: DCJOBS[k]["created"]), None)
+    ins = await _ask("designcraft", "inspect_source", ctx, {"src_ref": made["src_ref"], "filename": made["doc"]})
+    if ins.get("status") != "completed":
+        raise HTTPException(502, "만든 문서를 다시 열지 못했습니다")
+    DCJOBS[ctx]["inspect"] = ins.get("output")
+    return {"data": {"context_id": ctx, "filename": made["doc"], "made": True,
+                     "width_mm": made.get("width_mm"), "height_mm": made.get("height_mm"),
+                     **(ins.get("output") or {})}, "meta": {}}
+
+
+@app.get("/designcraft/{ctx}")
+async def dc_get(ctx: str, authorization: str | None = Auth) -> dict[str, Any]:
+    """올려 두었거나 만들어 둔 원본을 다시 집어 온다('작업 만들기' → '인쇄 검수'로 넘어올 때).
+    화면이 번호 하나만 들고 옮겨 다닐 수 있어야 한다 — 쪽수·미리보기를 주소에 실어 나르지 않는다."""
+    j = _dc_owned(ctx, _who(authorization))
+    return {"data": {"context_id": ctx, "filename": j["filename"], "made": bool(j.get("made")),
+                     **(j.get("inspect") or {})}, "meta": {}}
+
+
 @app.post("/designcraft/{ctx}/apply")
 async def dc_apply(ctx: str, body: dict[str, Any], authorization: str | None = Auth) -> dict[str, Any]:
     """검수에서 복사해 온 교정 목록을 원본에 얹고 PDF로 내보낸다."""
@@ -548,8 +619,10 @@ async def dc_apply(ctx: str, body: dict[str, Any], authorization: str | None = A
         raise HTTPException(400, "반영할 교정이 없습니다")
     if len(fixes) > MAX_FIXES:
         raise HTTPException(413, f"교정이 너무 많습니다(최대 {MAX_FIXES}건)")
+    # confirm="yes": 이 길은 사람이 화면에서 '반영' 단추를 직접 누른 것이라 더 물을 것이 없다.
+    # (검수 흐름 안에서 부를 때는 confirm을 비워 두고 에이전트가 사용자에게 묻는다.)
     r = await _ask("designcraft", "apply_fixes", ctx,
-                   {"src_ref": j["src_ref"], "filename": j.get("doc") or j["filename"], "fixes": fixes})
+                   {"src_ref": j["src_ref"], "filename": j.get("doc") or j["filename"], "fixes": fixes, "confirm": "yes"})
     if r.get("status") == "completed":
         j["result"] = r.get("output")
     return {"data": r, "meta": {}}
@@ -558,7 +631,7 @@ async def dc_apply(ctx: str, body: dict[str, Any], authorization: str | None = A
 @app.get("/designcraft/{ctx}/file/{name}")
 async def dc_file(ctx: str, name: str, authorization: str | None = Auth) -> FileResponse:
     """작업 폴더의 결과물(전후 PNG, 고친 PDF/IDML)을 내려 준다. 폴더 밖은 내보내지 않는다."""
-    _dc_owned(ctx, _who(authorization))
+    _dc_or_job(ctx, _who(authorization))
     if name != Path(name).name or name.startswith("."):
         raise HTTPException(400, "잘못된 이름")
     p = (DC_OUT / ctx / name).resolve()

@@ -49,9 +49,14 @@ export const getJob = async (ctx: string) => j<JobView>(await call(`/jobs/${ctx}
 export const answerJob = async (ctx: string, value: string) =>
   j<unknown>(await call(`/jobs/${ctx}/answer`, { method: "POST", body: JSON.stringify({ value }) }, { "Content-Type": "application/json" }));
 
-export async function createJob(file: File, options: Record<string, unknown>): Promise<{ context_id: string; duplicate: boolean }> {
+/** 검수를 맡긴다. 들어가는 길이 둘이다.
+ *  - `file`: PDF를 그대로 올리는 길.
+ *  - `source`: **편집 파일(IDML)로 먼저 올린** 뒤 그 원본 의뢰 번호로 맡기는 길. 이때만 검수가
+ *    끝난 뒤 원본 수정까지 이어진다(고칠 원본이 서버에 있으므로). PDF로 맡기면 그 단계가 없다. */
+export async function createJob(file: File | null, options: Record<string, unknown>, source = ""): Promise<{ context_id: string; duplicate: boolean }> {
   const fd = new FormData();
-  fd.append("file", file);
+  if (source) fd.append("source", source);
+  else if (file) fd.append("file", file);
   fd.append("options", JSON.stringify(options));
   return j(await call("/jobs", { method: "POST", body: fd }));
 }
@@ -166,13 +171,34 @@ export type ApplyResult = {
 export const applyFixes = (ctx: string, fixes: Fix[]) =>
   post<AgentReply>(`/designcraft/${ctx}/apply`, { fixes });
 
+/** 검수 흐름 안에서 원본을 고친 결과(`job.results.fix`). 고치지 않기로 했으면 `skipped`만 온다. */
+export type FixResult = Partial<ApplyResult> & { skipped?: boolean; asked?: number };
+
+/** 새 문서를 만든다(빈 판형 또는 샘플 잡지). 돌아오는 것이 **올린 원본과 같은 모양**이라
+ *  그대로 검수에 넘길 수 있다(`createJob(null, opts, context_id)`). */
+export type MadeDoc = SourceView & { made: true; width_mm: number; height_mm: number };
+export type MakeSpec = {
+  start: "blank" | "sample"; width_mm?: number; height_mm?: number; pages?: number; facing?: boolean;
+  columns?: number; gutter_mm?: number; margin_mm?: number; bleed_mm?: number; text?: string;
+};
+export const createDocument = (spec: MakeSpec) => post<MadeDoc>("/designcraft/create", spec);
+
+/** 올려 둔(또는 만들어 둔) 원본을 다시 집어 온다. '작업 만들기'에서 검수로 넘어올 때 쓴다. */
+export const getSource = async (ctx: string) => j<SourceView>(await call(`/designcraft/${ctx}`));
+
 /** 작업 폴더의 결과물 주소(전후 PNG, 고친 PDF/IDML). 주인만 받을 수 있다. */
 const dcFilePath = (ctx: string, name: string) => `/designcraft/${ctx}/file/${encodeURIComponent(name)}`;
 export const dcFileUrl = (ctx: string, name: string) => `${orchUrl()}${dcFilePath(ctx, name)}`;
 
 /** 이미지·파일은 <img src>로 바로 못 건다 — 열쇠 헤더가 필요해서 받아서 blob URL로 바꾼다. */
 export async function dcFileBlob(ctx: string, name: string): Promise<string> {
+  return URL.createObjectURL(await dcFile(ctx, name));
+}
+
+/** 같은 파일을 바이트로. 원본에서 뽑은 검수용 PDF는 화면에서도 읽어야 한다 —
+ *  크기를 재고(lib/pagesize) 쪽을 그린다(pdf.js). 그래서 blob 주소가 아니라 파일이 필요하다. */
+export async function dcFile(ctx: string, name: string): Promise<Blob> {
   const r = await call(dcFilePath(ctx, name));
   if (!r.ok) throw new Error(`${name}을 받지 못했습니다(${r.status})`);
-  return URL.createObjectURL(await r.blob());
+  return r.blob();
 }

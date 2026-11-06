@@ -5,6 +5,11 @@
 3단계: color.predict_color — 1단계에서 못 돌렸으면 고른 종이로 실행
 4단계: paper.assess_risk — 후가공을 모르면 묻는다(input-required)
 5단계: guide.search_guide — 앞 단계의 문제·위험·교정 제안마다 근거 문단 검색
+6단계: designcraft.apply_fixes — **편집 파일로 의뢰했을 때만.** 교정 제안을 원본에 반영할지 묻고 고친다
+
+6단계가 조건부인 이유: 고칠 수 있는 것은 편집 파일(IDML)뿐이다. PDF에서는 글자를 집을 수 없어서
+PDF로 들어온 의뢰에는 이 단계가 아예 서지 않는다 — 설 수 없는 단계를 세워 두고 매번 실패시키면
+'원래 되는 일이 안 되는 것'처럼 보인다.
 """
 from __future__ import annotations
 
@@ -63,6 +68,31 @@ def _guide(j: Job) -> dict[str, Any]:
     return {"queries": qs, "k": 2}
 
 
+MAX_FIXES = 300  # 한 번에 원본에 얹을 교정의 상한(오케스트레이터 API의 한도와 같다)
+
+
+def fix_list(j: Job) -> list[dict[str, Any]]:
+    """원본에 얹을 교정. 교정 에이전트의 제안 중 **원문과 고칠 내용이 둘 다 있고 서로 다른 것**만
+    고른다. 나머지(설명만 있는 제안)는 사람이 읽을 글이지 기계가 찾아 바꿀 수 있는 것이 아니다."""
+    out = []
+    for s in (j.results.get("proofread") or {}).get("suggestions", []):
+        o, g = str(s.get("original") or ""), str(s.get("suggestion") or "")
+        if o and g and o != g:
+            out.append({"key": s.get("key"), "page": s.get("page"), "original": o, "suggestion": g})
+    return out[:MAX_FIXES]
+
+
+def can_fix(j: Job) -> bool:
+    """원본 수정 단계를 세울지. 고칠 원본이 있고(편집 파일로 의뢰), 고칠 거리가 있을 때만."""
+    return bool(j.options.get("src_ref")) and bool(fix_list(j))
+
+
+def _fix(j: Job) -> dict[str, Any]:
+    # confirm은 사용자의 답을 그대로 넘긴다("" = 아직 안 물음 → 에이전트가 묻는다).
+    return {"src_ref": str(j.options.get("src_ref") or ""), "filename": str(j.options.get("src_doc") or ""),
+            "fixes": fix_list(j), "confirm": str(j.answers.get("apply_fixes") or "")}
+
+
 # ---------- 오케스트레이터 API와 MCP 서버가 같이 쓰는 입력 만들기 ----------
 def report_input(j: Job) -> dict[str, Any]:
     """보고서 입력. 수치를 새로 만들지 않고 부서 결과에서 고르기만 한다(ΔE는 report가 color로 다시 계산해 대조한다)."""
@@ -92,4 +122,6 @@ def build_plan(available: set[str]) -> list[list[Call]]:
             [Call("risk", "paper", "assess_risk", _risk, when=paper_known)]]
     if "guide" in available:
         plan.append([Call("guide", "guide", "search_guide", _guide)])
+    if "designcraft" in available:
+        plan.append([Call("fix", "designcraft", "apply_fixes", _fix, when=can_fix)])
     return plan

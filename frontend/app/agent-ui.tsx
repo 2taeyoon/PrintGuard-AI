@@ -14,6 +14,7 @@ const SKILL_LABEL: Record<string, string> = {
   suggest_corrections: "오탈자 수정 제안", find_shops: "인쇄소 찾기", compile_report: "검수 보고서 작성", verify_spec: "사양 교차 검증",
   execute: "행동 실행 허가(안전 관문)",
   mcp_status: "DesignCraft 연결 확인", inspect_source: "인디자인 원본 열어 보기", apply_fixes: "교정을 원본에 반영",
+  create_document: "새 문서 만들기",
 };
 export const skillLabel = (id: string) => SKILL_LABEL[id] ?? id;
 

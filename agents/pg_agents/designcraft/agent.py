@@ -15,9 +15,14 @@ INDD는 엔진이 읽을 수는 있다(indd-utils가 IDML로 바꿔 준다). 그
 InDesign에서 **IDML로 내보내서(파일 → 다른 이름으로 저장 → InDesign Markup) 올리면** 된다.
 
 skill
-- mcp_status     : MCP가 연결되는지, 도구가 몇 개인지 (read)
-- inspect_source : 원본을 열어 쪽·스토리·preflight를 보고, 검수용 PDF를 뽑는다 (read)
-- apply_fixes    : 교정 목록을 반영하고 PDF/IDML로 내보낸다 (A — safety를 거친다)
+- mcp_status      : MCP가 연결되는지, 도구가 몇 개인지 (read)
+- inspect_source  : 원본을 열어 쪽·스토리·preflight를 보고, 검수용 PDF를 뽑는다 (read)
+- apply_fixes     : 교정 목록을 반영하고 PDF/IDML로 내보낸다 (A — 묻고 나서, safety를 거친다)
+- create_document : 새 문서(빈 판형·샘플 잡지)를 만들어 IDML로 내보낸다 (A — safety를 거친다)
+
+**검수 흐름 안에 있다.** 편집 파일로 의뢰가 들어오면 오케스트레이터의 plan 마지막 단계가 이
+에이전트다 — 검수가 끝나고 교정 제안이 있으면 "원본에 바로 반영할까요?"를 묻고, 그렇다고 하면
+고쳐서 내보낸다. PDF로 들어온 의뢰에서는 이 단계가 아예 서지 않는다(고칠 원본이 없다).
 
 교정을 반영할 때 **바이트 오프셋을 미리 모아 두지 않는다.** 한 건 고칠 때마다 다시 찾는다. 한글은
 글자당 3바이트라 앞을 고치면 뒤가 전부 밀리는데, 다시 찾으면 밀린 위치가 저절로 따라온다.
@@ -62,12 +67,19 @@ CARD = AgentCard.model_validate({
          "input_schema": {"src_ref": "sha256", "filename": "string"},
          "output_schema": {"pages": "number", "stories": "[]", "preflight": "Issue[]", "missing_fonts": "string[]",
                            "pdf_ref": "sha256"}},
-        {"id": "apply_fixes", "description": "교정 목록을 원본에 반영하고 PDF로 내보낸다(파일 쓰기는 safety를 거친다)", "grade": "A",
+        {"id": "apply_fixes", "description": "교정 목록을 원본에 반영하고 PDF로 내보낸다(묻고 나서 고치며, 파일 쓰기는 safety를 거친다)", "grade": "A",
          "allowed_requesters": ["orchestrator"],
-         "input_schema": {"src_ref": "sha256", "filename": "string",
+         "input_schema": {"src_ref": "sha256", "filename": "string", "confirm": "yes | no (없으면 사용자에게 묻는다)",
                           "fixes": "[{page?: number(1부터), original: string, suggestion: string, key?: string}]"},
          "output_schema": {"applied": "[]", "failed": "[]", "pdf_ref": "sha256", "source_out": "고친 편집 파일 이름",
                            "shots": "[{page, before, after}] 바뀐 쪽의 전후 그림"}},
+        {"id": "create_document", "description": "새 문서(빈 판형 또는 샘플 잡지)를 만들어 IDML·PDF로 내보낸다(파일 쓰기는 safety를 거친다)", "grade": "A",
+         "allowed_requesters": ["orchestrator"],
+         "input_schema": {"start": "blank | sample", "width_mm": "number", "height_mm": "number", "pages": "number",
+                          "facing": "boolean", "columns": "number", "gutter_mm": "number", "margin_mm": "number",
+                          "bleed_mm": "number", "text": "string? 첫 글상자에 넣을 글"},
+         "output_schema": {"src_ref": "sha256", "doc": "만든 IDML의 이름", "pages": "number", "width_mm": "number",
+                           "height_mm": "number"}},
     ],
 })
 
@@ -321,12 +333,39 @@ def _apply_blocking(src: Path, ext: str, out: Path, fixes: list[dict[str, Any]])
                                 for i in pf.get("issues", [])]}
 
 
+def _ask_first(fixes: list[dict[str, Any]], filename: str) -> dict[str, Any]:
+    """고치기 전에 묻는다. **원본을 바꾸는 일이라 되돌릴 수 없다** — 검수를 맡겼다고 해서
+    원본을 고쳐도 된다는 뜻은 아니다. 무엇을 고치는지 앞의 몇 건을 그대로 보여 준다."""
+    sample = "  ·  ".join(f"{f.get('original')} → {f.get('suggestion')}" for f in fixes[:3])
+    return {"status": "input-required", "reason_code": "customer_input", "output": {},
+            "question": {
+                "field": "apply_fixes",
+                "text": f"교정 {len(fixes)}건을 원본({filename})에 바로 반영할까요?",
+                "why": f"{sample}{' 외 ' + str(len(fixes) - 3) + '건' if len(fixes) > 3 else ''} — "
+                       "올린 원본은 그대로 두고 고친 사본을 PDF와 IDML로 내려 드립니다. "
+                       "찾지 못했거나 같은 문구가 여러 군데인 교정은 건너뛰고 이유를 적습니다.",
+                "options": [
+                    {"value": "yes", "label": "원본 고치기", "hint": "DesignCraft가 글자를 찾아 바꾸고 다시 내보냅니다"},
+                    {"value": "no", "label": "검수만 하기", "hint": "교정 목록은 결과에 그대로 남습니다"},
+                ]}}
+
+
 async def apply_fixes(req: AgentRequest) -> dict[str, Any]:
     fixes = req.input.get("fixes") or []
     if not isinstance(fixes, list) or not fixes:  # 파일을 들추기 전에 싼 검사부터
         return {"status": "rejected", "outcome": "INVALID_INPUT", "output": {"message": "반영할 교정이 없습니다"}}
     src_ref, filename = str(req.input.get("src_ref") or ""), str(req.input.get("filename") or "")
     src, ext = _src_path(src_ref, filename)
+
+    # 묻는 일을 부르는 쪽에 맡기지 않는다. 고치는 것은 이 에이전트이므로 승낙도 이 에이전트가 받는다.
+    # 사람이 직접 '반영' 단추를 누른 길(앱의 원본 수정)은 confirm을 들고 온다.
+    want = str(req.input.get("confirm") or "")
+    if want not in ("yes", "no"):
+        return _ask_first(fixes, Path(filename).name)
+    if want == "no":
+        return {"status": "completed", "outcome": "skipped",
+                "output": {"skipped": True, "applied": [], "failed": [], "asked": len(fixes)},
+                "evidence": {"queries": [], "ref_ids": [], "data_summary": f"교정 {len(fixes)}건을 반영하지 않기로 했습니다"}}
 
     # 파일을 쓰는 행동이므로 safety를 거친다(A 등급). 닿지 못하면 거절한다(fail-closed).
     key = "designcraft:" + hashlib.sha256(f"{req.meta.context_id}|{src_ref}|{len(fixes)}".encode()).hexdigest()[:20]
@@ -349,4 +388,115 @@ async def apply_fixes(req: AgentRequest) -> dict[str, Any]:
                          "data_summary": f"교정 {n + bad}건 중 {n}건 반영, {bad}건 실패"}}
 
 
-app = create_agent_app(CARD, {"mcp_status": mcp_status, "inspect_source": inspect_source, "apply_fixes": apply_fixes})
+# ---------- 새 문서 만들기 ----------
+# 검수·수정은 '남이 만든 파일'을 받는 일이다. 그런데 원본이 아예 없는 사람도 있다. 그 사람에게
+# "인디자인에서 먼저 만들어 오세요"라고 하면 거기서 끝난다. DesignCraft는 문서를 만들 수도 있으므로,
+# 만드는 자리를 열어 두고 **만든 그 파일을 그대로 검수·수정으로 넘긴다**(앱의 '작업 만들기').
+MM = 72 / 25.4          # 1mm는 몇 pt인가. DesignCraft의 길이는 전부 pt다
+MAX_NEW_PAGES = max(1, int(os.environ.get("PG_DESIGNCRAFT_MAX_PAGES", "64")))
+# 새 문서의 기본 글꼴(Source Serif 4)에는 **한글이 없다.** 그대로 두면 넣은 글이 PDF에 한 자도
+# 찍히지 않고 preflight에 '없는 글자'만 쌓인다. 한글이 섞여 있으면 글꼴을 바꿔 준다.
+KO_FONT = os.environ.get("PG_DESIGNCRAFT_KO_FONT", "Malgun Gothic")
+DEFAULT_FONT = "Source Serif 4"
+
+
+def _has_hangul(s: str) -> bool:
+    return any("가" <= c <= "힣" or "ㄱ" <= c <= "ㆎ" for c in s)
+
+
+def _pt(mm: float) -> float:
+    return round(float(mm) * MM, 3)
+
+
+def _clamp(v: Any, lo: float, hi: float, default: float) -> float:
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return default
+    return min(hi, max(lo, f))
+
+
+def _create_blocking(out: Path, dest: Path, spec: dict[str, Any]) -> dict[str, Any]:
+    """새 문서를 만들어 IDML로 내보낸다. 쓰기는 작업 폴더와 원본 보관 폴더 둘뿐이다."""
+    sample = str(spec.get("start") or "blank") == "sample"
+    with Mcp(read_roots=[out, dest.parent], write_roots=[out, dest.parent]) as m:
+        if sample:
+            # DesignCraft가 들고 있는 다쪽 잡지 견본. 판형·단·사진·스타일이 이미 짜여 있어서
+            # 빈 문서보다 '잡지를 만든다'에 가깝다. 크기는 견본이 정한 값을 그대로 쓴다.
+            m.ex("file.newSample")
+        else:
+            margin = _pt(spec.get("margin_mm", 15))
+            m.ex("file.new", intent="print", units="points",
+                 width=_pt(spec["width_mm"]), height=_pt(spec["height_mm"]), pages=int(spec["pages"]),
+                 facingPages=bool(spec.get("facing", True)), columns=int(spec.get("columns", 1)),
+                 gutter=_pt(spec.get("gutter_mm", 5)), margins=margin, bleed=_pt(spec.get("bleed_mm", 3)),
+                 # **기본 글상자(primaryTextFrame)는 쓰지 않는다.** 그 글상자에 글을 넣으면 글이 차지하지
+                 # 않은 쪽이 저절로 지워진다(스마트 텍스트 리플로우). 3쪽을 달라고 해서 1쪽을 받는 셈인데,
+                 # 쪽수는 사람이 정한 값이라 글의 양이 줄여서는 안 된다. 글은 아래에서 직접 만든 상자에 넣는다.
+                 primaryTextFrame=False)
+        doc = m.tool("inspect_document")
+        text = str(spec.get("text") or "").strip()[:4000]
+        if text and not sample:
+            page = (doc.get("spreads") or [{}])[0].get("pages") or [{}]
+            b = page[0].get("bounds") or [0, 0, _pt(spec["width_mm"]), _pt(spec["height_mm"])]
+            mg = _pt(spec.get("margin_mm", 15))
+            m.ex("frame.create", spread=0, rect=[b[0] + mg, b[1] + mg, b[2] - mg, b[3] - mg],
+                 content="text", text=text)
+            # 기본 글꼴에는 한글이 없다. 바꾸지 못해도 문서는 만들어 준다 — preflight가 '없는 글자'로 알린다.
+            if _has_hangul(text):
+                try:
+                    m.ex("font.replace", family=DEFAULT_FONT, toFamily=KO_FONT)
+                except McpError:
+                    pass
+            doc = m.tool("inspect_document")
+        idml = out / "new.idml"
+        m.ex("file.exportIdml", path=str(idml))
+        st = doc.get("settings") or {}
+    shutil.copyfile(idml, dest)
+    return {"pages": int(doc.get("pageCount") or 1),
+            "width_mm": round(float(st.get("pageWidth") or 0) / MM, 1),
+            "height_mm": round(float(st.get("pageHeight") or 0) / MM, 1),
+            "stories": len(doc.get("stories") or []), "sample": sample}
+
+
+async def create_document(req: AgentRequest) -> dict[str, Any]:
+    spec = {
+        "start": "sample" if str(req.input.get("start") or "") == "sample" else "blank",
+        "width_mm": _clamp(req.input.get("width_mm"), 10, 2000, 148),
+        "height_mm": _clamp(req.input.get("height_mm"), 10, 2000, 210),
+        "pages": int(_clamp(req.input.get("pages"), 1, MAX_NEW_PAGES, 4)),
+        "facing": bool(req.input.get("facing", True)),
+        "columns": int(_clamp(req.input.get("columns"), 1, 10, 1)),
+        "gutter_mm": _clamp(req.input.get("gutter_mm"), 0, 50, 5),
+        "margin_mm": _clamp(req.input.get("margin_mm"), 0, 100, 15),
+        "bleed_mm": _clamp(req.input.get("bleed_mm"), 0, 20, 3),
+        "text": str(req.input.get("text") or ""),
+    }
+    # 파일을 쓰는 행동이라 apply_fixes와 같은 관문을 지난다. 닿지 못하면 거절한다(fail-closed).
+    key = "designcraft:" + hashlib.sha256(f"new|{req.meta.context_id}|{spec['start']}".encode()).hexdigest()[:20]
+    gate = await call_agent("safety", AgentRequest(
+        meta=req.meta.model_copy(update={"idempotency_key": key}), skill="execute",
+        input={"action": "designcraft.create_document", "idempotency_key": key,
+               "params": {"context_id": req.meta.context_id, "start": spec["start"], "pages": spec["pages"]}}))
+    d = gate.output if gate.status == TaskStatus.COMPLETED else None
+    if not d or d.get("decision") != "executed":
+        return {"status": "rejected", "outcome": "SAFETY_REJECTED",
+                "output": {"reason": (d or {}).get("reason", "safety에 닿지 못해 거절(fail-closed)")}}
+
+    # 만든 파일은 **올린 원본과 같은 자리**(SRC/<토큰>)에 둔다. 그래야 검수도 수정도
+    # 올린 파일과 똑같은 길로 흐른다 — 만든 것이라고 따로 다루지 않는다.
+    src_ref = hashlib.sha256(f"{req.meta.context_id}|{key}".encode()).hexdigest()[:16]
+    doc_name = "샘플 잡지.idml" if spec["start"] == "sample" else "새 문서.idml"
+    root = SRC / src_ref
+    root.mkdir(parents=True, exist_ok=True)
+    out = _job_dir(req.meta.context_id)
+    r = await asyncio.to_thread(_create_blocking, out, root / doc_name, spec)
+    r |= {"src_ref": src_ref, "doc": doc_name, "decision": d}
+    return {"status": "completed", "output": r,
+            "evidence": {"queries": [], "ref_ids": [d["execution_id"]],
+                         "data_summary": f"{'샘플 잡지' if r['sample'] else '빈 문서'} {r['pages']}쪽"
+                                         f"({r['width_mm']:.0f}×{r['height_mm']:.0f}mm)을 만들었습니다"}}
+
+
+app = create_agent_app(CARD, {"mcp_status": mcp_status, "inspect_source": inspect_source, "apply_fixes": apply_fixes,
+                              "create_document": create_document})
