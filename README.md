@@ -439,13 +439,21 @@ LangSmith로 나가는 것은 공통 로그로 만든 추적(에이전트·skill
 
 ## 저장소에 없는 파일
 
-라이선스나 용량 때문에 올리지 않았습니다. 셋 다 없어도 앱은 뜨지만, 모델과 wasm은 CDN에서 받아 오느라 느려지고 ICC가 없으면 색 차이를 재지 못합니다.
+라이선스나 용량 때문에 올리지 않았습니다. 넷 다 없어도 앱은 뜨지만, 모델과 wasm은 CDN에서 받아 오느라 느려지고 ICC가 없으면 색 차이를 재지 못합니다.
 
 1. **임베딩 모델** → `frontend/public/models/Xenova/multilingual-e5-small/`
    Hugging Face `Xenova/multilingual-e5-small`에서 `config.json`, `tokenizer.json`, `tokenizer_config.json`, `special_tokens_map.json`, `sentencepiece.bpe.model`, `quant_config.json`, `onnx/model_quantized.onnx`를 받습니다. 없으면 브라우저는 Hugging Face CDN에서, 에이전트는 `huggingface_hub`로 받아 씁니다.
 2. **onnxruntime-web wasm** → `frontend/public/ort/`
    `npm install` 후 `node_modules/onnxruntime-web/dist/`의 `ort-wasm-simd-threaded*.{mjs,wasm}`를 복사합니다. 없으면 transformers.js 기본 CDN을 씁니다.
-3. **ICC 프로파일** → `frontend/public/icc/` (재배포 금지라 직접 받아야 합니다)
+3. **DesignCraft 웹 빌드** → `frontend/public/designcraft/` (wasm 하나가 62MB)
+   ```bash
+   cd frontend && npm run fetch:designcraft   # GitHub 릴리스에서 받아 SHA256을 대조한 뒤 풉니다
+   ```
+   빌드·개발을 시작할 때도 자동으로 받습니다(`prebuild`·`predev`). 못 받으면 멈추지 않고
+   '작업 만들기' 화면의 편집기 자리에 받는 법이 뜹니다. 이 편집기는 **브라우저 안에서 혼자
+   도는 것**이라 에이전트가 조종하지 못합니다 — 에이전트가 하는 일을 화면에서 보려면
+   데스크톱 앱을 `designcraft --control 7979`로 띄우고 `PG_DESIGNCRAFT_CONNECT=7979`를 넣습니다.
+4. **ICC 프로파일** → `frontend/public/icc/` (재배포 금지라 직접 받아야 합니다)
    ```bash
    python deploy/fetch_icc.py          # 12개를 ECI·ICC 레지스트리에서 받아 넣습니다
    ```
