@@ -225,6 +225,26 @@ export type Watch = {
   preflight: number; width_mm?: number | null; height_mm?: number | null; steps: MakeStep[];
 };
 export const watchDoc = (ctx: string) => call(`/designcraft/${ctx}/watch`).then((r) => j<Watch>(r));
+
+/** **번호 없이** 따라 보기. 지금 이 PC에서 무슨 일이 일어나고 있는지를 쌓인 순서대로 준다.
+ *
+ *  번호를 넣어야만 보이던 것이 문제였다 — 그 번호는 클로드의 답에만 찍히므로 매번 복사해 와야
+ *  했는데, 정작 보고 싶은 것은 '지금 뭐 하고 있나' 하나다. 그래서 이 PC에서 띄운 도구가 만든
+ *  것은 번호 없이 열어 준다(바깥에서 들어온 요청에는 안 열린다). */
+export type FeedDoc = {
+  filename: string; made: boolean; pages: number | null;
+  width_mm?: number | null; height_mm?: number | null; mine: boolean; created: number;
+};
+export type FeedRow = {
+  id: number; at: string; ctx: string; kind: string;
+  payload: MakeStep["payload"] & { text?: string; start?: string; doc?: string;
+    width_mm?: number | null; height_mm?: number | null; facing?: boolean };
+};
+export type Feed = { rows: FeedRow[]; docs: Record<string, FeedDoc>; next: number };
+/** `after`는 마지막으로 받은 줄 번호. 그보다 뒤엣것만 온다 — 0.9초마다 같은 것을 다시 받아
+ *  다시 그리면, 보고 있던 자리가 자꾸 흔들린다. */
+export const watchFeed = (after: number) =>
+  call(`/designcraft/feed?after=${after}`).then((r) => j<Feed>(r));
 export const myDocs = () =>
   call("/designcraft/jobs").then((r) => j<{ context_id: string; filename: string; created: number;
     pages: number | null; made: boolean }[]>(r));

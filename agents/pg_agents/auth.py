@@ -74,6 +74,18 @@ def secret() -> bytes:
     return _secret
 
 
+def tool_subject() -> str:
+    """이 PC에서 stdio로 띄운 MCP 서버(클로드·커서)가 쓰는 주인 이름.
+
+    그 서버는 **띄운 사람이 주인**이라 스스로 토큰을 만든다. 서명 비밀에서 뽑으므로 다시 켜도
+    같은 주인이 되고, 그래서 지난 의뢰가 계속 보인다.
+
+    이 값을 양쪽이 각자 계산하면 언젠가 어긋난다 — 한 글자만 달라도 '클로드가 만든 문서'가
+    아무에게도 안 보이게 되고, 왜 안 보이는지는 아무 데도 안 적힌다. 그래서 여기 한 번만 적는다.
+    """
+    return sha256(secret() + b"mcp-local").hexdigest()[:32]
+
+
 def forget_secret() -> None:
     """캐시를 비운다(테스트에서 데이터 폴더를 바꿔 끼울 때 쓴다)."""
     global _secret

@@ -205,6 +205,55 @@ def test_a_number_nobody_made_is_not_adoptable():
         assert c.post("/designcraft/ctx_dc_nosuchthing/adopt").status_code == 404
 
 
+# ---------- 번호 없이 따라 보기 ----------
+# 번호를 매번 복사해 오게 하면 아무도 안 본다. 이 PC의 도구(클로드·커서)가 만든 것은 이 PC의
+# 브라우저에 그냥 보여 준다 — 그 둘은 같은 사람이다. 바깥에서 들어온 요청에는 안 열린다.
+def _seed_tool_doc(ctx="ctx_dc_bytool"):
+    from pg_agents.auth import tool_subject
+    return _seed_source(ctx, owner=tool_subject())
+
+
+def here(key: str = KEY) -> TestClient:
+    """이 PC에서 온 요청."""
+    return TestClient(app, client=("127.0.0.1", 5555),
+                      headers={"Authorization": f"Bearer {mint('browser', subject=key)}"})
+
+
+def test_this_pc_sees_what_the_local_tool_is_making_without_a_number():
+    from pg_agents.common_log import log_event
+    ctx = _seed_tool_doc("ctx_dc_feedlocal")
+    log_event(ctx, "dc_step", source="orchestrator", payload={"phase": "넣는 중", "command": "text.insert"})
+    with here() as c:
+        d = c.get("/designcraft/feed").json()["data"]
+        assert ctx in d["docs"]
+        assert [r for r in d["rows"] if r["ctx"] == ctx and r["kind"] == "dc_step"]
+        assert d["docs"][ctx]["mine"] is False      # 주인은 그 도구다. 보기만 열어 준 것이다
+
+
+def test_a_request_from_outside_this_pc_sees_only_its_own():
+    _seed_tool_doc("ctx_dc_feedremote")
+    with client() as c:                              # TestClient 기본은 이 PC가 아니다
+        d = c.get("/designcraft/feed").json()["data"]
+        assert "ctx_dc_feedremote" not in d["docs"]
+
+
+def test_the_feed_only_sends_what_is_new():
+    from pg_agents.common_log import log_event
+    ctx = _seed_tool_doc("ctx_dc_feedcursor")
+    log_event(ctx, "dc_step", source="orchestrator", payload={"phase": "넣는 중", "command": "frame.create"})
+    with here() as c:
+        first = c.get("/designcraft/feed").json()["data"]
+        assert first["rows"] and first["next"] > 0
+        log_event(ctx, "dc_step", source="orchestrator", payload={"phase": "끝"})
+        later = c.get(f"/designcraft/feed?after={first['next']}").json()["data"]
+        assert [r["payload"]["phase"] for r in later["rows"] if r["ctx"] == ctx] == ["끝"]
+
+
+def test_the_feed_needs_a_token():
+    with TestClient(app, client=("127.0.0.1", 5555)) as c:
+        assert c.get("/designcraft/feed").status_code == 401
+
+
 def test_job_without_file_or_source_is_refused():
     with client() as c:
         assert c.post("/jobs", data={"options": "{}"}).status_code == 400
