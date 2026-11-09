@@ -448,8 +448,8 @@ LANGSMITH_PROJECT=printguard
 
 | 기능 | 환경변수 | 받는 곳 | 쓰는 법 |
 | --- | --- | --- | --- |
-| LLM 교정 제안(규칙·Kiwi에 더해) | `ANTHROPIC_API_KEY`, 모델은 `PG_CLAUDE_MODEL`(기본 `claude-sonnet-5-5`), 깊이는 `PG_LLM_EFFORT`(기본 `low`), `PG_PROOF_METHODS` | [Claude Platform](https://platform.claude.com/) → API keys | `.env`에 넣고 `python agents/run_agents.py` |
-| 〃 (둘째 길) | `GEMINI_API_KEY`, 모델은 `PG_LLM_MODEL`(기본 `gemini-3.5-flash-lite`) | [Google AI Studio](https://aistudio.google.com/apikey) | `ANTHROPIC_API_KEY`가 **없을 때만** 씁니다. 무료 등급은 분당 횟수 한도가 있어 쪽이 많은 문서에서 교정이 멈춰 섭니다 |
+| LLM 교정 제안(규칙·Kiwi에 더해) | `ANTHROPIC_API_KEY`, 모델은 `ANTHROPIC_LLM_MODEL`(기본 `claude-sonnet-5-5` — `sonnet 5.5`처럼 적어도 알아듣습니다), 깊이는 `PG_LLM_EFFORT`(기본 `low`), `PG_PROOF_METHODS` | [Claude Platform](https://platform.claude.com/) → API keys | `.env`에 넣고 `python agents/run_agents.py` |
+| 〃 (받쳐 주는 길) | `GEMINI_API_KEY`, 모델은 `PG_LLM_MODEL`(기본 `gemini-3.5-flash-lite`) | [Google AI Studio](https://aistudio.google.com/apikey) | `ANTHROPIC_API_KEY`가 비었을 때, 그리고 **Claude 잔액이 바닥났을 때** 이쪽으로 넘어갑니다. 무료 등급은 분당 횟수 한도가 있어 쪽이 많은 문서에서는 느립니다 |
 | LLM 교정기 정량평가 | 위와 같음 | 위와 같음 | `python eval/proofread/eval_proofread.py` (키가 있으면 LLM 조합이 표에 더해집니다. API 호출 121회 — 무료 등급 하루 한도 안, 분당 한도에 걸리면 기다렸다 다시 부릅니다) |
 | 추적을 LangSmith로 보내기 | `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT`(기본 `printguard`) | [LangSmith](https://smith.langchain.com) → Settings → API Keys | `cd agents && python -m pg_agents.langsmith_export <context_id>` |
 

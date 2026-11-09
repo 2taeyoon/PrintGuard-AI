@@ -25,17 +25,31 @@ class _Msg:
         self.stop_details = types.SimpleNamespace(explanation=explanation) if explanation else None
 
 
-def fake_anthropic(monkeypatch, *, beta_raises=False, msg=None):
+def fake_anthropic(monkeypatch, *, beta_raises=False, msg=None, raises: Exception | None = None):
     """가짜 anthropic 모듈. 보낸 몸통을 `sent`에 모아 돌려준다."""
     sent: list[tuple[str, dict]] = []
 
-    class BadRequestError(Exception):
+    class APIStatusError(Exception):
         pass
+
+    class BadRequestError(APIStatusError):
+        pass
+
+    class RateLimitError(APIStatusError):
+        pass
+
+    class AuthenticationError(APIStatusError):
+        pass
+
+    errs = {"bad": BadRequestError, "rate": RateLimitError, "auth": AuthenticationError}
 
     class _Messages:
         def __init__(self, where): self.where = where
         def create(self, **kw):
             sent.append((self.where, kw))
+            if self.where == "beta" and raises:
+                kind, text = raises                      # ("bad"|"rate"|"auth", 메시지)
+                raise errs[kind](text)
             if self.where == "beta" and beta_raises:
                 raise BadRequestError("thinking.between_tools는 안 받습니다")
             return msg or _Msg()
@@ -46,7 +60,9 @@ def fake_anthropic(monkeypatch, *, beta_raises=False, msg=None):
             self.messages = _Messages("plain")
             self.beta = types.SimpleNamespace(messages=_Messages("beta"))
 
-    mod = types.SimpleNamespace(Anthropic=Anthropic, BadRequestError=BadRequestError)
+    mod = types.SimpleNamespace(Anthropic=Anthropic, APIStatusError=APIStatusError,
+                                BadRequestError=BadRequestError, RateLimitError=RateLimitError,
+                                AuthenticationError=AuthenticationError)
     monkeypatch.setitem(sys.modules, "anthropic", mod)
     return sent
 
@@ -108,3 +124,67 @@ def test_a_refusal_is_not_an_empty_answer(monkeypatch):
     fake_anthropic(monkeypatch, msg=_Msg("", stop_reason="refusal", explanation="거절합니다"))
     with pytest.raises(llm.Refused, match="거절"):
         llm.ask("무엇이든")
+
+
+# ---------- 적어 둔 모델 이름 ----------
+def test_a_model_name_written_the_human_way_still_works(monkeypatch):
+    """`.env`에는 `sonnet 5.5`라고 적게 마련이다. 그대로 보내면 404가 나고, 화면에는
+    '교정 실패' 한 줄만 남아 어디가 틀렸는지 알 수가 없다."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.setenv("ANTHROPIC_LLM_MODEL", "Sonnet 5.5")
+    sent = fake_anthropic(monkeypatch)
+    llm.ask("프롬프트")
+    assert sent[0][1]["model"] == "claude-sonnet-5-5"
+
+
+def test_an_unreadable_model_name_falls_back_instead_of_404(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.setenv("PG_CLAUDE_MODEL", "???")
+    sent = fake_anthropic(monkeypatch)
+    llm.ask("프롬프트")
+    assert sent[0][1]["model"] == llm.CLAUDE_MODEL
+
+
+# ---------- 잔액이 바닥났을 때 ----------
+def test_when_the_credit_runs_out_it_falls_back_to_free_gemini(monkeypatch):
+    """느려도 도는 것이 멈춰 서는 것보다 낫다. 잔액이 떨어진 그날 검수를 맡긴 사람에게는
+    '교정 실패' 한 줄만 남는다."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.setenv("GEMINI_API_KEY", "g-test")
+    fake_anthropic(monkeypatch, raises=("bad", "Your credit balance is too low to access the API"))
+    called = {}
+
+    def fake_gemini(prompt, key, **kw):
+        called["key"] = key
+        return "제미나이"
+
+    monkeypatch.setattr(llm, "gemini", fake_gemini)
+    assert llm.ask("프롬프트") == "제미나이"
+    assert called["key"] == "g-test"
+
+
+def test_a_daily_rate_limit_also_goes_to_gemini(monkeypatch):
+    """분당 한도는 SDK가 이미 몇 번 다시 불러 본 뒤다. 여기까지 왔으면 더 기다릴 자리가 아니다."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.setenv("GEMINI_API_KEY", "g-test")
+    fake_anthropic(monkeypatch, raises=("rate", "rate_limit_error"))
+    monkeypatch.setattr(llm, "gemini", lambda *a, **k: "제미나이")
+    assert llm.ask("프롬프트") == "제미나이"
+
+
+def test_without_a_gemini_key_the_credit_error_surfaces(monkeypatch):
+    """넘어갈 곳이 없으면 조용히 삼키지 않는다 — 왜 안 되는지는 사람이 알아야 고친다."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    fake_anthropic(monkeypatch, raises=("bad", "credit balance is too low"))
+    with pytest.raises(llm.OutOfCredit):
+        llm.ask("프롬프트")
+
+
+def test_a_wrong_key_says_so_instead_of_falling_back(monkeypatch):
+    """열쇠가 틀린 것은 잔액이 떨어진 것과 다르다. 몰래 느린 쪽으로 넘어가면 영영 못 고친다."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-wrong")
+    monkeypatch.setenv("GEMINI_API_KEY", "g-test")
+    fake_anthropic(monkeypatch, raises=("auth", "invalid x-api-key"))
+    with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY"):
+        llm.ask("프롬프트")

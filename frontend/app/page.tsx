@@ -355,7 +355,7 @@ function Home() {
       {/* 가이드 검색: 검수 전에 규격을 확인할 수 있게 맨 위에 둔다(기본은 접힘) */}
       <GuideSearch guide={guide} mode={mode} ready={!!agentUp}
         badge={mode === "direct" ? <GuideBadge ready={!!guide} status={guideStatus} />
-          : <span className="badge">guide 에이전트가 찾습니다</span>} />
+          : <span className="badge">Guide 에이전트 준비됨</span>} />
 
       <div className="modebar" role="tablist" aria-label="검사 방식">
         <button type="button" role="tab" aria-selected={mode === "agent"} className={`pill${mode === "agent" ? " on" : ""}`} onClick={() => setMode("agent")}>
@@ -808,7 +808,6 @@ function ReadHint({ m }: { m: Measured }) {
  *  넘친 글자는 PDF에 안 찍히고, 끊긴 사진은 빈 칸으로 보일 뿐이며, 없는 글꼴은 대체되어 그려진다 —
  *  셋 다 PDF만 봐서는 알 수 없고, 원본을 열었기 때문에 잡힌다. */
 function SourcePanel({ s }: { s: SourceView }) {
-  const [open, setOpen] = useState(true);
   const errs = s.preflight.filter((i) => i.severity === "error").length;
   return (
     <section className="panel dc_src">
@@ -832,10 +831,10 @@ function SourcePanel({ s }: { s: SourceView }) {
         </p>
       )}
       <FontNotice s={s} />
-      <button type="button" className="gs_toggle" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-        <GsMark open={open} /> 원본 검사(preflight) {s.preflight.length}건
-      </button>
-      {open && <IssueRows rows={s.preflight} empty="원본에서 발견된 문제가 없습니다." />}
+      {/* 접지 않는다. 올린 파일에서 **무엇이 걸렸나**는 이 칸을 연 이유 그 자체라, 한 번 더 눌러야
+          보이면 안 본 채로 넘어간다. 줄이 길어지면 이 목록 안에서만 굴린다. */}
+      <h3 className="dc_sub">원본 검사(preflight) {s.preflight.length}건</h3>
+      <IssueRows rows={s.preflight} empty="원본에서 발견된 문제가 없습니다." />
     </section>
   );
 }

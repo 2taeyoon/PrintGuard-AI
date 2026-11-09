@@ -93,6 +93,19 @@ def test_load_env_files(tmp_path, monkeypatch):
     assert os.environ["PG_T_EXISTING"] == "터미널값"  # 터미널이 이긴다
 
 
+def test_importing_the_mcp_server_does_not_pull_in_this_pc_env(monkeypatch):
+    """시험 중에는 `.env`를 읽지 않는다 — 어디서 불러도.
+
+    전에는 `config`에서만 막았고 `mcp_server`가 불러오는 순간 한 번 더 읽었다. 그래서 그 모듈을
+    들여오는 시험이 돌면 개발자 PC의 `ANTHROPIC_API_KEY`가 환경에 올라오고, 뒤이어 도는 교정
+    시험이 **진짜 API를 불렀다**. 돈이 나가는 자리라 시험으로 박아 둔다.
+    """
+    from pg_agents.config import ENV_FILES, load_env_files
+    monkeypatch.setenv("PG_NO_ENV_FILES", "1")
+    assert load_env_files() == []                    # 기본 경로(이 PC의 .env)는 읽지 않는다
+    assert load_env_files(ENV_FILES) == []           # 같은 것을 손으로 줘도 마찬가지
+
+
 def test_load_env_files_without_file(tmp_path):
     from pg_agents.config import load_env_files
     assert load_env_files((tmp_path / "없는.env",)) == []

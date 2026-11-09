@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import os
+import re
 
 # Sonnet 5.5. 빠르고(이게 바꾼 이유다) 한국어 교정에 충분하다.
 CLAUDE_MODEL = "claude-sonnet-5-5"
@@ -40,18 +41,64 @@ def have_key() -> bool:
     return bool(provider())
 
 
+class OutOfCredit(RuntimeError):
+    """Claude 쪽 잔액·한도가 바닥났다. 이게 뜨면 무료 Gemini로 넘어간다."""
+
+
+# 잔액이 떨어졌을 때 돌아오는 말. 상태 코드만으로는 '잘못 보냈다'와 구별되지 않아 말도 같이 본다.
+_BROKE = ("credit balance", "insufficient", "billing", "quota", "exceeded your current quota",
+          "purchase credits", "payment")
+
+
+def _is_out_of_credit(e: Exception) -> bool:
+    msg = str(e).lower()
+    return any(w in msg for w in _BROKE)
+
+
 def ask(prompt: str, *, max_tokens: int | None = None, tries: int = 4) -> str:
     """한 번 물어 글로 받는다. 열쇠에 따라 Claude나 Gemini로 간다.
+
+    **Claude 잔액이 바닥나면 무료 Gemini로 넘어간다.** 느려도 도는 것이, 멈춰 서는 것보다 낫다 —
+    잔액이 떨어진 그날 검수를 맡긴 사람에게는 '교정 실패' 한 줄만 남는다. 넘어갔다는 것은
+    로그에 적어서, 왜 갑자기 느려졌는지 알 수 있게 한다.
 
     `max_tokens`를 주면 답 길이 한도를 그 값으로 올린다. 긴 답(명령 스무 개짜리 JSON)은 기본
     한도에서 **중간에 잘린다** — 잘린 JSON은 읽히지 않아 '아무것도 못 알아들었다'로 보인다.
     """
     p = provider()
     if p == "anthropic":
-        return claude(prompt, max_tokens=max_tokens)
+        try:
+            return claude(prompt, max_tokens=max_tokens)
+        except OutOfCredit as e:
+            if not os.environ.get("GEMINI_API_KEY"):
+                raise
+            print(f"[llm] Claude 잔액이 바닥났습니다({e}) — 무료 Gemini로 넘어갑니다", flush=True)
+            p = "gemini"
     if p == "gemini":
         return gemini(prompt, os.environ["GEMINI_API_KEY"], tries=tries, max_tokens=max_tokens)
     raise RuntimeError("LLM 열쇠가 없습니다. agents/.env에 ANTHROPIC_API_KEY를 넣어 주세요")
+
+
+def _model_name() -> str:
+    """환경변수에 적힌 모델 이름. **사람이 적는 말투도 알아듣는다.**
+
+    `claude-sonnet-5-5`가 정확한 이름이지만, `.env`에는 `sonnet 5.5`라고 적게 마련이다. 그대로
+    보내면 404가 나고, 화면에는 '교정 실패' 한 줄만 남아서 어디가 틀렸는지 알 수가 없다.
+    그래서 알아볼 수 있는 꼴로 고쳐 쓰고, 끝내 못 알아보겠으면 기본값으로 돌아가며 그렇게 적는다.
+    """
+    raw = (os.environ.get("PG_CLAUDE_MODEL") or os.environ.get("ANTHROPIC_LLM_MODEL") or "").strip()
+    if not raw:
+        return CLAUDE_MODEL
+    # 'Sonnet 5.5' → 'claude-sonnet-5-5'. 빈칸·점을 하이픈으로 바꾸고 앞에 claude-를 붙인다.
+    name = re.sub(r"[\s._]+", "-", raw.lower()).strip("-")
+    if not name.startswith("claude-"):
+        name = "claude-" + name
+    if not re.fullmatch(r"claude-[a-z0-9-]+", name):
+        print(f"[llm] 모델 이름 '{raw}'을 알아볼 수 없어 {CLAUDE_MODEL}로 돕니다", flush=True)
+        return CLAUDE_MODEL
+    if name != raw:
+        print(f"[llm] 모델 이름 '{raw}' → '{name}'", flush=True)
+    return name
 
 
 def claude(prompt: str, *, max_tokens: int | None = None) -> str:
@@ -74,7 +121,7 @@ def claude(prompt: str, *, max_tokens: int | None = None) -> str:
             "anthropic 패키지가 없습니다. 에이전트를 돌리는 PC에서 `pip install anthropic`을 한 번 해 주세요"
         ) from None
 
-    model = os.environ.get("PG_CLAUDE_MODEL") or CLAUDE_MODEL
+    model = _model_name()
     client = anthropic.Anthropic(max_retries=int(os.environ.get("PG_LLM_RETRIES", "3")))
     body: dict[str, object] = {
         "model": model,
@@ -88,11 +135,25 @@ def claude(prompt: str, *, max_tokens: int | None = None) -> str:
         # 거의 없지만, 났을 때 사람이 받는 것은 '검수 실패' 한 줄뿐이라 길을 하나 더 둔다.
         msg = client.beta.messages.create(
             betas=["server-side-fallback-2026-07-01"], fallbacks="default", **body)  # type: ignore[arg-type]
-    except anthropic.BadRequestError:
+    except anthropic.BadRequestError as e:
+        # 잔액이 바닥난 것도 400으로 온다. 그건 다시 불러도 같으므로 무료 쪽으로 넘긴다.
+        if _is_out_of_credit(e):
+            raise OutOfCredit(str(e)[:200]) from None
         # 베타나 생각 끄기를 이 계정/이 모델이 안 받으면, 받는 것만으로 한 번 더 부른다.
         # 여기서 포기하면 열쇠를 제대로 넣은 사람이 이유도 모른 채 LLM 없이 쓰게 된다.
         body.pop("thinking", None)
-        msg = client.messages.create(**body)  # type: ignore[arg-type]
+        try:
+            msg = client.messages.create(**body)  # type: ignore[arg-type]
+        except anthropic.BadRequestError as e2:
+            if _is_out_of_credit(e2):
+                raise OutOfCredit(str(e2)[:200]) from None
+            raise
+    except anthropic.RateLimitError as e:
+        # 분당 한도는 SDK가 이미 몇 번 다시 불러 본 뒤다. 여기까지 왔으면 더 기다릴 것이 아니라
+        # 넘어갈 자리다(하루 한도가 걸린 경우가 많다).
+        raise OutOfCredit(str(e)[:200]) from None
+    except anthropic.AuthenticationError as e:
+        raise RuntimeError(f"ANTHROPIC_API_KEY가 틀렸거나 지워졌습니다: {str(e)[:150]}") from None
 
     if msg.stop_reason == "refusal":
         why = getattr(getattr(msg, "stop_details", None), "explanation", "") or "까닭을 밝히지 않았습니다"

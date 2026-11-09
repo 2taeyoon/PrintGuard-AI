@@ -726,7 +726,10 @@ input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, 
 .dc_tools code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1.3rem;
   background: var(--bgMuted); color: var(--blacklight); padding: 3px 8px; }
 
-.dc_issues { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+/* 걸린 것이 많으면 이 목록만 길어져서 그 아래(받기·검수로 넘기기)가 화면 밖으로 밀린다.
+   접는 대신 **여기서만 굴린다** — 몇 건인지는 위 제목이 말하고, 다 보려면 굴리면 된다. */
+.dc_issues { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 6px;
+  max-height: 260px; overflow-y: auto; overscroll-behavior-y: contain; }
 .dc_issues li { display: grid; grid-template-columns: 160px auto 1fr; gap: 8px; align-items: baseline;
   padding: 8px 12px; background: var(--bgMuted); font-size: 1.5rem; }
 .dc_issues li.sev-high { background: var(--redLight); }
