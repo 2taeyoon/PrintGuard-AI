@@ -553,3 +553,50 @@ def test_the_plan_can_only_reach_commands_the_engine_really_has():
     ids = {c["id"] for c in dc._commands_blocking()["commands"]}
     missing = [c for c in dc.COMPOSE_OK if c not in ids]
     assert not missing, f"엔진에 없는 명령이 허용 목록에 있다: {missing}"
+
+
+# ---------- 만든 문서의 이름 ----------
+# 부탁한 것이 이름에 드러나야 한다. 그런데 그 값이 그대로 파일 이름이 되므로, 드러내는 것과
+# 안전한 것을 **한 함수 안에서** 같이 지켜야 한다. 아래가 그 두 가지를 갈라 본다.
+def test_the_name_says_what_was_asked_for():
+    assert dc._doc_name("홍길동_명함", sample=False) == "홍길동_명함.idml"
+    assert dc._doc_name("가을호 포스터", sample=False) == "가을호 포스터.idml"
+    assert dc._doc_name("홍길동_명함.idml", sample=False) == "홍길동_명함.idml"   # 확장자를 두 번 붙이지 않는다
+
+
+def test_no_name_keeps_the_old_one():
+    """이름을 안 주던 부르는 쪽이 아직 있다. 그쪽이 깨지면 안 된다."""
+    assert dc._doc_name("", sample=False) == "새 문서.idml"
+    assert dc._doc_name(None, sample=False) == "새 문서.idml"
+    assert dc._doc_name("   ", sample=True) == "샘플 잡지.idml"
+
+
+def test_a_name_cannot_walk_out_of_the_folder():
+    """**이 값은 파일 이름이 된다.** 그대로 쓰면 보관 폴더 밖에 쓰게 된다 — 만들기 한 번으로
+    이 PC의 아무 자리나 덮어쓸 수 있다는 뜻이다."""
+    for bad in ("../../.ssh/authorized_keys", r"..\..\windows\system32\x",
+                "C:/Users/403/x", "명함/../../x", "a\x00b/c"):
+        got = dc._doc_name(bad, sample=False)
+        assert "/" not in got and "\\" not in got and ":" not in got, got
+        assert not got.startswith(".") and "\x00" not in got, got
+        assert got.endswith(".idml")
+
+
+def test_a_name_that_is_only_dots_falls_back():
+    """`.`과 `..`은 이름이 아니라 폴더를 가리킨다."""
+    assert dc._doc_name(".", sample=False) == "새 문서.idml"
+    assert dc._doc_name("..", sample=False) == "새 문서.idml"
+    assert dc._doc_name("....idml", sample=False) == "새 문서.idml"
+
+
+def test_windows_device_names_fall_back():
+    """윈도에서 `CON.idml`은 파일이 아니라 장치로 열린다 — 쓰는 쪽이 조용히 멈춘다."""
+    for dev in ("CON", "con", "  nul  ", "LPT1", "com9.idml"):
+        assert dc._doc_name(dev, sample=False) == "새 문서.idml", dev
+    assert dc._doc_name("content", sample=False) == "content.idml"   # 비슷하지만 장치가 아니다
+
+
+def test_a_very_long_name_is_cut_but_stays_a_name():
+    got = dc._doc_name("명" * 300, sample=False)
+    assert got == "명" * dc.MAX_DOC_NAME + ".idml"
+    assert len(got.encode()) < 255        # 파일 시스템이 받는 길이 안에 있다

@@ -286,7 +286,8 @@ export default function WatchDoc() {
               <div key={m.id} className={`chat_doc${m.ctx === pick ? " on" : ""}`}>
                 <b>{m.room}</b>
                 <span className="note">{m.what}{m.detail && ` · ${m.detail}`}</span>
-                {/* 새로 만든 문서는 이름이 다 같다('새 문서.idml'). 시각이 없으면 어느 것인지 모른다. */}
+                {/* 이름이 겹칠 때가 있다(이름을 안 주고 만들면 전부 '새 문서.idml'이다).
+                    시각이 없으면 그때 어느 것인지 모른다. */}
                 <time dateTime={m.at}>{clock(m.at)}</time>
                 <span className="grow" />
                 <button type="button" className="pill" onClick={() => open(m.ctx)}>
