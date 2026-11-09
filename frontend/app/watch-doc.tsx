@@ -287,16 +287,6 @@ export default function WatchDoc() {
           </div>
         )}
 
-        {/* 다른 PC에서 만든 것이라면 이 길로 연다. 흔한 경우가 아니라 접어 둔다. */}
-        <details className="dc_warnbox">
-          <summary>다른 PC에서 만든 문서를 보려면</summary>
-          <p className="note">
-            위 목록은 <b>이 PC에서</b> 하는 일만 보여 줍니다. 에이전트가 다른 PC에 있다면 그 문서의
-            번호가 있어야 합니다 — 클로드가 <code>make_document</code>로 만들 때 답에 적어 줍니다
-            (<code>ctx_dc_</code>로 시작합니다).
-          </p>
-          <NumberBox onOpen={open} />
-        </details>
       </section>
 
       {/* 보고 있는 그 문서. 만들어 놓고 못 넘기면 반쪽이다. */}
@@ -311,13 +301,13 @@ export default function WatchDoc() {
               이 문서로 인쇄 검수하기 →
             </button>
             <button type="button" className="pill"
-              onClick={() => void dl(["work.idml", "new.idml"], doc.filename)}>인디자인 파일 받기</button>
+              onClick={() => void dl(["work.idml", "new.idml"], doc.filename)}>편집 파일(idml) 받기</button>
             <button type="button" className="pill"
               onClick={() => void dl(["doc.pdf", "inspect.pdf"], doc.filename.replace(/\.idml$/, ".pdf"))}>PDF 받기</button>
           </div>
           <p className="note">
             검수로 넘기면 글꼴·도련·해상도·색·오탈자를 검사합니다. 고칠 것이 있으면{" "}
-            <b>이 문서에 반영할지 물어봅니다</b>. 받은 인디자인 파일은 그대로 열어 이어서 작업해도 됩니다.
+            <b>이 문서에 반영할지 물어봅니다</b>. 받은 편집 파일은 인디자인에서 그대로 열어 이어서 작업해도 됩니다.
           </p>
           {/* 이어서 시키려면 클로드에게 이 번호를 줘야 한다 — 'ctx_dc_… 이어서 고쳐 줘'. */}
           <div className="dc_row">
@@ -357,20 +347,5 @@ export default function WatchDoc() {
         </section>
       )}
     </>
-  );
-}
-
-/** 번호로 여는 칸. 흔한 길이 아니어서 접어 두었다. */
-function NumberBox({ onOpen }: { onOpen: (ctx: string) => void }) {
-  const [typed, setTyped] = useState("");
-  return (
-    <div className="dc_row">
-      <label className="wide">문서 번호
-        <input type="text" value={typed} spellCheck={false} placeholder="ctx_dc_ 로 시작하는 번호"
-          onChange={(e) => setTyped(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && typed.trim()) onOpen(typed.trim()); }} />
-      </label>
-      <button type="button" className="pill on" onClick={() => onOpen(typed.trim())} disabled={!typed.trim()}>보기</button>
-    </div>
   );
 }

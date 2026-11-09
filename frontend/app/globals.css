@@ -317,9 +317,18 @@ mark.mk-term { background: var(--themaPoint); color: var(--black); font-weight: 
 .chip.st-input-required { background: var(--themaPoint); color: var(--black); }
 .question { border-color: var(--thema); }
 .question h3 { font-size: 1.8rem; margin: 8px 0; }
-.q_opts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-.q_opts button { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; }
+/* 답하는 단추. **여기서 누르지 않으면 검수가 멈춰 있다** — 에이전트가 답을 기다리는 자리다.
+   흰 바탕에 얇은 선으로 두면 '읽을 것'처럼 보여서 그냥 지나친다. 고르는 칸과 같은 결로
+   옅은 파랑을 채우고, 설명이 있는 것과 없는 것의 키를 맞춘다(`align-items: stretch`) —
+   하나만 짧으면 그 하나가 고장 난 것처럼 보인다. */
+.q_opts { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; margin-top: 12px; }
+.q_opts button { display: inline-flex; flex-direction: column; align-items: flex-start; justify-content: center;
+  gap: 2px; text-align: left; min-width: 140px; padding: 10px 16px; font-weight: 600;
+  background: var(--themaLight); color: var(--thema); border: 1px solid var(--themaPoint); }
 .q_opts small { font-size: 1.4rem; color: var(--blacklight); font-weight: 400; }
+@media (hover: hover) {
+  .q_opts button:not(:disabled):hover { background: var(--thema); border-color: var(--thema); color: var(--white); }
+}
 /* 에이전트 탭 */
 .agent_grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px 16px; margin-bottom: 24px; }
 .acard { background: var(--white); border: 1px solid var(--borderLight); border-radius: 4px; padding: 16px 24px; }
