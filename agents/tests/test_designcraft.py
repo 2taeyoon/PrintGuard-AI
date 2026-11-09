@@ -4,6 +4,9 @@ designcraft-cli가 깔려 있을 때만 도는 시험은 따로 표시해 둔다
 깔려 있지 않아도 도는 시험이 더 많다 — 쪽 매핑과 입력 검증은 MCP 없이 확인할 수 있다.
 """
 import asyncio
+import struct
+import zipfile
+import zlib
 from datetime import timedelta
 from pathlib import Path
 
@@ -94,7 +97,10 @@ def test_only_formats_we_can_hand_back_are_accepted():
 
 def test_card_grades():
     g = {s.id: s.grade for s in dc.CARD.skills}
+    # package_document가 read인 이유 — 사람의 문서를 건드리지 않는다. 작업 폴더 안에 사본을
+    # 모아 zip 하나를 남길 뿐이라, 되돌릴 것이 생기지 않는다(inspect_source와 같은 자리다).
     assert g == {"mcp_status": "read", "inspect_source": "read", "list_commands": "read", "compose": "read",
+                 "package_document": "read",
                  "apply_fixes": "A", "edit_document": "A", "create_document": "A"}
     for sid in ("apply_fixes", "create_document"):
         s = next(x for x in dc.CARD.skills if x.id == sid)
@@ -600,3 +606,62 @@ def test_a_very_long_name_is_cut_but_stays_a_name():
     got = dc._doc_name("명" * 300, sample=False)
     assert got == "명" * dc.MAX_DOC_NAME + ".idml"
     assert len(got.encode()) < 255        # 파일 시스템이 받는 길이 안에 있다
+
+
+# ---------- 인쇄소에 넘길 묶음 ----------
+def _png(w: int = 8, h: int = 8) -> bytes:
+    """시험용 그림. 바이트를 박아 두지 않고 만든다 — 박아 두면 왜 그 바이트인지 아무도 모른다."""
+    raw = b"".join(bytes([0]) + bytes([0, 70, 200] * w) for _ in range(h))
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        return (struct.pack(">I", len(data)) + tag + data
+                + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF))
+
+    sig = bytes([137, 80, 78, 71, 13, 10, 26, 10])
+    return (sig + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b""))
+
+
+@needs_cli
+def test_a_package_carries_the_picture_the_file_only_points_at(tmp_path):
+    """**편집 파일 하나만 내주면 사진이 빠진다.** IDML은 사진을 담지 않고 경로로 가리키기만 해서,
+    받은 사람이 열면 링크가 끊겨 있다 — 올려 받을 때 폴더째 받는 것과 같은 이유다."""
+    png = tmp_path / "logo.png"
+    png.write_bytes(_png())
+    src = tmp_path / "홍길동_명함.designcraft"
+    with Mcp(read_roots=[tmp_path], write_roots=[tmp_path]) as m:
+        m.tool("new_document", {"preset": "A4", "margins": 36})
+        m.ex("frame.create", rect=[36, 36, 300, 120], content="text", text="Hello")
+        m.ex("file.place", path=str(png), rect=[36, 150, 200, 300])
+        m.ex("file.saveAs", path=str(src))
+    out = tmp_path / "out"
+    out.mkdir()
+    r = dc._package_blocking(src, ".designcraft", out)
+
+    assert r["name"] == "홍길동_명함.zip"
+    assert r["links"] == ["logo.png"], r["entries"]
+    with zipfile.ZipFile(out / r["name"]) as z:
+        names = z.namelist()
+        assert "홍길동_명함/Links/logo.png" in names, names
+        assert any(n.endswith(".idml") for n in names), names
+        # 담은 사진은 원본 그대로여야 한다. 줄이거나 바꾸면 인쇄 해상도가 달라진다
+        assert z.read("홍길동_명함/Links/logo.png") == png.read_bytes()
+    # **문서 이름의 폴더 하나에** 담는다. 바로 풀리면 받은 사람 바탕화면에 파일이 흩어지고,
+    # `Links/`가 문서 옆에 있어야 한다는 것도 같이 흐트러진다
+    assert all(n.startswith("홍길동_명함/") for n in names), names
+
+
+@needs_cli
+def test_the_package_folder_is_not_left_behind(tmp_path):
+    """묶고 나면 zip 하나만 남긴다. 폴더까지 두면 같은 것을 두 벌 들고 있게 된다."""
+    src = tmp_path / "t.designcraft"
+    with Mcp(read_roots=[tmp_path], write_roots=[tmp_path]) as m:
+        m.tool("new_document", {"preset": "A4", "margins": 36})
+        m.ex("frame.create", rect=[36, 36, 300, 120], content="text", text="Hello")
+        m.ex("file.saveAs", path=str(src))
+    out = tmp_path / "out"
+    out.mkdir()
+    r = dc._package_blocking(src, ".designcraft", out)
+    assert (out / r["name"]).is_file()
+    assert not (out / dc.PACKAGE_DIR).exists()
+    assert r["links"] == []            # 사진이 없으면 Links/도 없다 — 그래도 묶음은 나온다
