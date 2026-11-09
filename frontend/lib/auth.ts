@@ -7,8 +7,14 @@
 // 1. 로그인 전 — 서버에서 **익명 토큰**을 받아(`POST /auth/session`) `localStorage`에 둔다.
 //    누구인지는 담기지 않는다. 그 브라우저에서만 그 의뢰가 보인다.
 // 2. 로그인 — 구글이 서명한 ID 토큰을 서버에 한 번 내밀면(`POST /auth/google`) 구글 계정
-//    번호(ID 토큰 안의 `sub`)에 묶인 토큰으로 바꿔 준다. 이 토큰은 저장하지 않는다.
-//    새로 고치면 구글에 조용히 다시 물어 받는다 — 잃어도 다시 받으면 그만이라 남길 이유가 없다.
+//    번호(ID 토큰 안의 `sub`)에 묶인 토큰으로 바꿔 준다. 이 토큰도 기한과 함께 `localStorage`에
+//    둔다.
+//
+//    **전에는 두지 않았다.** '새로 고치면 구글에 조용히 다시 물어 받으면 된다'고 보았고, 잃어도
+//    다시 받을 수 있는 값은 남기지 않는 것이 맞다. 그런데 그 '다시 받기'가 실제로는 자주 실패한다
+//    — 크롬의 FedCM 자동 재로그인은 쓰는 사람의 브라우저 설정과 지난 동의에 달려 있어서,
+//    새로 고칠 때마다 로그인이 풀린 것처럼 보였다. 다시 받을 수 없는 값이 되었으니 남긴다.
+//    대신 **기한을 같이 적어** 지난 것은 쓰지 않고, 로그아웃·401에서 지운다.
 // 3. 그 사이 — 로그인하는 순간 익명 토큰으로 넣어 둔 의뢰를 계정으로 **옮기고**
 //    (`POST /auth/claim`) 로컬에 있던 익명 토큰을 지운다. 옮기지 않으면 로그인했더니
 //    하던 일이 사라진 것처럼 보인다.
@@ -25,7 +31,8 @@ export type Session = {
 };
 
 const ANON_KEY = "pg.anon";     // 로그인 전 토큰. 자격증명이지만 **버려도 되는** 값이다
-let tok: string | null = null;  // 로그인한 토큰. 이 페이지가 사는 동안만, 어떤 저장소에도 넣지 않는다
+const SESS_KEY = "pg.sess";     // 로그인한 토큰 + 기한 + 화면에 쓸 계정
+let tok: string | null = null;  // 로그인한 토큰
 let cred: string | null = null; // 구글이 준 ID 토큰. 에이전트가 늦게 켜졌을 때 다시 바꿔 보려고 들고 있는다
 let retryAt = 0;                // 바꾸기를 다시 시도할 수 있는 시각(실패가 반복될 때 매 요청마다 때리지 않게)
 let account: Account | null = null;
@@ -48,6 +55,28 @@ export function subscribeSession(fn: () => void): () => void {
 export const sessionSnapshot = (): Session => snap;
 /** 서버에서 그릴 때 쓰는 값. 브라우저 쪽 첫 그림과 같아야 hydration이 깨지지 않는다 */
 export const sessionServerSnapshot = (): Session => EMPTY;
+
+/* ---------- 로그인한 세션을 새로 고쳐도 들고 있는다 ----------
+   기한이 지난 것은 아예 읽지 않는다. 서버가 거절할 토큰을 들고 있어 봐야 '로그인한 것처럼
+   보이는데 아무것도 안 되는' 상태가 될 뿐이다. */
+type Saved = { token: string; exp: number; account: Account };
+
+function readSess(): Saved | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(SESS_KEY) || "null") as Saved | null;
+    if (!v?.token || typeof v.exp !== "number") return null;
+    if (v.exp <= Date.now()) { dropSess(); return null; }
+    return v;
+  } catch { return null; }
+}
+function writeSess(token: string, seconds: number, who: Account): void {
+  // 기한은 서버가 말한 것에서 1분을 뺀다. 딱 맞춰 두면 마지막 요청이 가는 도중에 지난다.
+  const exp = Date.now() + Math.max(60, seconds - 60) * 1000;
+  try { localStorage.setItem(SESS_KEY, JSON.stringify({ token, exp, account: who })); } catch { /* 막힌 브라우저 */ }
+}
+function dropSess(): void {
+  try { localStorage.removeItem(SESS_KEY); } catch { /* 같음 */ }
+}
 
 /* ---------- 로그인 전: 익명 토큰 ---------- */
 const readAnon = () => { try { return localStorage.getItem(ANON_KEY) ?? ""; } catch { return ""; } };
@@ -89,7 +118,7 @@ export async function requireToken(): Promise<string> {
 
 /** 서버가 401을 돌려줬을 때 버린다. 익명 토큰이면 지워서 다음 요청에 새로 받는다. */
 export function forgetSession(): void {
-  if (tok) { tok = null; account = null; push(); return; }
+  if (tok) { tok = null; account = null; dropSess(); push(); return; }
   dropAnon();
 }
 
@@ -197,6 +226,7 @@ async function exchange(credential: string): Promise<void> {
     if (!d?.token) throw new Error("로그인하지 못했습니다");
     tok = d.token;
     account = { email: d.email ?? "", name: d.name ?? "", picture: d.picture ?? "" };
+    writeSess(d.token, Number(d.expires_in) || 12 * 3600, account);
     moved = await claim();
   } catch (e) {
     // 구글 로그인 자체는 된 것이다. 계정 표시는 남겨 두고 '에이전트에 못 붙었다'만 알린다
@@ -231,6 +261,13 @@ async function claim(): Promise<number> {
 let prompting = false;
 export async function silentSignIn(): Promise<void> {
   if (tok || busy || prompting) return;
+  // 새로 고친 것뿐이면 들고 있던 세션을 그대로 쓴다. 구글에 다시 묻지 않으므로 깜빡임도 없고,
+  // 브라우저가 자동 재로그인을 막아 두었어도 로그인이 풀리지 않는다.
+  const have = readSess();
+  if (have) {
+    tok = have.token; account = have.account; ready = true; push();
+    return;
+  }
   prompting = true;
   try {
     const g = await init();
@@ -253,6 +290,7 @@ export async function mountButton(el: HTMLElement): Promise<void> {
 
 export function signOut(): void {
   try { win().google?.accounts?.id?.disableAutoSelect(); } catch { /* 스크립트가 아직 없을 수 있다 */ }
+  dropSess();
   tok = null; cred = null; account = null; error = ""; moved = 0; push();
 }
 
