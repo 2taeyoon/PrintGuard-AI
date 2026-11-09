@@ -7,7 +7,6 @@ import type { IntentName } from "@/lib/color";
 import type { Guide, Hit } from "@/lib/guide";
 import { GuideBadge, GuideCard, ModelLoadingScreen } from "./guide-ui";
 import { TermsPanel } from "./terms";
-import { GsMark } from "./gs-mark";
 import GuideSearch from "./guide-search";
 import { AgentProgress, QuestionCard } from "./agent-ui";
 import AgentsView, { AgentHealth } from "./agents-view";
@@ -99,10 +98,8 @@ function Home() {
   // 그 칸은 들어오는 사람 아무에게나 내 에이전트 주소를 적어 보여 주는 자리였다.
   const HOSTED = hostedOrch();
   const [mode, setModeState] = useState<"direct" | "agent">(sp.get("mode") === "direct" ? "direct" : "agent");
-  const [showAgents, setShowAgents] = useState(true); // '에이전트 검사'를 고르면 에이전트 탭 내용을 이 자리에 펼친다
   const setMode = (m: "direct" | "agent") => {
     setModeState(m);
-    if (m === "agent") setShowAgents(true); // 누르면 에이전트 내용이 바로 보이게
     router.replace(m === "direct" ? "/?mode=direct" : "/", { scroll: false });
   };
   const [agentUp, setAgentUp] = useState<boolean | null>(null);
@@ -376,14 +373,15 @@ function Home() {
 
       {/* 에이전트 검사를 고르면 '에이전트' 탭과 같은 내용(목록·의뢰 추적·소통 기록)을 이 자리에서 본다 */}
       {mode === "agent" && (
-        <section className={`gsearch panel agent_inline${showAgents ? " open" : ""}`}>
-          <button type="button" className="gs_toggle" aria-expanded={showAgents} onClick={() => setShowAgents((v) => !v)}>
+        <section className="gsearch panel agent_inline open">
+          {/* 접지 않는다. '에이전트 검사'를 고른 사람은 **누가 무엇을 하는지 보려고** 고른 것이다 —
+              그걸 한 번 더 눌러야 보이게 두면 고른 이유가 접혀 있는 셈이다. */}
+          <div className="gs_head">
             <b>에이전트 상태 · 의뢰 추적 · 소통 기록</b>
             <AgentHealth />
             <span className="note">누가 어떤 일을 할 수 있고(skill), 이번 의뢰를 누가 언제 얼마나 처리했는지 그대로 보여 줍니다.</span>
-            <GsMark open={showAgents} />
-          </button>
-          {showAgents && <div className="gs_body"><AgentsView initialCtx={agentJob?.context_id ?? ""} showWarn={false} withFix={!!srcCtx} /></div>}
+          </div>
+          <div className="gs_body"><AgentsView initialCtx={agentJob?.context_id ?? ""} showWarn={false} withFix={!!srcCtx} /></div>
         </section>
       )}
 
