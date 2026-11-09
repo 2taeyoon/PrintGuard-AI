@@ -940,3 +940,12 @@ input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, 
 .pick b { font-size: 1.6rem; }
 .pick .note { margin: 0; }
 .pick input[type="file"] { margin-top: 4px; }
+
+/* 문서 고르기 — 고르는 단추와 지우는 단추를 한 덩어리로 붙여 둔다. 떨어뜨려 놓으면
+   어느 문서를 지우는 단추인지 눈으로 잇지 못한다. */
+.docpick { display: inline-flex; align-items: center; gap: 2px; }
+.docpick .x { min-height: 28px; padding: 4px 9px; font-size: 1.4rem; color: var(--blacklight); }
+@media (hover: hover) { .docpick .x:not(:disabled):hover { color: var(--white); } }
+.docdel { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 4px 10px; border: 1px solid var(--borderStrong); background: var(--bgMuted); font-size: 1.5rem; }
+

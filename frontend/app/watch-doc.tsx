@@ -22,7 +22,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
-  adoptDoc, dcFileBlob, dcPackage, watchFeed, watchShot,
+  adoptDoc, dcFileBlob, dcPackage, deleteDoc, watchFeed, watchShot,
   type FeedDoc, type FeedRow, type SourceView,
 } from "@/lib/agentClient";
 import { readable } from "@/lib/engineText";
@@ -275,6 +275,16 @@ export default function WatchDoc() {
     }
   };
 
+  /** 지운 문서를 화면에서도 뺀다. 다음 물음에 안 오는 것만으로는 모자라다 —
+   *  이미 쌓아 둔 줄과 고르기 단추가 그대로 남아, 지웠는데 그대로인 것처럼 보인다. */
+  const drop = useCallback((ctx: string) => {
+    setDocs((old) => { const n = { ...old }; delete n[ctx]; return n; });
+    setRows((old) => old.filter((r) => r.ctx !== ctx));
+    setChosen((c) => (c === ctx ? "" : c));
+    setPinned((v) => (chosen === ctx ? false : v));
+    setDoc((d) => (pick === ctx ? null : d));
+  }, [chosen, pick]);
+
   const recent = Object.entries(docs).sort((a, b) => (b[1].created ?? 0) - (a[1].created ?? 0)).slice(0, 6);
 
   return (
@@ -339,12 +349,12 @@ export default function WatchDoc() {
           <div ref={end} aria-hidden="true" />
         </div>
 
-        {recent.length > 1 && (
+        {recent.length > 0 && (
           <div className="dc_row">
             <span className="note">문서 고르기:</span>
             {recent.map(([c, d]) => (
-              <button key={c} type="button" className={`pill${c === pick ? " on" : ""}`}
-                onClick={() => open(c)}>{d.filename}</button>
+              <DocPick key={c} ctx={c} name={d.filename ?? "문서"} on={c === pick}
+                onOpen={() => open(c)} onGone={() => drop(c)} />
             ))}
           </div>
         )}
@@ -408,6 +418,12 @@ export default function WatchDoc() {
                 // eslint-disable-next-line @next/next/no-img-element
                 ? <img className="dc_shot" src={shot} alt={`${doc.filename} ${page}쪽`} />
                 : <div className="empty">아직 그려진 쪽이 없습니다.</div>}
+              {/* 쪽 그림에는 한도가 있다. 적어 주지 않으면 **쪽이 덜 만들어진 것**으로 읽힌다 —
+                  문서는 그대로 다 있고 그림만 모자란 것이다. */}
+              {!!doc.pages && shots.length > 0 && shots.length < doc.pages && (
+                <p className="note">문서는 <b>{doc.pages}쪽</b>인데 미리보기는 {shots.length}쪽까지만 그렸습니다.
+                  받으시는 파일에는 {doc.pages}쪽이 모두 들어 있습니다.</p>
+              )}
             </div>
             <div>
               <h3 className="dc_sub">만든 문서 검사 {doc.preflight.length}건</h3>
@@ -423,3 +439,50 @@ export default function WatchDoc() {
     </>
   );
 }
+
+
+/** 문서 하나를 고르는 단추와, 그 옆의 **지우는** 단추.
+ *
+ *  지우기에 `confirm()`을 쓰지 않는다 — 브라우저가 띄우는 창은 화면 밖에서 뜨기도 하고,
+ *  막아 둔 사람에게는 아무 일도 일어나지 않는다. 같은 자리에서 한 번 더 묻는다
+ *  (의뢰 지우기와 같은 방식이다). */
+function DocPick({ ctx, name, on, onOpen, onGone }: {
+  ctx: string; name: string; on: boolean; onOpen: () => void; onGone: () => void;
+}) {
+  const [ask, setAsk] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  if (err) return <span className="warn docdel">{err}</span>;
+  if (ask) {
+    return (
+      <span className="docdel">
+        <b>{name}</b>을 지울까요? 소통 기록과 쪽 그림까지 같이 지워지고 되돌릴 수 없습니다.
+        <button type="button" className="pill on" disabled={busy} onClick={() => {
+          setBusy(true);
+          // **먼저 가져온 다음 지운다.** 클로드가 만든 문서의 주인은 이 PC의 도구이지 이 브라우저가
+          // 아니다. 보는 것은 되지만(같은 PC니까) 지우는 것은 주인만 할 수 있어서, 그냥 누르면
+          // '없는 의뢰'가 돌아온다 — 눈앞에 있는 것을 못 지우는 셈이다. 번호를 들고 있다는 것이
+          // 곧 내 것이라는 뜻이라, 화면이 문서를 따라갈 때 쓰는 그 길(`/adopt`)을 그대로 쓴다.
+          adoptDoc(ctx).catch(() => undefined).then(() => deleteDoc(ctx)).then(onGone, (e: unknown) => {
+            const m = e instanceof Error ? e.message : String(e);
+            // 상태 코드를 그대로 보여 주면 쓰는 사람은 무엇을 해야 할지 알 수 없다
+            setErr(/40[45]|Not Found|Method Not Allowed/.test(m)
+              ? "지우기는 이 기능이 생긴 뒤의 에이전트에서만 됩니다. 에이전트를 돌리는 PC에서 다시 켜 주세요"
+              : m);
+            setBusy(false);
+          });
+        }}>{busy ? "지우는 중…" : "지웁니다"}</button>
+        <button type="button" className="pill" disabled={busy} onClick={() => setAsk(false)}>그만두기</button>
+      </span>
+    );
+  }
+  return (
+    <span className="docpick">
+      <button type="button" className={`pill${on ? " on" : ""}`} onClick={onOpen}>{name}</button>
+      <button type="button" className="pill x" title={`${name} 지우기`} aria-label={`${name} 지우기`}
+        onClick={() => setAsk(true)}>✕</button>
+    </span>
+  );
+}
+
