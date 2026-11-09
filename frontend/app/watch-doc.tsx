@@ -22,7 +22,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
-  adoptDoc, dcFileBlob, watchFeed, watchShot,
+  adoptDoc, dcFileBlob, dcPackage, watchFeed, watchShot,
   type FeedDoc, type FeedRow, type SourceView,
 } from "@/lib/agentClient";
 import { readable } from "@/lib/engineText";
@@ -245,6 +245,24 @@ export default function WatchDoc() {
     setErr(`${as}를 받지 못했습니다. 아직 저장된 파일이 없습니다.`);
   };
 
+  /** 인쇄소에 넘길 묶음. **편집 파일 하나만 받으면 쓴 사진이 빠진다** — IDML은 사진을 담지 않고
+   *  경로로 가리키기만 해서, 받은 사람이 열면 링크가 끊겨 있다. 글꼴도 같이 담는다.
+   *  묶는 데 몇 초 걸리고 글꼴이 들어가 크다. 그동안 누른 것이 먹었는지 알려 줘야 또 누르지 않는다. */
+  const [packing, setPacking] = useState(false);
+  const pack = async () => {
+    if (packing) return;
+    setPacking(true);
+    setErr("");
+    try {
+      const p = await dcPackage(pick);
+      await dl([p.name], p.name);
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPacking(false);
+    }
+  };
+
   const recent = Object.entries(docs).sort((a, b) => (b[1].created ?? 0) - (a[1].created ?? 0)).slice(0, 6);
 
   return (
@@ -334,14 +352,23 @@ export default function WatchDoc() {
               onClick={() => router.push(`/?src=${encodeURIComponent(doc.context_id)}`)}>
               이 문서로 인쇄 검수하기 →
             </button>
+            <button type="button" className="pill" disabled={packing} onClick={() => void pack()}>
+              {packing ? "묶는 중…" : "패키지(zip) 받기"}
+            </button>
             <button type="button" className="pill"
-              onClick={() => void dl(["work.idml", "new.idml"], doc.filename)}>편집 파일(idml) 받기</button>
+              onClick={() => void dl(["work.idml", "new.idml"], doc.filename)}>idml만 받기</button>
             <button type="button" className="pill"
               onClick={() => void dl(["doc.pdf", "inspect.pdf"], doc.filename.replace(/\.idml$/, ".pdf"))}>PDF 받기</button>
           </div>
           <p className="note">
             검수로 넘기면 글꼴·도련·해상도·색·오탈자를 검사합니다. 고칠 것이 있으면{" "}
-            <b>이 문서에 반영할지 물어봅니다</b>. 받은 편집 파일은 인디자인에서 그대로 열어 이어서 작업해도 됩니다.
+            <b>이 문서에 반영할지 물어봅니다</b>.
+          </p>
+          <p className="note">
+            인쇄소에 넘기거나 다른 PC에서 열 때는 <b>패키지</b>로 받으세요 — 편집 파일과 함께{" "}
+            <b>쓴 사진(Links)</b>과 <b>글꼴(Document Fonts)</b>이 한 폴더에 담깁니다.{" "}
+            <b>idml만 받으면 사진이 따라오지 않습니다</b>(IDML은 사진을 담지 않고 경로로 가리키기만 합니다).
+            글꼴이 들어가 수십 MB가 되고, 묶는 데 몇 초 걸립니다.
           </p>
           {/* 이어서 시키려면 클로드에게 이 번호를 줘야 한다 — 'ctx_dc_… 이어서 고쳐 줘'. */}
           <div className="dc_row">

@@ -799,6 +799,26 @@ async def dc_edit(ctx: str, body: dict[str, Any], authorization: str | None = Au
     return {"data": out, "meta": {"status": r.get("status")}}
 
 
+@app.post("/designcraft/{ctx}/package")
+async def dc_package(ctx: str, authorization: str | None = Auth) -> dict[str, Any]:
+    """인쇄소에 넘길 묶음(zip)을 만든다.
+
+    **편집 파일 하나만 내주면 사진과 글꼴이 빠진다.** IDML은 사진을 담지 않고 경로로 가리키기만
+    해서, 받은 사람이 열면 링크가 전부 끊겨 있다 — 올려 받을 때 폴더째 받는 것과 같은 이유다.
+
+    만들어 두기만 하고 내주지는 않는다. 받는 길은 이미 있는 `/file/{name}` 하나다(주인만 받는다) —
+    파일을 내주는 자리를 둘로 늘리면 둘 중 하나는 언젠가 검사를 빠뜨린다.
+    """
+    j = _dc_owned(ctx, _writer(authorization).subject)
+    _too_often_edit(ctx)                       # 26MB를 베껴 담는 일이다. 연타로 돌릴 자리가 아니다
+    r = await _ask("designcraft", "package_document", ctx,
+                   {"src_ref": j["src_ref"], "filename": j.get("doc") or j["filename"]})
+    if r.get("status") != "completed":
+        raise HTTPException(502, (((r.get("output") or {}).get("reason") or (r.get("output") or {}).get("message"))
+                                  or "묶음을 만들지 못했습니다")[:300])
+    return {"data": r.get("output"), "meta": {"status": r.get("status")}}
+
+
 @app.get("/designcraft/jobs")
 async def dc_jobs(authorization: str | None = Auth) -> dict[str, Any]:
     """내가 만든 문서 목록. 브라우저에서 시작한 것이 바로 보이게 하는 데 쓴다."""

@@ -47,6 +47,7 @@ import re
 import os
 import shutil
 import time
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -118,6 +119,12 @@ CARD = AgentCard.model_validate({
                           "bleed_mm": "number", "text": "string? 첫 글상자에 넣을 글"},
          "output_schema": {"src_ref": "sha256", "doc": "만든 IDML의 이름", "pages": "number", "width_mm": "number",
                            "height_mm": "number"}},
+        {"id": "package_document", "description": "인쇄소에 넘길 묶음(zip)을 만든다 — 편집 파일 + 쓴 사진(Links) + 글꼴(Document Fonts)", "grade": "read",
+         "allowed_requesters": ["orchestrator"],
+         "input_schema": {"src_ref": "sha256", "filename": "string"},
+         "output_schema": {"name": "만든 zip 이름", "bytes": "number", "entries": "string[] 묶음 안의 파일",
+                           "links": "string[] 같이 담은 사진", "fonts": "string[] 같이 담은 글꼴 파일",
+                           "report": "엔진이 적어 준 묶음 보고서"}},
     ],
 })
 
@@ -1059,7 +1066,59 @@ async def create_document(req: AgentRequest) -> dict[str, Any]:
                                          f"({r['width_mm']:.0f}×{r['height_mm']:.0f}mm)을 만들었습니다"}}
 
 
+# ---------- 인쇄소에 넘길 묶음 ----------
+# **편집 파일 하나만 내주면 사진이 빠진다.** IDML은 사진을 담고 있지 않고 경로로 가리키기만 해서,
+# 받은 사람이 열면 링크가 전부 끊겨 있다 — 우리가 올려 받을 때 파일 하나가 아니라 폴더째 받는
+# 것과 같은 이유다. 글꼴도 그렇다. 이름으로만 가리키므로 그 글꼴이 없는 PC에서 열면 다른 글꼴로
+# 바뀌고 줄바꿈이 달라진다(인쇄 사고는 대개 여기서 난다).
+#
+# 그래서 내줄 때도 **묶음으로** 내준다. 엔진의 `file.package`가 인디자인의 '패키지'와 같은 일을
+# 한다 — 문서를 복사하면서 쓴 사진을 `Links/`로 모아 다시 잇고, 글자를 그리는 글꼴을
+# `Document Fonts/`에 담고(라이선스가 막는 글꼴은 엔진이 뺀다), IDML 사본과 설명서를 붙인다.
+PACKAGE_DIR = "package"
+
+
+def _package_blocking(src: Path, ext: str, out: Path) -> dict[str, Any]:
+    """묶음을 만들어 zip 하나로 돌려준다. 쓰기는 작업 폴더 안뿐이다."""
+    work = out / PACKAGE_DIR
+    shutil.rmtree(work, ignore_errors=True)      # 지난 묶음이 섞이면 안 들어간 사진이 들어간다
+    with Mcp(read_roots=[_pkg_root(src), out], write_roots=[out]) as m:
+        _open(m, src, ext)
+        r = m.ex("file.package", dir=str(work), idml=True) or {}
+
+    stem = src.stem or "package"
+    zpath = out / f"{stem}.zip"
+    zpath.unlink(missing_ok=True)
+    entries: list[str] = []
+    # 묶음을 **폴더 하나에 담아** 압축한다. 바로 풀면 받은 사람의 바탕화면에 파일 여섯 개가
+    # 흩어지고, 그러면 `Links/`가 문서 옆에 있어야 한다는 것도 같이 흐트러진다.
+    with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
+        for f in sorted(work.rglob("*")):
+            if f.is_file():
+                rel = f.relative_to(work).as_posix()
+                entries.append(rel)
+                z.write(f, f"{stem}/{rel}")
+    shutil.rmtree(work, ignore_errors=True)      # zip이 결과물이다. 같은 것을 두 벌 들고 있지 않는다
+
+    def under(folder: str) -> list[str]:
+        return [e.split("/", 1)[1] for e in entries if e.startswith(f"{folder}/")]
+
+    return {"name": zpath.name, "bytes": zpath.stat().st_size, "entries": entries,
+            "links": under("Links"), "fonts": under("Document Fonts"),
+            "report": str(r.get("report") or "")[:4000]}
+
+
+async def package_document(req: AgentRequest) -> dict[str, Any]:
+    src, ext = _src_path(str(req.input.get("src_ref") or ""), str(req.input.get("filename") or ""))
+    out = _job_dir(req.meta.context_id)
+    r = await asyncio.to_thread(_package_blocking, src, ext, out)
+    return {"status": "completed", "output": r,
+            "evidence": {"queries": [], "ref_ids": [],
+                         "data_summary": f"{r['name']} — 사진 {len(r['links'])}장, 글꼴 {len(r['fonts'])}개, "
+                                         f"{r['bytes'] // 1024}KB"}}
+
+
 app = create_agent_app(CARD, {"mcp_status": mcp_status, "inspect_source": inspect_source, "apply_fixes": apply_fixes,
-                              "create_document": create_document,
+                              "create_document": create_document, "package_document": package_document,
                                 "list_commands": list_commands, "edit_document": edit_document,
                                 "compose": compose})

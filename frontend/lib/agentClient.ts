@@ -281,6 +281,12 @@ export const adoptDoc = (ctx: string) => post<SourceView & { made: boolean }>(`/
 export const getSource = async (ctx: string) => j<SourceView>(await call(`/designcraft/${ctx}`));
 
 /** 작업 폴더의 결과물 주소(전후 PNG, 고친 PDF/IDML). 주인만 받을 수 있다. */
+/** 인쇄소에 넘길 묶음을 만든다. 만들기만 하고 내주지는 않는다 — 받는 것은 `dcFile`로 한다.
+ *  편집 파일 하나만 받으면 사진이 빠진다(IDML은 사진을 담지 않고 경로로 가리키기만 한다). */
+export const dcPackage = (ctx: string) =>
+  call(`/designcraft/${ctx}/package`, { method: "POST" })
+    .then((r) => j<{ name: string; bytes: number; links: string[]; fonts: string[] }>(r));
+
 const dcFilePath = (ctx: string, name: string) => `/designcraft/${ctx}/file/${encodeURIComponent(name)}`;
 
 /** 이미지·파일은 <img src>로 바로 못 건다 — 열쇠 헤더가 필요해서 받아서 blob URL로 바꾼다. */
