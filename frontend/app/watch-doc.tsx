@@ -70,19 +70,45 @@ export default function WatchDoc() {
   const lastFresh = useRef("");
 
   // 되풀이해 묻는다. 받은 것은 **덧붙인다** — 매번 통째로 다시 받으면 보던 자리가 흔들린다.
+  //
+  // **같은 줄이 두 번 쌓이던 자리다.** 0.9초마다 묻는데 답이 그보다 늦게 오면 앞 물음이
+  // 끝나기 전에 다음 물음이 나간다. 둘 다 `after`가 같으므로 **같은 줄을 받아 두 번 쌓고**,
+  // 화면에는 똑같은 줄이 둘씩 보인다(에이전트가 바빠 답이 느릴 때 실제로 그랬다).
+  //
+  // 그래서 두 가지를 둔다.
+  // 1. 앞 물음이 안 끝났으면 묻지 않는다 — 겹치는 일 자체를 줄인다.
+  // 2. 그래도 같은 줄이 오면 **줄 번호로 걸러** 쌓는다.
+  //
+  // 둘째가 진짜 방어다. 첫째만으로는 막지 못한다 — 다시 켤 때(StrictMode)나 그물이 끊겼다
+  // 이어질 때는 묻는 쪽이 둘이 되고, 그때 늦게 온 답이 이미 쌓은 줄을 그대로 다시 들고 온다.
   useEffect(() => {
     let alive = true;
-    const tick = () => watchFeed(after.current)
-      .then((f) => {
-        if (!alive) return;
-        setErr("");
-        setDocs((old) => ({ ...old, ...f.docs }));
-        if (f.rows.length) {
-          after.current = f.next;
-          setRows((old) => [...old, ...f.rows].slice(-KEEP));
-        }
-      })
-      .catch((e: unknown) => { if (alive) setErr(e instanceof Error ? e.message : String(e)); });
+    let asking = false;
+    const tick = () => {
+      if (asking) return;
+      asking = true;
+      watchFeed(after.current)
+        .then((f) => {
+          if (!alive) return;
+          setErr("");
+          setDocs((old) => ({ ...old, ...f.docs }));
+          if (!f.rows.length) return;
+          // 늦게 온 답이 커서를 뒤로 돌리면 받은 줄을 또 받는다. 앞으로만 간다.
+          after.current = Math.max(after.current, f.next);
+          setRows((old) => {
+            const seen = new Set(old.map((r) => r.id));
+            const add: FeedRow[] = [];
+            for (const r of f.rows) {
+              if (seen.has(r.id)) continue;
+              seen.add(r.id);
+              add.push(r);
+            }
+            return add.length ? [...old, ...add].slice(-KEEP) : old;
+          });
+        })
+        .catch((e: unknown) => { if (alive) setErr(e instanceof Error ? e.message : String(e)); })
+        .finally(() => { asking = false; });
+    };
     tick();
     const t = setInterval(tick, EVERY);
     return () => { alive = false; clearInterval(t); };
