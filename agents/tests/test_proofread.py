@@ -22,11 +22,30 @@ def test_deterministic():
     assert detect(TEXT, ["rules", "kiwi_typo"]) == detect(TEXT, ["rules", "kiwi_typo"])
 
 
+def test_one_broken_detector_does_not_throw_away_the_others():
+    """LLM이 분당 한도에 걸려도 규칙·Kiwi가 찾아 둔 것은 그대로 나와야 한다.
+
+    전에는 한 덩어리로 돌려서, LLM이 넘어지면 맞춤법까지 같이 사라지고 화면에는 '자동으로
+    고칠 수 있는 것 0건'만 남았다. 찾아 놓고 버린 것이었다.
+    """
+    import pg_agents.proofread.detectors as D
+    def boom(_text):
+        raise RuntimeError("429 분당 한도")
+    old = D.DETECTORS["llm"]
+    D.DETECTORS["llm"] = boom
+    try:
+        found, bad = detect(TEXT, ["rules", "kiwi_typo", "llm"])
+    finally:
+        D.DETECTORS["llm"] = old
+    assert {"몇일", "컨텐츠"} <= {s["original"] for s in found}
+    assert "llm" in bad and "429" in bad["llm"]
+
+
 def test_injection_does_not_change_rule_findings():
-    found = {s["original"] for s in detect(TEXT, ["rules", "kiwi_typo"])}
+    found = {s["original"] for s in detect(TEXT, ["rules", "kiwi_typo"])[0]}
     assert {"몇일", "컨텐츠"} <= found
-    clean = detect(TEXT.replace(INJECT, ""), ["rules", "kiwi_typo"])
-    assert {s["original"] for s in clean} == {s["original"] for s in detect(TEXT, ["rules", "kiwi_typo"])}
+    clean = detect(TEXT.replace(INJECT, ""), ["rules", "kiwi_typo"])[0]
+    assert {s["original"] for s in clean} == {s["original"] for s in detect(TEXT, ["rules", "kiwi_typo"])[0]}
 
 
 def test_llm_prompt_isolates_untrusted_and_drops_invented_findings():
@@ -62,7 +81,7 @@ def test_pdf_pages_and_rects():
     ref = hashlib.sha256(data).hexdigest()
     pa.STORE.mkdir(parents=True, exist_ok=True)
     (pa.STORE / f"{ref}.pdf").write_bytes(data)
-    sug = pa.suggest(ref, ["rules", "kiwi_typo"])
+    sug, _bad = pa.suggest(ref, ["rules", "kiwi_typo"])
     got = {(s["page"], s["original"]) for s in sug}
     assert (2, "몇일") in got and (2, "인새") in got and all(s["page"] == 2 for s in sug)
     assert all(s["rect"] and s["rect"][2] > s["rect"][0] for s in sug)

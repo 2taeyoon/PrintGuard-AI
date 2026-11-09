@@ -35,6 +35,9 @@ export default function FixResultPanel({ ctx, filename, r }: { ctx: string; file
   }
 
   const applied = r.applied ?? [], failed = r.failed ?? [], shots = r.shots ?? [];
+  // 손댄 쪽을 차례대로. 쪽을 모르는 건(0)은 맨 뒤로 보낸다.
+  const pages = [...new Set([...applied, ...failed].map((x) => x.page ?? 0))]
+    .sort((a, b) => (a === 0 ? 1 : b === 0 ? -1 : a - b));
   return (
     <section className="panel dc_run">
       <div className="dc_head">
@@ -56,42 +59,55 @@ export default function FixResultPanel({ ctx, filename, r }: { ctx: string; file
           다시 올리라는 안내는 하지 않는다 — 고치는 일은 이미 끝났고, 글꼴은 건드리지 않았다. */}
       <FontNotice s={r} advise={false} />
 
-      {shots.map((s) => <Compare key={s.page} ctx={ctx} shot={s} />)}
+      {/* 전후 비교는 **작게 늘어놓는다.** 쪽마다 큰 그림 두 장을 세로로 쌓으면 세 쪽만 되어도
+          화면을 덮어서, 정작 무엇이 바뀌었는지를 적어 둔 아래 목록까지 내려가지 못한다.
+          크게 보는 길은 내려받는 PDF에 있다. */}
+      {shots.length > 0 && (
+        <div className="cmp_row">
+          {shots.map((s) => <Compare key={s.page} ctx={ctx} shot={s} compact />)}
+        </div>
+      )}
       {(r.shots_total ?? 0) > shots.length && (
         <p className="note">바뀐 쪽이 {r.shots_total}쪽인데 앞의 {shots.length}쪽만 그렸습니다.
           나머지는 내려받은 PDF에서 보세요.</p>
       )}
 
-      <h3 className="dc_sub">반영된 항목 {applied.length}건</h3>
-      {applied.length === 0 ? <div className="empty">반영된 항목이 없습니다.</div> : (
-        <ul className="dc_log">
-          {applied.map((a, i) => (
-            <li key={i} className="ok">
-              {a.page ? <span className="chip">{a.page}쪽</span> : null}
-              <del>{a.original}</del> <span className="arrow">→</span> <ins>{a.suggestion}</ins>
-              <span className="note">글 덩어리 {a.story}, 위치 {a.at[0]}–{a.at[1]}바이트</span>
-            </li>
-          ))}
-        </ul>
-      )}
-
+      {/* **쪽을 기준으로 묶는다.** 들어간 것과 못 들어간 것을 따로 늘어놓으면, '내가 보고 있는
+          이 쪽은 다 된 건가'를 사람이 두 목록을 오가며 맞춰 봐야 한다. 한 쪽씩 같이 적는다. */}
+      <h3 className="dc_sub">쪽마다 무엇이 바뀌었나</h3>
+      {pages.length === 0 ? <div className="empty">바뀐 것이 없습니다.</div> : pages.map((pg) => {
+        const ok = applied.filter((a) => (a.page ?? 0) === pg);
+        const no = failed.filter((f) => (f.page ?? 0) === pg);
+        return (
+          <div key={pg} className="pagefix">
+            <div className="pagefix_head">
+              <b>{pg ? `${pg}쪽` : "쪽을 모르는 것"}</b>
+              <span className="chip">바꿈 <b className="sev-low">{ok.length}</b></span>
+              {no.length > 0 && <span className="chip">못 바꿈 <b className="sev-high">{no.length}</b></span>}
+              {no.length === 0 && <span className="note">이 쪽은 모두 반영했습니다.</span>}
+            </div>
+            <ul className="dc_log">
+              {ok.map((a, i) => (
+                <li key={`o${i}`} className="ok">
+                  <del>{a.original}</del> <span className="arrow">→</span> <ins>{a.suggestion}</ins>
+                  <span className="note">글 덩어리 {a.story}, 위치 {a.at[0]}–{a.at[1]}바이트</span>
+                </li>
+              ))}
+              {no.map((f, i) => (
+                <li key={`x${i}`} className="bad">
+                  <code>{f.original}</code> <span className="arrow">→</span> <code>{f.suggestion}</code>
+                  <span className="why">{f.reason}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })}
       {failed.length > 0 && (
-        <>
-          <h3 className="dc_sub">반영하지 못한 항목 {failed.length}건</h3>
-          <ul className="dc_log">
-            {failed.map((f, i) => (
-              <li key={i} className="bad">
-                {f.page ? <span className="chip">{f.page}쪽</span> : null}
-                <code>{f.original}</code> <span className="arrow">→</span> <code>{f.suggestion}</code>
-                <span className="why">{f.reason}</span>
-              </li>
-            ))}
-          </ul>
-          <p className="note">
-            같은 문구가 여러 군데 있으면 <b>일부러 고치지 않습니다.</b> 어느 것인지 가릴 수 없는데 찍어서 고치면 조용히
-            틀립니다. 그런 건은 원본에서 직접 고치시는 편이 안전합니다.
-          </p>
-        </>
+        <p className="note">
+          같은 문구가 여러 군데 있으면 <b>일부러 고치지 않습니다.</b> 어느 것인지 가릴 수 없는데 찍어서 고치면 조용히
+          틀립니다. 그런 건은 원본에서 직접 고치시는 편이 안전합니다.
+        </p>
       )}
 
       <h3 className="dc_sub">고친 뒤 원본 검사</h3>

@@ -81,6 +81,19 @@ button.ghost { background: var(--white); color: var(--thema); }
 .warn p:last-child { margin-bottom: 0; }
 .noauto { display: inline-flex; align-items: center; font-size: 1.4rem; font-weight: 600; padding: 4px 8px; border-radius: 999px;
   background: var(--themaPoint); color: var(--thema); margin-left: 4px; vertical-align: middle; line-height: 100%; }
+/* 기계가 고쳐 주는 것과 사람이 고쳐야 하는 것. 심각도(빨강·보라·초록)와 **다른 축**이라
+   색을 겹쳐 쓰지 않는다 — 위험한지와 자동으로 되는지는 서로 상관이 없다. */
+.howfix { display: inline-flex; align-items: center; font-size: 1.3rem; font-weight: 600;
+  padding: 2px 8px; margin-left: 6px; vertical-align: middle; line-height: 150%;
+  background: var(--bgMuted); color: var(--blacklight); border: 1px solid var(--borderStrong); border-radius: 0; }
+.howfix.auto { background: var(--themaLight); color: var(--thema); border-color: var(--themaPoint); }
+.fixsum { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 10px;
+  padding: 10px 14px; background: var(--bgSurface); border: 1px solid var(--borderSubtle); }
+.fixsum .howfix { margin-left: 0; }
+.fixsum .note { flex: 1; min-width: 240px; font-size: 1.3rem; }
+.card del { color: var(--blackmute); }
+.card ins { color: var(--thema); font-weight: 600; text-decoration: none; }
+.card .arrow { color: var(--blackmute); }
 .sev-high { color: var(--redBright); } .sev-medium { color: var(--purpleBright); } .sev-low { color: var(--greenBright); }
 .sev-na { color: var(--blackmute); font-weight: 600; }
 
@@ -98,6 +111,26 @@ form.upload .filepick { display: flex; flex-direction: column; gap: 4px; font-si
 form.upload .filepick > .fp_title { width: fit-content; }
 form.upload .filepick.wide { flex-basis: 100%; align-items: flex-start; }
 form.upload .filepick.wide input[type="file"] { width: auto; max-width: 320px; }
+/* 파일 칸 생김새. input 자체는 화면에서만 감춘다 — 지우지 않는 이유는, 읽어 주는 프로그램과
+   폼 제출에는 그대로 있어야 하고 `value=""`로 비우는 길도 살아 있어야 해서다. 여는 일은
+   그 옆 단추가 대신한다(글자를 눌러도 창이 열리던 옛 문제가 여기서 다시 생기지 않는다). */
+form.upload .fp_pick { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 2px 0; }
+form.upload .fp_file { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+form.upload .fp_name { font-size: 1.4rem; color: var(--black); overflow-wrap: anywhere; }
+form.upload .fp_name.none { color: var(--blackmute); }
+/* 폴더 안에 무엇이 들어갔나 */
+.packlist { margin: 8px 0 2px; padding: 12px 14px; background: var(--bgSurface); border: 1px solid var(--borderSubtle); }
+.pack_head { font-size: 1.4rem; color: var(--black); margin-bottom: 6px; }
+.pack_row { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 4px 12px; padding: 6px 0;
+  border-top: 1px solid var(--borderSubtle); font-size: 1.3rem; }
+.pack_row:first-of-type { border-top: 0; }
+.pack_kind { color: var(--blacklight); }
+.pack_kind b { color: var(--black); }
+.pack_files { display: flex; flex-wrap: wrap; gap: 4px 8px; }
+.pack_files code { font-size: 1.3rem; color: var(--black); background: var(--white);
+  border: 1px solid var(--borderLight); padding: 1px 6px; }
+@media (max-width: 760px) { .pack_row { grid-template-columns: 1fr; } }
 form.upload .filepick > .fp_title { display: flex; align-items: center; gap: 8px; }
 /* 둘 중 하나만 올린다. 고르지 못하는 칸은 흐리게 — 사라지게 하지는 않는다.
    없어지면 '둘 중 하나'라는 것 자체가 안 보이고, 바꾸려면 어디를 눌러야 할지 모른다. */
@@ -543,6 +576,11 @@ button.ghost { background: var(--white); color: var(--thema); border-color: var(
   button.ghost:not(:disabled):hover,
   button.pill:not(:disabled):hover { background: var(--thema); border-color: var(--thema); color: var(--white); }
   button.pill:not(:disabled):hover .count { background: var(--white); color: var(--thema); }
+  /* 단추 안의 설명(작은 글씨)은 평소 회색이다. 파란 바탕으로 채워질 때 그 회색이 남으면
+     정작 호버한 칸의 설명이 제일 안 읽힌다. 바탕과 같이 흰색으로 넘긴다. */
+  button:not(:disabled):not(.icon_btn):hover small,
+  button.ghost:not(:disabled):hover small,
+  button.pill:not(:disabled):hover small { color: var(--white); }
 }
 .pill.on { background: var(--thema); color: var(--white); border-color: var(--thema); }
 .pill.on .count { background: var(--white); color: var(--thema); }
@@ -803,6 +841,14 @@ input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, 
 .dc_skipped { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 1.4rem; }
 .dc_skipped li { padding: 6px 12px; background: var(--redLight); }
 
+/* 전후 비교를 작게 늘어놓는 줄. 쪽마다 큰 그림 두 장을 쌓으면 세 쪽만 되어도 화면을 덮는다 */
+.cmp_row { display: flex; flex-wrap: wrap; gap: 16px; margin: 14px 0; }
+.dc_compare.mini { width: 280px; gap: 8px; margin: 0; }
+.dc_compare.mini figcaption { font-size: 1.3rem; margin-bottom: 3px; color: var(--blacklight); }
+/* 쪽마다 무엇이 바뀌었나 */
+.pagefix { margin: 10px 0; padding: 10px 14px; background: var(--bgSurface); border: 1px solid var(--borderSubtle); }
+.pagefix_head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 1.5rem; }
+.pagefix .dc_log li { background: var(--white); }
 .dc_compare { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
 .dc_compare figure { margin: 0; }
 .dc_compare figcaption { font-size: 1.5rem; font-weight: 600; margin-bottom: 6px; }

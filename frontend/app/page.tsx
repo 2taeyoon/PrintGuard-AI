@@ -19,6 +19,7 @@ import CopyFixes from "./copy-fixes";
 import { SignInNote } from "./sign-in";
 import FixResultPanel from "./fix-result";
 import { FontNotice, IssueRows } from "./dc-shared";
+import type { ProofSkip } from "@/lib/agentClient";
 import { answerJob, createJob, dcFile, getSource, hostedOrch, orchestratorUp, toScreen, uploadSource, waitJob,
   type FixResult, type JobView, type SourceView } from "@/lib/agentClient";
 
@@ -66,6 +67,10 @@ function Home() {
   const srcParam = sp.get("src");   // '작업 만들기'에서 넘어온 길(`/?src=…`)
   const [srcCtx, setSrcCtx] = useState("");
   const [srcInfo, setSrcInfo] = useState<SourceView | null>(null);
+  /** 이번 검수에서 빠진 교정 방법. 비어 있지 않으면 '적게 나온 이유'를 결과 위에 적는다. */
+  const [proofSkip, setProofSkip] = useState<ProofSkip[]>([]);
+  /** 폴더로 올린 것. 브라우저는 '파일 8개'라고만 적어서, **무엇을 올렸는지** 우리가 적어야 한다. */
+  const [pack, setPack] = useState<Packed | null>(null);
   // 주소에 번호를 달고 들어왔으면 **처음부터** 여는 중이다. 효과 안에서 켜면 렌더가 한 번 더 돈다.
   const [srcBusy, setSrcBusy] = useState(!!srcParam);
   // 고른 것을 지울 때 input의 value까지 비우려면 손잡이가 필요하다
@@ -228,11 +233,11 @@ function Home() {
    *  input의 `value`까지 비워야 한다 — 같은 파일을 다시 골라도 `change`가 안 나기 때문이다. */
   function clearPick() {
     for (const r of [pdfRef, idmlRef]) if (r.current) r.current.value = "";
-    setFile(null); setRead(null); setReadFail(false); setSrcCtx(""); setSrcInfo(null); setErr("");
+    setFile(null); setRead(null); setReadFail(false); setSrcCtx(""); setSrcInfo(null); setErr(""); setPack(null);
   }
 
   async function pickFile(f: File | null) {
-    setFile(f); setRead(null); setReadFail(false); setSrcCtx(""); setSrcInfo(null);
+    setFile(f); setRead(null); setReadFail(false); setSrcCtx(""); setSrcInfo(null); setPack(null);
     if (!f) return;
     // 편집 파일은 브라우저가 열지 못한다. 에이전트에 올려 DesignCraft로 열고, 거기서 뽑은 PDF로 검수한다.
     if (/\.(idml|designcraft)$/i.test(f.name)) return openSource([f]);
@@ -320,7 +325,8 @@ function Home() {
   async function settle(v: JobView) {
     if (v.status === "input-required") { setBusy(false); return; } // 질문 카드를 보여 주고 답을 기다린다
     if (v.status === "failed") { setErr("에이전트 검사가 실패했습니다. 위의 ‘소통 기록’을 확인하세요."); setBusy(false); return; }
-    const { analysis, risks: rs, hits: hs } = toScreen(v);
+    const { analysis, risks: rs, hits: hs, proofSkipped: ps } = toScreen(v);
+    setProofSkip(ps);
     const pdfjs = await import("pdfjs-dist");
     pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
     docRef.current = await pdfjs.getDocument({ data: pdfData.current!.slice() }).promise;
@@ -398,9 +404,21 @@ function Home() {
           <span className="fp_title" id="pick_pdf_l">검수할 PDF 파일
             {picked === "idml" && <span className="chip">IDML을 고르셨습니다</span>}
           </span>
-          <input id="pick_pdf" aria-labelledby="pick_pdf_l" type="file" accept=".pdf,application/pdf"
-            ref={pdfRef} disabled={srcBusy || picked === "idml"}
-            onChange={(e) => pickFile(e.target.files?.[0] ?? null)} />
+          {/* 칸의 생김새를 우리가 맡는다. 브라우저가 input 옆에 적는 글('파일 8개')은 **고를 수 없는
+              말**이라, 폴더로 올린 사람에게 무엇을 올렸는지 하나도 말해 주지 않는다. 그 글자를
+              화면에서만 감추고(읽어 주는 프로그램에는 그대로 있다) 그 자리에 고른 것의 이름을
+              우리가 적는다. 파일 창은 여전히 단추를 눌렀을 때만 열린다. */}
+          <div className="fp_pick">
+            <input id="pick_pdf" aria-labelledby="pick_pdf_l" type="file" accept=".pdf,application/pdf"
+              className="fp_file" tabIndex={-1}
+              ref={pdfRef} disabled={srcBusy || picked === "idml"}
+              onChange={(e) => pickFile(e.target.files?.[0] ?? null)} />
+            <button type="button" className="ghost small" disabled={srcBusy || picked === "idml"}
+              onClick={() => pdfRef.current?.click()}>파일 선택</button>
+            <span className={`fp_name${picked === "pdf" ? "" : " none"}`}>
+              {picked === "pdf" ? (file?.name ?? "") : "고른 파일 없습니다"}
+            </span>
+          </div>
           <span className="note">
             검수까지 됩니다. <b>원본은 고치지 못합니다</b> — PDF에서는 글자를 집을 수 없습니다.
             고치는 데까지 가시려면 아래에 <b>인디자인 패키지 폴더</b>를 올려 주세요.
@@ -418,10 +436,23 @@ function Home() {
               파일 하나로는 **인쇄용 사진도 글꼴도 빠진 채** 검수하게 된다 — 넘침·줄바꿈·해상도가
               원본과 다르게 나오는데, 그 수치를 보고 인쇄를 결정하면 안 된다. 폴더째만 받는다.
               (webkitdirectory는 React 타입에 없어서 속성으로 직접 준다) */}
-          <input id="pick_idml" aria-labelledby="pick_idml_l" type="file"
-            disabled={srcBusy || picked === "pdf"}
-            ref={(el) => { idmlRef.current = el; if (el) { el.setAttribute("webkitdirectory", ""); el.setAttribute("directory", ""); } }}
-            onChange={(e) => { const fs = e.target.files; if (fs?.length) void openSource(Array.from(fs)); }} />
+          <div className="fp_pick">
+            <input id="pick_idml" aria-labelledby="pick_idml_l" type="file" className="fp_file" tabIndex={-1}
+              disabled={srcBusy || picked === "pdf"}
+              ref={(el) => { idmlRef.current = el; if (el) { el.setAttribute("webkitdirectory", ""); el.setAttribute("directory", ""); } }}
+              onChange={(e) => {
+                const fs = e.target.files;
+                if (!fs?.length) return;
+                const list = Array.from(fs);
+                setPack(packOf(list));
+                void openSource(list);
+              }} />
+            <button type="button" className="ghost small" disabled={srcBusy || picked === "pdf"}
+              onClick={() => idmlRef.current?.click()}>폴더 선택</button>
+            {/* 브라우저가 적던 '파일 8개' 자리. 고른 **폴더 이름**을 적는다 — 여럿을 번갈아
+                올려 보는 사람에게 개수는 어느 것인지 가려 주지 못한다. */}
+            <span className={`fp_name${pack ? "" : " none"}`}>{pack ? pack.folder : "고른 폴더 없습니다"}</span>
+          </div>
           <span className="note">
             InDesign에서 <b>파일 → 패키지</b>로 폴더를 만든 뒤 <b>그 폴더를 통째로</b> 골라 주세요.
             안에 든 <code>Links</code> 사진과 <code>Document Fonts</code> 글꼴까지 같이 올라가야{" "}
@@ -431,6 +462,7 @@ function Home() {
             검수가 끝나면 <b>고칠 것을 원본에 반영할지 묻고 고쳐 드립니다.</b> 올리신 파일은 그대로 두고
             사본을 내드리며, 그 사본에는 원래 글꼴 이름이 그대로 남습니다.
           </span>
+          {pack && <PackList pack={pack} />}
         </div>
 
         {/* 고른 뒤의 상태는 두 칸 어디에도 넣지 않는다. IDML을 올리면 거기서 뽑은 PDF가 '화면이 쓰는
@@ -631,12 +663,46 @@ function Home() {
             </div>
             <div className="list">
               {res.issues.length === 0 && <div className="empty">발견된 항목이 없습니다.</div>}
+              {/* **고쳐 주는 것과 고쳐 드릴 수 없는 것을 먼저 가른다.**
+                  해상도·색 차이·안전 영역은 기계가 손댈 수 있는 종류의 문제가 아니다 — 없는 화소를
+                  만들어 낼 수도, 디자인을 대신 정할 수도 없다. 그걸 목록 안에 섞어 두면 '맡기면
+                  다 고쳐지겠지' 하고 기다리게 된다. 숫자로 먼저 말하고, 항목마다 표를 붙인다. */}
+              {res.issues.length > 0 && (() => {
+                const auto = res.issues.filter((i) => i.edit?.original && i.edit.suggestion).length;
+                return (
+                  <div className="fixsum">
+                    <span className="howfix auto">자동 수정 {auto}건</span>
+                    <span className="howfix">사람이 고칠 것 {res.issues.length - auto}건</span>
+                    <span className="note">
+                      <b>자동 수정</b>은 편집 파일(<code>.idml</code>)로 맡기시면 검수 끝에 묻고 바꿔 드립니다.
+                      나머지는 사진을 바꾸거나 자리를 옮기는 일이라 기계가 대신 정할 수 없습니다.
+                    </span>
+                    {/* 교정 방법 하나가 빠진 채로 '자동 수정 0건'을 보여 주면, 그 0이 '이 파일은
+                        깨끗하다'로 읽힌다. 빠졌으면 빠졌다고 적는다. */}
+                    {proofSkip.length > 0 && (
+                      <span className="warn">
+                        <b>{proofSkip.map((x) => x.label).join(", ")}</b>이(가) 이번 검수에서 빠졌습니다 —{" "}
+                        {proofSkip[0].reason.includes("429") || /한도|quota|RESOURCE_EXHAUSTED/i.test(proofSkip[0].reason)
+                          ? "LLM 분당 한도에 걸렸습니다. 잠시 뒤에 같은 파일로 다시 맡기시면 맞춤법 교정까지 함께 나옵니다."
+                          : proofSkip[0].reason}
+                        {" "}나머지 방법으로 찾은 것만 아래에 있습니다.
+                      </span>
+                    )}
+                  </div>
+                );
+              })()}
               {res.issues.map((i) => (
                 <div key={i.id} className={`card ${i.severity} ${sel === i.id ? "sel" : ""}`} onClick={() => pick(i)}>
                   <h4><span className={`sev-${i.severity}`}>{SEV_LABEL[i.severity]}</span> · {i.page}쪽 · {i.title}
-                    <span className="src">{SRC[i.source]}</span></h4>
+                    <span className="src">{SRC[i.source]}</span>
+                    {i.edit?.original && i.edit.suggestion
+                      ? <span className="howfix auto" title="DesignCraft가 원본에서 이 글자를 찾아 바꿉니다">자동 수정</span>
+                      : <span className="howfix" title="기계가 대신 정할 수 없는 항목입니다. 사람이 보고 고쳐야 합니다">사람이 고칠 것</span>}
+                  </h4>
                   <p>{i.detail}</p>
-                  <p><b>수정 제안(직접 수정):</b> {i.fix}</p>
+                  {i.edit?.original && i.edit.suggestion
+                    ? <p><b>바꿀 것:</b> <del>{i.edit.original}</del> <span className="arrow">→</span> <ins>{i.edit.suggestion}</ins></p>
+                    : <p><b>수정 제안(직접 수정):</b> {i.fix}</p>}
                   {hits[i.id]?.length ? (
                     <details className="guide" open={sel === i.id}>
                       <summary>관련 인쇄 가이드 ({hits[i.id].length})</summary>
@@ -654,6 +720,68 @@ function Home() {
         <p>계산에는 한계가 있습니다. 색 공간은 PDF 안의 정보를 읽은 값이고, 이미지 매칭은 가로·세로 픽셀 수로 합니다.
           같은 크기의 이미지가 여러 개면 틀릴 수 있습니다.</p>
       </div>
+    </div>
+  );
+}
+
+/* ---------- 올린 폴더 안에 무엇이 들어갔나 ----------
+   브라우저는 '파일 8개'라고만 적는다. 그런데 패키지는 **편집 파일 하나에 사진과 글꼴이 딸려 오는
+   묶음**이고, 그 여덟이 무엇이냐가 곧 '검수 결과가 실제 인쇄물과 같아지는가'다 — 사진이 빠지면
+   해상도를 못 보고, 글꼴이 빠지면 줄바꿈이 밀린 채로 재게 된다. 그래서 종류별로 묶어 세고
+   이름을 그대로 적는다. 빠진 것이 있으면 올리기 전에 알아야 한다. */
+type Packed = { folder: string; files: string[]; isFolder: boolean };
+
+function packOf(list: File[]): Packed {
+  // 폴더로 고르면 webkitRelativePath에 '폴더/안/경로'가 담긴다. 파일 하나만 고르면 비어 있다.
+  const first = list[0]?.webkitRelativePath ?? "";
+  const isFolder = first.includes("/");
+  return {
+    isFolder,
+    folder: isFolder ? first.split("/")[0] : (list[0]?.name ?? "고른 파일"),
+    files: list.map((f) => f.webkitRelativePath || f.name).sort((a, b) => a.localeCompare(b, "ko")),
+  };
+}
+
+const PACK_KINDS: { id: string; label: string; test: RegExp }[] = [
+  { id: "doc", label: "편집 파일", test: /\.(idml|designcraft)$/i },
+  { id: "indd", label: "인디자인 원본 — 열지 않습니다", test: /\.(indd|indt)$/i },
+  { id: "img", label: "사진·그림", test: /\.(jpe?g|png|tiff?|psd|ai|eps|pdf|svg|gif|bmp)$/i },
+  { id: "font", label: "글꼴", test: /\.(otf|ttf|ttc|otc|dfont|pfb|pfm|woff2?)$/i },
+];
+const PACK_SHOW = 12;   // 사진은 수십 장이 될 수 있다. 다 펼치면 칸을 덮는다
+
+function PackList({ pack }: { pack: Packed }) {
+  const rows = PACK_KINDS
+    .map((k) => ({ ...k, items: pack.files.filter((f) => k.test.test(f)) }))
+    .concat([{
+      id: "etc", label: "그 밖", test: /$^/,
+      items: pack.files.filter((f) => !PACK_KINDS.some((k) => k.test.test(f))),
+    }])
+    .filter((k) => k.items.length > 0);
+  const hasDoc = rows.some((k) => k.id === "doc");
+  return (
+    <div className="packlist">
+      <div className="pack_head">
+        {pack.isFolder
+          ? <><b>{pack.folder}</b> 안의 파일 {pack.files.length}개를 올렸습니다</>
+          : <><b>{pack.folder}</b> 하나만 올렸습니다 — 폴더째 올리시면 사진과 글꼴까지 같이 갑니다</>}
+      </div>
+      {rows.map((k) => (
+        <div key={k.id} className="pack_row">
+          <span className="pack_kind">{k.label} <b>{k.items.length}</b></span>
+          <span className="pack_files">
+            {k.items.slice(0, PACK_SHOW).map((f) => <code key={f}>{f}</code>)}
+            {k.items.length > PACK_SHOW && <span className="note">외 {k.items.length - PACK_SHOW}개</span>}
+          </span>
+        </div>
+      ))}
+      {!hasDoc && (
+        <p className="warn">
+          <b>편집 파일(<code>.idml</code>)이 안 보입니다.</b> 패키지 폴더에는 보통 <code>.indd</code>만 들어 있습니다 —
+          InDesign에서 <b>파일 → 다른 이름으로 저장 → InDesign Markup(IDML)</b>으로 내보내 그 폴더에 넣은 뒤
+          다시 골라 주세요.
+        </p>
+      )}
     </div>
   );
 }
