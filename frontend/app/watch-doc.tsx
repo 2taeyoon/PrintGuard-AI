@@ -16,10 +16,6 @@
 // '만든 문서' 칸은 **보고 있는 그것**을 받고 검수로 넘긴다. 새 일이 시작되면 저절로 그쪽을
 // 따라가고, 누르면 거기에 머문다. 받으려면 주인이어야 해서, 보는 순간 조용히 주인으로 올라선다
 // (`/adopt` — 원래 주인은 그대로 남는다).
-//
-// **그 칸을 맨 위에 둔다.** 전에는 채팅 아래에 있었는데, 채팅이 세로로 길어서 시키고 나면
-// 화면에 아무것도 안 뜬 것처럼 보였다 — 만든 것은 한참 스크롤해야 나왔다. 사람이 보려는 것은
-// 걸음이 아니라 **나온 것**이다. 걸음은 그 아래에서 따라가면 된다.
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -123,14 +119,20 @@ export default function WatchDoc() {
   const lastStep = last?.payload;
   const busy = !!lastStep && lastStep.phase !== "끝" && lastStep.phase !== "멈춤";
   // **저절로 따라가는 것은 에이전트가 손댄 문서뿐이다.** 인쇄 검수에 올린 파일도 이 PC에서 일어난
-  // 일이라 걸음 줄에는 남지만, 그걸 '만든 문서'로 잡으면 **만들지도 않은 파일이 기본값처럼 떠 있다** —
+  // 일이라 위 줄에는 남지만, 그걸 '만든 문서'로 잡으면 **만들지도 않은 파일이 기본값처럼 떠 있다** —
   // 여는 사람은 그걸 앱이 끼워 둔 견본으로 읽는다. 올린 것은 인쇄 검수 화면이 맡는다.
   const live = last?.ctx ?? "";
 
-  // '만든 문서' 칸이 보는 문서이자, 걸음 줄에 그릴 문서. **새 일이 시작되면 저절로 그쪽을 따라간다** — 번호를 지운 자리에
+  // 아래 '만든 문서' 칸이 보는 문서. **새 일이 시작되면 저절로 그쪽을 따라간다** — 번호를 지운 자리에
   // 다시 '무엇을 고르세요'를 놓으면 아무것도 나아지지 않는다. 사람이 고르면 그때부터 머문다.
   // 상태로 두지 않고 계산한다(효과 안에서 상태를 바꾸면 한 박자 늦게 그려진다).
   const pick = pinned && chosen ? chosen : (live || chosen);
+
+  // 걸음 줄을 가릴 기준. **사람이 손으로 고른 것만** 가린다.
+  // `pick`으로 가렸더니 아무것도 안 고른 채 새로 고쳐도 마지막 문서 하나만 남았다 —
+  // 다른 문서의 기록이 사라진 것처럼 보이고, 다른 문서에서 새 일이 시작돼도 안 뜬다.
+  // 고르지 않았으면 **이 PC에서 일어나는 일 전부**가 흘러야 한다. 그게 이 칸의 일이다.
+  const only = pinned && chosen ? chosen : "";
 
   // 한 줄씩 들어온 기록을 사람이 읽는 말로. 명령은 묶어서 한 줄로 만든다.
   const msgs = useMemo<Msg[]>(() => {
@@ -151,10 +153,8 @@ export default function WatchDoc() {
         });
       }
     };
-    // **고른 문서의 줄만 그린다.** 전에는 보이는 문서를 전부 한 줄기에 쌓았다. 아래 '문서
-    // 고르기'로 하나를 골라도 화면은 그대로여서, 고른 것이 아무 일도 하지 않는 것처럼 보였다.
-    // 고를 것이 없을 때만(아직 아무것도 안 잡혔을 때) 전부 보여 준다.
-    for (const r of (pick ? rows.filter((x) => x.ctx === pick) : rows)) {
+    // 손으로 고른 문서가 있으면 그 줄만 그린다(아래 '문서 고르기'). 고르지 않았으면 전부.
+    for (const r of (only ? rows.filter((x) => x.ctx === only) : rows)) {
       const p = r.payload;
       const same = r.ctx === room && !(r.kind === "dc_create_opened" || r.kind === "dc_source_opened");
       if (!same) flush();
@@ -201,7 +201,7 @@ export default function WatchDoc() {
     }
     flush();
     return out;
-  }, [rows, docs, pick]);
+  }, [rows, docs, only]);
 
   // 고른 것만 바꾼다. 다시 받아 오는 일은 아래 두 효과가 알아서 한다 — 그 둘이 보는 꼬리표에
   // 고른 문서가 들어 있어서, 문서가 바뀌면 꼬리표가 바뀐다.
@@ -279,75 +279,6 @@ export default function WatchDoc() {
 
   return (
     <>
-      {/* 에이전트가 만든 문서. 만들어 놓고 못 넘기면 반쪽이다.
-          이름을 '그 문서'라고 달았었다. 무엇을 가리키는지 그 칸만 보고는 알 수 없는 말이라 바꿨다.
-          **맨 위에 둔다** — 시킨 사람이 보려는 것은 걸음이 아니라 나온 것이다. */}
-      {doc && (
-        <section className="panel dc_run">
-          <div className="dc_head">
-            <strong>만든 문서</strong>
-            <span className="chip">{doc.filename}</span>
-            <span className="grow" />
-            <button type="button" className="pill on"
-              onClick={() => router.push(`/?src=${encodeURIComponent(doc.context_id)}`)}>
-              이 문서로 인쇄 검수하기 →
-            </button>
-            <button type="button" className="pill" disabled={packing} onClick={() => void pack()}>
-              {packing ? "묶는 중…" : "패키지(zip) 받기"}
-            </button>
-            <button type="button" className="pill"
-              onClick={() => void dl(["work.idml", "new.idml"], doc.filename)}>idml만 받기</button>
-            <button type="button" className="pill"
-              onClick={() => void dl(["doc.pdf", "inspect.pdf"], doc.filename.replace(/\.idml$/, ".pdf"))}>PDF 받기</button>
-          </div>
-          <p className="note">
-            검수로 넘기면 글꼴·도련·해상도·색·오탈자를 검사합니다. 고칠 것이 있으면{" "}
-            <b>이 문서에 반영할지 물어봅니다</b>.
-          </p>
-          <p className="note">
-            인쇄소에 넘기거나 다른 PC에서 열 때는 <b>패키지</b>로 받으세요 — 편집 파일과 함께{" "}
-            <b>쓴 사진(Links)</b>과 <b>글꼴(Document Fonts)</b>이 한 폴더에 담깁니다.{" "}
-            <b>idml만 받으면 사진이 따라오지 않습니다</b>(IDML은 사진을 담지 않고 경로로 가리키기만 합니다).
-            글꼴이 들어가 수십 MB가 되고, 묶는 데 몇 초 걸립니다.
-          </p>
-          {/* 이어서 시키려면 클로드에게 이 번호를 줘야 한다 — 'ctx_dc_… 이어서 고쳐 줘'. */}
-          <div className="dc_row">
-            <span className="note">이 문서 번호</span>
-            <code className="dc_num">{doc.context_id}</code>
-            <button type="button" className="pill" onClick={() => {
-              navigator.clipboard.writeText(doc.context_id).then(() => setCopied(true), () => undefined);
-              setTimeout(() => setCopied(false), 2000);
-            }}>{copied ? "복사함" : "복사"}</button>
-            <span className="note">클로드에게 주면 <b>이 문서를 이어서</b> 고칩니다.</span>
-          </div>
-          {err && <p className="warn">{err}</p>}
-
-          <div className="watchgrid">
-            <div>
-              {shots.length > 1 && (
-                <div className="pagebar" role="tablist" aria-label="쪽 고르기">
-                  {shots.map((_, i) => (
-                    <button key={i} type="button" role="tab" aria-selected={page === i + 1}
-                      className={`pill${page === i + 1 ? " on" : ""}`} onClick={() => setPage(i + 1)}>{i + 1}쪽</button>
-                  ))}
-                </div>
-              )}
-              {shot
-                // eslint-disable-next-line @next/next/no-img-element
-                ? <img className="dc_shot" src={shot} alt={`${doc.filename} ${page}쪽`} />
-                : <div className="empty">아직 그려진 쪽이 없습니다.</div>}
-            </div>
-            <div>
-              <h3 className="dc_sub">만든 문서 검사 {doc.preflight.length}건</h3>
-              <IssueRows rows={doc.preflight} empty="문제를 찾지 못했습니다." />
-              {/* 글꼴은 만들 때 골라 넣었으니 없을 일이 드물다. 그래도 한글이 없는 글꼴로 짜였으면
-                  글자가 PDF에 안 찍히므로 같은 화면으로 알려 준다. 패키지 안내는 해당 없다. */}
-              <FontNotice s={doc} advise={false} />
-            </div>
-          </div>
-        </section>
-      )}
-
       <section className="panel dc_watch">
         <div className="dc_head">
           <strong>에이전트가 하는 일</strong>
@@ -419,6 +350,75 @@ export default function WatchDoc() {
         )}
 
       </section>
+
+
+      {/* 에이전트가 만든 문서. 만들어 놓고 못 넘기면 반쪽이다.
+          이름을 '그 문서'라고 달았었다. 무엇을 가리키는지 그 칸만 보고는 알 수 없는 말이라 바꿨다. */}
+      {doc && (
+        <section className="panel dc_run">
+          <div className="dc_head">
+            <strong>만든 문서</strong>
+            <span className="chip">{doc.filename}</span>
+            <span className="grow" />
+            <button type="button" className="pill on"
+              onClick={() => router.push(`/?src=${encodeURIComponent(doc.context_id)}`)}>
+              이 문서로 인쇄 검수하기 →
+            </button>
+            <button type="button" className="pill" disabled={packing} onClick={() => void pack()}>
+              {packing ? "묶는 중…" : "패키지(zip) 받기"}
+            </button>
+            <button type="button" className="pill"
+              onClick={() => void dl(["work.idml", "new.idml"], doc.filename)}>idml만 받기</button>
+            <button type="button" className="pill"
+              onClick={() => void dl(["doc.pdf", "inspect.pdf"], doc.filename.replace(/\.idml$/, ".pdf"))}>PDF 받기</button>
+          </div>
+          <p className="note">
+            검수로 넘기면 글꼴·도련·해상도·색·오탈자를 검사합니다. 고칠 것이 있으면{" "}
+            <b>이 문서에 반영할지 물어봅니다</b>.
+          </p>
+          <p className="note">
+            인쇄소에 넘기거나 다른 PC에서 열 때는 <b>패키지</b>로 받으세요 — 편집 파일과 함께{" "}
+            <b>쓴 사진(Links)</b>과 <b>글꼴(Document Fonts)</b>이 한 폴더에 담깁니다.{" "}
+            <b>idml만 받으면 사진이 따라오지 않습니다</b>(IDML은 사진을 담지 않고 경로로 가리키기만 합니다).
+            글꼴이 들어가 수십 MB가 되고, 묶는 데 몇 초 걸립니다.
+          </p>
+          {/* 이어서 시키려면 클로드에게 이 번호를 줘야 한다 — 'ctx_dc_… 이어서 고쳐 줘'. */}
+          <div className="dc_row">
+            <span className="note">이 문서 번호</span>
+            <code className="dc_num">{doc.context_id}</code>
+            <button type="button" className="pill" onClick={() => {
+              navigator.clipboard.writeText(doc.context_id).then(() => setCopied(true), () => undefined);
+              setTimeout(() => setCopied(false), 2000);
+            }}>{copied ? "복사함" : "복사"}</button>
+            <span className="note">클로드에게 주면 <b>이 문서를 이어서</b> 고칩니다.</span>
+          </div>
+          {err && <p className="warn">{err}</p>}
+
+          <div className="watchgrid">
+            <div>
+              {shots.length > 1 && (
+                <div className="pagebar" role="tablist" aria-label="쪽 고르기">
+                  {shots.map((_, i) => (
+                    <button key={i} type="button" role="tab" aria-selected={page === i + 1}
+                      className={`pill${page === i + 1 ? " on" : ""}`} onClick={() => setPage(i + 1)}>{i + 1}쪽</button>
+                  ))}
+                </div>
+              )}
+              {shot
+                // eslint-disable-next-line @next/next/no-img-element
+                ? <img className="dc_shot" src={shot} alt={`${doc.filename} ${page}쪽`} />
+                : <div className="empty">아직 그려진 쪽이 없습니다.</div>}
+            </div>
+            <div>
+              <h3 className="dc_sub">만든 문서 검사 {doc.preflight.length}건</h3>
+              <IssueRows rows={doc.preflight} empty="문제를 찾지 못했습니다." />
+              {/* 글꼴은 만들 때 골라 넣었으니 없을 일이 드물다. 그래도 한글이 없는 글꼴로 짜였으면
+                  글자가 PDF에 안 찍히므로 같은 화면으로 알려 준다. 패키지 안내는 해당 없다. */}
+              <FontNotice s={doc} advise={false} />
+            </div>
+          </div>
+        </section>
+      )}
 
     </>
   );
