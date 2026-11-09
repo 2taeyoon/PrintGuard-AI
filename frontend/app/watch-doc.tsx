@@ -241,7 +241,7 @@ export default function WatchDoc() {
         <div className="chat">
           {msgs.length === 0 ? (
             <div className="chat_empty">
-              <p><b>아직 조용합니다</b></p>
+              <p><b>아직 조용합니다.</b></p>
               <p className="note">
                 클로드·커서에 이렇게 적어 보세요 — “A4 전단 한 장 만들어 줘. 맨 위에 큰 제목,
                 가운데 사진 자리, 맨 아래 연락처 한 줄.”
