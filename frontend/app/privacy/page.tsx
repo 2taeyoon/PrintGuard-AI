@@ -70,7 +70,7 @@ export default function Privacy() {
         <h2>5. 밖으로 나가는 것</h2>
         <ul>
           <li><b>구글 로그인</b> — 로그인할 때만 구글과 통신합니다(기본 범위 openid·email·profile).</li>
-          <li><b>LLM 교정</b>(기본 꺼짐) — 켜면 교정할 본문이 Gemini API로 나갑니다. 에이전트를 돌리는 쪽이
+          <li><b>LLM 교정</b>(기본 꺼짐) — 켜면 교정할 본문이 <b>Claude API</b>로 나갑니다(잔액이 바닥나면 Gemini API로 넘어갑니다). 에이전트를 돌리는 쪽이
             환경변수로 직접 켜야 합니다.</li>
           <li><b>LangSmith 추적</b>(기본 꺼짐) — 켜면 에이전트 이름·걸린 시간·관문 결정만 나갑니다.</li>
           <li><b>DesignCraft</b> — 에이전트 PC에서 <b>창 없이</b> 도는 프로그램입니다. 인터넷으로 나가지 않고,
