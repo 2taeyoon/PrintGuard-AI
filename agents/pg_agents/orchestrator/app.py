@@ -710,6 +710,8 @@ async def dc_create(body: dict[str, Any], authorization: str | None = Auth) -> d
     # 무엇을 폈는지 같이 적는다. 따라 보는 칸이 '무엇을 만들기 시작했다'를 말하려면 이게 있어야 한다.
     log_event(ctx, "dc_create_opened", source=NAME,
               payload={"start": str(body.get("start") or "blank"),
+                       # 부탁한 이름. 파일 이름이 왜 그렇게 붙었는지는 이 줄에만 남는다
+                       "name": str(body.get("name") or "")[:80],
                        "width_mm": body.get("width_mm"), "height_mm": body.get("height_mm"),
                        "pages": body.get("pages"), "facing": bool(body.get("facing"))})
     r = await _ask("designcraft", "create_document", ctx, body)

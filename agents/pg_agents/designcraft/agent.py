@@ -942,6 +942,38 @@ def _clamp(v: Any, lo: float, hi: float, default: float) -> float:
     return min(hi, max(lo, f))
 
 
+# 만든 문서의 이름. **부탁한 것이 드러나야 한다.** 명함을 부탁했는데 돌아온 파일이 `새 문서.idml`
+# 이면, 두 개만 만들어도 어느 것이 어느 것인지 알 수 없다 — 화면이 이름 옆에 시각을 같이 적어
+# 주던 것도 그래서였다. 그래서 부르는 쪽(클로드·커서)이 이름을 같이 준다.
+#
+# 다만 이 값은 **그대로 파일 이름이 된다.** 손대지 않고 쓰면 `..`나 `C:`가 섞여 보관 폴더 밖에
+# 쓰게 되고, 윈도에서는 `CON`·`PRN` 같은 이름이 파일이 아니라 장치로 열린다. 그래서 받은 글에서
+# 이름이 될 수 있는 것만 남기고, 남은 것이 없으면 예전 이름으로 돌아간다.
+_NAME_BAD = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
+# 앞뒤의 점과 빈칸. 한 번만 떼어서는 모자라다 — `../../.ssh/x`에서 칸막이를 빈칸으로 바꾸면
+# `.. .. .ssh x`가 되는데, 점만 떼면 빈칸에서 멈춰 `.ssh x`가 남는다(숨김 파일이 된다).
+# 점과 빈칸을 **한 덩어리로** 떼야 끝난다.
+_NAME_EDGE = re.compile(r"^[.\s]+|[.\s]+$")
+_NAME_RESERVED = {"con", "prn", "aux", "nul",
+                  *(f"com{i}" for i in range(1, 10)), *(f"lpt{i}" for i in range(1, 10))}
+MAX_DOC_NAME = 60
+
+
+def _doc_name(raw: Any, *, sample: bool) -> str:
+    """부탁한 이름을 파일 이름으로 바꾼다. 쓸 수 없는 이름이면 예전 이름을 쓴다."""
+    s = re.sub(r"\s+", " ", _NAME_BAD.sub(" ", str(raw or ""))).strip()
+    # 확장자를 먼저 뗀다. 나중에 떼면 `....idml`의 앞점을 턴 뒤에 `idml`만 남아
+    # `idml.idml`이 된다 — 부탁한 적 없는 이름이다.
+    while s.lower().endswith(".idml"):
+        s = s[:-5]
+    # 자르고 난 끝도 점으로 끝날 수 있다. 윈도는 점으로 끝나는 이름을 조용히 잘라 다른 파일을
+    # 가리키게 만들므로, 자른 뒤에 한 번 더 턴다.
+    s = _NAME_EDGE.sub("", _NAME_EDGE.sub("", s)[:MAX_DOC_NAME])
+    if not s or s.lower() in _NAME_RESERVED:
+        return "샘플 잡지.idml" if sample else "새 문서.idml"
+    return f"{s}.idml"
+
+
 def _create_blocking(out: Path, dest: Path, spec: dict[str, Any]) -> dict[str, Any]:
     """새 문서를 만들어 IDML로 내보낸다. 쓰기는 작업 폴더와 원본 보관 폴더 둘뿐이다."""
     sample = str(spec.get("start") or "blank") == "sample"
@@ -997,6 +1029,8 @@ async def create_document(req: AgentRequest) -> dict[str, Any]:
         "margin_mm": _clamp(req.input.get("margin_mm"), 0, 100, 15),
         "bleed_mm": _clamp(req.input.get("bleed_mm"), 0, 20, 3),
         "text": str(req.input.get("text") or ""),
+        # 부탁한 것을 드러내는 이름. 안 주면 예전처럼 `새 문서.idml`이 된다
+        "name": str(req.input.get("name") or ""),
     }
     # 파일을 쓰는 행동이라 apply_fixes와 같은 관문을 지난다. 닿지 못하면 거절한다(fail-closed).
     key = "designcraft:" + hashlib.sha256(f"new|{req.meta.context_id}|{spec['start']}".encode()).hexdigest()[:20]
@@ -1012,7 +1046,7 @@ async def create_document(req: AgentRequest) -> dict[str, Any]:
     # 만든 파일은 **올린 원본과 같은 자리**(SRC/<토큰>)에 둔다. 그래야 검수도 수정도
     # 올린 파일과 똑같은 길로 흐른다 — 만든 것이라고 따로 다루지 않는다.
     src_ref = hashlib.sha256(f"{req.meta.context_id}|{key}".encode()).hexdigest()[:16]
-    doc_name = "샘플 잡지.idml" if spec["start"] == "sample" else "새 문서.idml"
+    doc_name = _doc_name(spec["name"], sample=spec["start"] == "sample")
     root = SRC / src_ref
     root.mkdir(parents=True, exist_ok=True)
     out = _job_dir(req.meta.context_id)
@@ -1020,7 +1054,8 @@ async def create_document(req: AgentRequest) -> dict[str, Any]:
     r |= {"src_ref": src_ref, "doc": doc_name, "decision": d}
     return {"status": "completed", "output": r,
             "evidence": {"queries": [], "ref_ids": [d["execution_id"]],
-                         "data_summary": f"{'샘플 잡지' if r['sample'] else '빈 문서'} {r['pages']}쪽"
+                         "data_summary": f"{doc_name} — {'샘플 잡지' if r['sample'] else '빈 문서'} "
+                                         f"{r['pages']}쪽"
                                          f"({r['width_mm']:.0f}×{r['height_mm']:.0f}mm)을 만들었습니다"}}
 
 

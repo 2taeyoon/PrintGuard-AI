@@ -379,14 +379,20 @@ if __name__ == "__main__":
 # 화면에서만 만들 수 있으면, 원고를 쓰는 자리에서 쓰려고 할 때마다 사람이 창을 옮겨 다녀야 한다.
 # 클로드·커서에서 **말로 부탁해 만드는** 길을 같은 창구로 연다.
 @mcp.tool()
-async def make_document(kind: str = "blank", width_mm: float = 210, height_mm: float = 297,
+async def make_document(kind: str = "blank", name: str = "", width_mm: float = 210, height_mm: float = 297,
                         pages: int = 1, facing: bool = False, margin_mm: float = 15,
                         bleed_mm: float = 3, columns: int = 1, gutter_mm: float = 5) -> dict[str, Any]:
     """인디자인 문서를 새로 만든다(명함·전단·포스터·책 무엇이든 — 크기와 쪽수로 정한다).
 
+    name에는 **무엇을 만드는지 드러나게** 적는다 — 부탁받은 것을 그대로 옮기면 된다
+    (보기: "홍길동_명함", "가을호_포스터", "카페여백_메뉴판"). 비워 두면 `새 문서.idml`이 되는데,
+    두 개만 만들어도 어느 것이 어느 것인지 알 수 없고 사람이 받아 간 뒤에도 그대로 남는다.
+
     kind="sample"이면 짜인 샘플 문서를 받는다. 돌려주는 context_id로 edit_document를 이어 부른다.
     """
     body: dict[str, Any] = {"start": "sample" if kind == "sample" else "blank"}
+    if name:
+        body["name"] = name
     if kind != "sample":
         body |= {"width_mm": width_mm, "height_mm": height_mm, "pages": pages, "facing": facing,
                  "margin_mm": margin_mm, "bleed_mm": bleed_mm, "columns": columns, "gutter_mm": gutter_mm}

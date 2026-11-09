@@ -347,7 +347,9 @@ export default function WhyPage() {
         <How><b>됩니다.</b> 같은 에이전트를 <b>MCP 서버</b>로도 엽니다(<code>pg_agents.mcp_server</code>). 같은 PC에서 켜면 띄운
           사람이 주인이라 설정만 하면 바로 돌고, 다른 PC에서 붙일 때는 <code>python -m pg_agents.mktoken</code>으로 받은
           토큰이 있어야 합니다.</How>
-        <Result>검수뿐 아니라 <b>만드는 일도 그 자리에서</b> 됩니다. <code>make_document</code>로 문서를 만들고,
+        <Result>검수뿐 아니라 <b>만드는 일도 그 자리에서</b> 됩니다. <code>make_document</code>로 문서를 만들고(이때
+          <code>name</code>에 “홍길동_명함”처럼 <b>부탁한 것이 드러나는 이름</b>을 주면 그대로 파일 이름이 됩니다 —
+          안 주면 전부 <code>새 문서.idml</code>이라 두 개만 만들어도 어느 것인지 알 수 없습니다),
           <code>compose_document</code>에 “전단 맨 위에 제목” 식으로 말하면 할 일을 짜 주고,
           <code>edit_document</code>가 그것을 문서에 넣습니다. 쓸 수 있는 것을 찾을 때는
           <code>list_engine_commands</code>를 씁니다.</Result>
