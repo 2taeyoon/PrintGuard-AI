@@ -764,7 +764,10 @@ async def compose(req: AgentRequest) -> dict[str, Any]:
 # 파일 접근은 `--automation-*-root`가 막는다. 명령을 열어 줘도 **그 폴더 밖은 읽지도 쓰지도
 # 못한다** — 명령을 하나하나 고르는 것보다 이 울타리가 확실하다(`script.run`도 엔진 명령줄만 돈다).
 MAX_EDIT_CMDS = max(1, int(os.environ.get("PG_DESIGNCRAFT_MAX_CMDS", "40")))
-MAX_PREVIEW_PAGES = max(1, int(os.environ.get("PG_DESIGNCRAFT_PREVIEW_PAGES", "8")))
+# 쪽 그림을 몇 장까지 뽑을까. 8장이던 때는 **10쪽을 만들어도 화면에 8쪽만** 보였다 —
+# 시킨 사람은 두 쪽이 안 만들어진 것으로 읽는다(쪽수는 맞는데 그림이 모자란 것뿐이다).
+# 한 장에 0.3초쯤 드니 24장이면 7초 안쪽이다. 더 두꺼운 책은 환경변수로 올린다.
+MAX_PREVIEW_PAGES = max(1, int(os.environ.get("PG_DESIGNCRAFT_PREVIEW_PAGES", "24")))
 # 명령 스무 개짜리 JSON은 길다. 기본 한도에서는 답이 중간에 끊긴다(실측으로 겪었다).
 COMPOSE_TOKENS = max(1024, int(os.environ.get("PG_DESIGNCRAFT_COMPOSE_TOKENS", "8192")))
 

@@ -37,6 +37,7 @@ from ..client import call_agent, new_meta
 from ..common_log import forget, log_event, query
 from ..config import CORS_ORIGIN_REGEX, DC_OUT, PORTS, SRC, STORE, agent_url, ensure_dirs, set_agent_name
 from ..contracts import AgentCard, AgentRequest
+from ..jobstore import forget as store_forget, load as store_load, prune as store_prune, save as store_save
 from ..tracing import build_trace
 from .engine import Engine, Job
 from .fakes import fake_caller
@@ -312,6 +313,7 @@ def _erase_job(ctx: str) -> dict[str, Any]:
         if c == ctx:
             BY_KEY.pop(k, None)
     gone = {"context_id": ctx, "log_rows": forget(ctx), "files": _rmtree(DC_OUT / ctx)}
+    store_forget(ctx)
     if j is not None:
         gone["pdf"] = _drop_pdf(j.pdf_ref, ctx)
     return gone
@@ -439,6 +441,22 @@ def _evict() -> None:
         app.state.engines.pop(j.context_id, None)
 
 
+# 디스크에 남겨 두는 상태. **끝난 것만** 남긴다 — 돌던 중에 꺼진 의뢰는 되살릴 수 없다.
+# 사람의 답을 기다리던 자리(`Job.pending`)는 함수라서 적어 둘 수가 없고, 적어 둔 척하면
+# 다시 켠 뒤에 '이어서' 를 눌렀을 때 아무 일도 일어나지 않는다.
+FINAL = ("completed", "completed_partial", "failed")
+
+
+def _job_save(job: Job) -> None:
+    if job.status not in FINAL:
+        return
+    store_save("job", job.context_id, job.client, job.created,
+               {"idempotency_key": job.idempotency_key, "options": job.options, "pdf_ref": job.pdf_ref,
+                "filename": job.filename, "status": job.status, "results": job.results,
+                "steps": job.steps, "question": job.question, "answers": job.answers})
+    store_prune("job", MAX_JOBS)
+
+
 async def _run(engine: Engine, job: Job) -> None:
     set_agent_name(NAME)
     try:
@@ -446,6 +464,20 @@ async def _run(engine: Engine, job: Job) -> None:
     except Exception as e:  # noqa: BLE001
         job.status = "failed"
         log_event(job.context_id, "job_failed", source=NAME, outcome=type(e).__name__)
+    finally:
+        _job_save(job)
+
+
+async def _resume(engine: Engine, job: Job, value: Any) -> None:
+    """답을 받아 멈춘 자리부터 다시 돈다. 여기서 끝나는 의뢰도 있으므로 같이 남긴다."""
+    set_agent_name(NAME)
+    try:
+        await engine.answer(job, value)
+    except Exception as e:  # noqa: BLE001
+        job.status = "failed"
+        log_event(job.context_id, "job_failed", source=NAME, outcome=type(e).__name__)
+    finally:
+        _job_save(job)
 
 
 @app.get("/jobs/{ctx}")
@@ -459,7 +491,7 @@ async def answer(ctx: str, body: dict[str, Any], authorization: str | None = Aut
     if job.status != "input-required":
         raise HTTPException(409, "답을 기다리는 의뢰가 아닙니다")
     set_agent_name(NAME)
-    asyncio.create_task(app.state.engines[ctx].answer(job, body.get("value")))
+    asyncio.create_task(_resume(app.state.engines[ctx], job, body.get("value")))
     return {"data": {"context_id": ctx, "status": "working"}, "meta": {}}
 
 
@@ -568,6 +600,16 @@ DC_REFUSED = {
     ".pdf": "PDF는 고칠 수 없습니다 — PDF에서는 글자를 집을 수 없습니다. 편집 파일(IDML)을 올려 주세요.",
 }
 DCJOBS: dict[str, dict[str, Any]] = {}
+
+
+def _dc_save(ctx: str) -> None:
+    """만든(또는 올린) 문서 한 건을 디스크에 남긴다. 의뢰와 달리 **전부** 남긴다 —
+    이쪽은 돌다 만 것이 아니라 이미 나온 결과물이고, 파일이 작업 폴더에 그대로 있다."""
+    j = DCJOBS.get(ctx)
+    if j is None:
+        return
+    store_save("dc", ctx, str(j.get("client") or ""), float(j.get("created") or time.time()), j)
+    store_prune("dc", MAX_JOBS)
 
 
 def _dc_owned(ctx: str, client: str) -> dict[str, Any]:
@@ -689,6 +731,7 @@ async def dc_source(files: list[UploadFile] = File(...), paths: str = Form("[]")
     if r.get("status") != "completed":
         raise HTTPException(502, ((r.get("output") or {}).get("message") or "원본을 열지 못했습니다")[:300])
     DCJOBS[ctx]["inspect"] = r.get("output")
+    _dc_save(ctx)
     return {"data": {"context_id": ctx, "filename": doc.rsplit("/", 1)[-1], "uploaded_files": saved,
                      **(r.get("output") or {})}, "meta": {}}
 
@@ -732,6 +775,7 @@ async def dc_create(body: dict[str, Any], authorization: str | None = Auth) -> d
     if ins.get("status") != "completed":
         raise HTTPException(502, "만든 문서를 다시 열지 못했습니다")
     DCJOBS[ctx]["inspect"] = ins.get("output")
+    _dc_save(ctx)
     return {"data": {"context_id": ctx, "filename": made["doc"], "made": True,
                      "width_mm": made.get("width_mm"), "height_mm": made.get("height_mm"),
                      **(ins.get("output") or {})}, "meta": {}}
@@ -796,6 +840,7 @@ async def dc_edit(ctx: str, body: dict[str, Any], authorization: str | None = Au
             if out.get("shots"):
                 fresh["shots"] = out["shots"]
             j["inspect"] = fresh
+        _dc_save(ctx)
     return {"data": out, "meta": {"status": r.get("status")}}
 
 
@@ -957,6 +1002,7 @@ async def dc_adopt(ctx: str, authorization: str | None = Auth) -> dict[str, Any]
         j.setdefault("also", []).append(who)
         j["also"] = j["also"][-8:]
         log_event(ctx, "dc_adopted", source=NAME, payload={"total": len(j["also"]) + 1})
+        _dc_save(ctx)          # 주인이 늘었다. 다시 켠 뒤에도 그 사람에게 보여야 한다
     ins = j.get("inspect") or {}
     return {"data": {"context_id": ctx, "filename": j.get("filename"), "made": bool(j.get("made")),
                      **ins}, "meta": {}}
@@ -1040,6 +1086,7 @@ async def dc_asset(ctx: str, file: UploadFile = File(...), authorization: str | 
     shown = file.filename or name
     j.setdefault("assets", []).append({"name": shown, "path": str(dest)})
     j["assets"] = j["assets"][-20:]
+    _dc_save(ctx)
     return {"data": {"path": str(dest), "name": name, "bytes": size,
                      "original": shown}, "meta": {}}
 
@@ -1064,6 +1111,7 @@ async def dc_delete(ctx: str, authorization: str | None = Auth) -> dict[str, Any
     j = _dc_owned(ctx, who)
     DCJOBS.pop(ctx, None)
     gone = {"context_id": ctx, "log_rows": forget(ctx), "files": _rmtree(DC_OUT / ctx), "source": False}
+    store_forget(ctx)
     src = str(j.get("src_ref") or "")
     if src and not any(x.get("src_ref") == src for x in DCJOBS.values()):
         gone["source"] = _rmtree(SRC / src)
@@ -1101,3 +1149,41 @@ async def dc_file(ctx: str, name: str, authorization: str | None = Auth) -> File
         raise HTTPException(404, "없는 파일")
     kind = {".png": "image/png", ".pdf": "application/pdf"}.get(p.suffix.lower(), "application/octet-stream")
     return FileResponse(p, media_type=kind, filename=name)
+
+
+# ---------- 다시 켜도 목록이 남아 있게 ----------
+# 전에는 의뢰도 만든 문서도 메모리에만 있었다. 파일은 작업 폴더에 남는데 목록만 사라져서,
+# 다시 켜고 나면 화면이 비어 **만든 것이 지워진 것처럼** 보였다. 한나절 만든 것이 사라지는
+# 일이라 쓰는 사람에게는 사고와 같다. 그래서 켤 때 디스크의 목록을 다시 올린다.
+def _restore() -> None:
+    gone = 0
+    for row in store_load("dc", MAX_JOBS):
+        body = row["body"]
+        # 원본 폴더가 없으면 올리지 않는다. 열지도 받지도 못하는 줄이 목록에 남으면,
+        # 누르는 사람은 앱이 고장 난 것으로 읽는다.
+        src = str(body.get("src_ref") or "")
+        if src and not (SRC / src).is_dir():
+            gone += 1
+            continue
+        DCJOBS.setdefault(row["context_id"], body)
+    jobs = 0
+    for row in store_load("job", MAX_JOBS):
+        b = row["body"]
+        if b.get("status") not in FINAL:
+            continue
+        job = Job(context_id=row["context_id"], idempotency_key=str(b.get("idempotency_key") or ""),
+                  options=b.get("options") or {}, pdf_ref=str(b.get("pdf_ref") or ""),
+                  filename=str(b.get("filename") or ""), status=str(b["status"]),
+                  results=b.get("results") or {}, steps=b.get("steps") or [],
+                  question=b.get("question"), answers=b.get("answers") or {},
+                  created=float(row["created"]), client=str(row["client"] or ""))
+        JOBS.setdefault(job.context_id, job)
+        if job.idempotency_key:
+            BY_KEY.setdefault(job.idempotency_key, job.context_id)
+        jobs += 1
+    if jobs or DCJOBS or gone:
+        print(f"[orchestrator] 지난 목록을 올렸습니다 — 의뢰 {jobs}건, 만든 문서 {len(DCJOBS)}건"
+              + (f"(원본이 없어진 {gone}건은 뺐습니다)" if gone else ""), flush=True)
+
+
+_restore()
