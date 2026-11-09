@@ -13,9 +13,13 @@
 // 명령 이름이 아니라 하는 일로 적는다 — `frame.create`·`type.char`·`text.insert` 세 줄이
 // '글 넣기 “ATELIER”' 한 줄이 된다(엔진에서 글 하나를 넣는 일은 명령 세 개다).
 //
-// 아래 '만든 문서' 칸은 **보고 있는 그것**을 받고 검수로 넘긴다. 새 일이 시작되면 저절로 그쪽을
+// '만든 문서' 칸은 **보고 있는 그것**을 받고 검수로 넘긴다. 새 일이 시작되면 저절로 그쪽을
 // 따라가고, 누르면 거기에 머문다. 받으려면 주인이어야 해서, 보는 순간 조용히 주인으로 올라선다
 // (`/adopt` — 원래 주인은 그대로 남는다).
+//
+// **그 칸을 맨 위에 둔다.** 전에는 채팅 아래에 있었는데, 채팅이 세로로 길어서 시키고 나면
+// 화면에 아무것도 안 뜬 것처럼 보였다 — 만든 것은 한참 스크롤해야 나왔다. 사람이 보려는 것은
+// 걸음이 아니라 **나온 것**이다. 걸음은 그 아래에서 따라가면 된다.
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -257,7 +261,12 @@ export default function WatchDoc() {
       const p = await dcPackage(pick);
       await dl([p.name], p.name);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      const m = e instanceof Error ? e.message : String(e);
+      // 404·405는 '이 주소를 모르는 에이전트'다. 상태 코드를 그대로 보여 주면 쓰는 사람은
+      // 무엇을 해야 할지 알 수 없다 — 할 일을 적는다(에이전트를 다시 켜는 것).
+      setErr(/\b40[45]\b|Not Found|Method Not Allowed/.test(m)
+        ? "패키지는 이 기능이 생긴 뒤의 에이전트에서만 됩니다. 에이전트를 돌리는 PC에서 다시 켜 주세요"
+        : m);
     } finally {
       setPacking(false);
     }
@@ -267,6 +276,75 @@ export default function WatchDoc() {
 
   return (
     <>
+      {/* 에이전트가 만든 문서. 만들어 놓고 못 넘기면 반쪽이다.
+          이름을 '그 문서'라고 달았었다. 무엇을 가리키는지 그 칸만 보고는 알 수 없는 말이라 바꿨다.
+          **맨 위에 둔다** — 시킨 사람이 보려는 것은 걸음이 아니라 나온 것이다. */}
+      {doc && (
+        <section className="panel dc_run">
+          <div className="dc_head">
+            <strong>만든 문서</strong>
+            <span className="chip">{doc.filename}</span>
+            <span className="grow" />
+            <button type="button" className="pill on"
+              onClick={() => router.push(`/?src=${encodeURIComponent(doc.context_id)}`)}>
+              이 문서로 인쇄 검수하기 →
+            </button>
+            <button type="button" className="pill" disabled={packing} onClick={() => void pack()}>
+              {packing ? "묶는 중…" : "패키지(zip) 받기"}
+            </button>
+            <button type="button" className="pill"
+              onClick={() => void dl(["work.idml", "new.idml"], doc.filename)}>idml만 받기</button>
+            <button type="button" className="pill"
+              onClick={() => void dl(["doc.pdf", "inspect.pdf"], doc.filename.replace(/\.idml$/, ".pdf"))}>PDF 받기</button>
+          </div>
+          <p className="note">
+            검수로 넘기면 글꼴·도련·해상도·색·오탈자를 검사합니다. 고칠 것이 있으면{" "}
+            <b>이 문서에 반영할지 물어봅니다</b>.
+          </p>
+          <p className="note">
+            인쇄소에 넘기거나 다른 PC에서 열 때는 <b>패키지</b>로 받으세요 — 편집 파일과 함께{" "}
+            <b>쓴 사진(Links)</b>과 <b>글꼴(Document Fonts)</b>이 한 폴더에 담깁니다.{" "}
+            <b>idml만 받으면 사진이 따라오지 않습니다</b>(IDML은 사진을 담지 않고 경로로 가리키기만 합니다).
+            글꼴이 들어가 수십 MB가 되고, 묶는 데 몇 초 걸립니다.
+          </p>
+          {/* 이어서 시키려면 클로드에게 이 번호를 줘야 한다 — 'ctx_dc_… 이어서 고쳐 줘'. */}
+          <div className="dc_row">
+            <span className="note">이 문서 번호</span>
+            <code className="dc_num">{doc.context_id}</code>
+            <button type="button" className="pill" onClick={() => {
+              navigator.clipboard.writeText(doc.context_id).then(() => setCopied(true), () => undefined);
+              setTimeout(() => setCopied(false), 2000);
+            }}>{copied ? "복사함" : "복사"}</button>
+            <span className="note">클로드에게 주면 <b>이 문서를 이어서</b> 고칩니다.</span>
+          </div>
+          {err && <p className="warn">{err}</p>}
+
+          <div className="watchgrid">
+            <div>
+              {shots.length > 1 && (
+                <div className="pagebar" role="tablist" aria-label="쪽 고르기">
+                  {shots.map((_, i) => (
+                    <button key={i} type="button" role="tab" aria-selected={page === i + 1}
+                      className={`pill${page === i + 1 ? " on" : ""}`} onClick={() => setPage(i + 1)}>{i + 1}쪽</button>
+                  ))}
+                </div>
+              )}
+              {shot
+                // eslint-disable-next-line @next/next/no-img-element
+                ? <img className="dc_shot" src={shot} alt={`${doc.filename} ${page}쪽`} />
+                : <div className="empty">아직 그려진 쪽이 없습니다.</div>}
+            </div>
+            <div>
+              <h3 className="dc_sub">만든 문서 검사 {doc.preflight.length}건</h3>
+              <IssueRows rows={doc.preflight} empty="문제를 찾지 못했습니다." />
+              {/* 글꼴은 만들 때 골라 넣었으니 없을 일이 드물다. 그래도 한글이 없는 글꼴로 짜였으면
+                  글자가 PDF에 안 찍히므로 같은 화면으로 알려 준다. 패키지 안내는 해당 없다. */}
+              <FontNotice s={doc} advise={false} />
+            </div>
+          </div>
+        </section>
+      )}
+
       <section className="panel dc_watch">
         <div className="dc_head">
           <strong>에이전트가 하는 일</strong>
@@ -339,74 +417,6 @@ export default function WatchDoc() {
 
       </section>
 
-      {/* 에이전트가 만든 문서. 만들어 놓고 못 넘기면 반쪽이다.
-          이름을 '그 문서'라고 달았었다. 무엇을 가리키는지 그 칸만 보고는 알 수 없는 말이라
-          바꿨다 — 위에서 걸음을 따라가던 **그 문서**라는 뜻이었지만, 그건 적은 사람만 아는 뜻이다. */}
-      {doc && (
-        <section className="panel dc_run">
-          <div className="dc_head">
-            <strong>만든 문서</strong>
-            <span className="chip">{doc.filename}</span>
-            <span className="grow" />
-            <button type="button" className="pill on"
-              onClick={() => router.push(`/?src=${encodeURIComponent(doc.context_id)}`)}>
-              이 문서로 인쇄 검수하기 →
-            </button>
-            <button type="button" className="pill" disabled={packing} onClick={() => void pack()}>
-              {packing ? "묶는 중…" : "패키지(zip) 받기"}
-            </button>
-            <button type="button" className="pill"
-              onClick={() => void dl(["work.idml", "new.idml"], doc.filename)}>idml만 받기</button>
-            <button type="button" className="pill"
-              onClick={() => void dl(["doc.pdf", "inspect.pdf"], doc.filename.replace(/\.idml$/, ".pdf"))}>PDF 받기</button>
-          </div>
-          <p className="note">
-            검수로 넘기면 글꼴·도련·해상도·색·오탈자를 검사합니다. 고칠 것이 있으면{" "}
-            <b>이 문서에 반영할지 물어봅니다</b>.
-          </p>
-          <p className="note">
-            인쇄소에 넘기거나 다른 PC에서 열 때는 <b>패키지</b>로 받으세요 — 편집 파일과 함께{" "}
-            <b>쓴 사진(Links)</b>과 <b>글꼴(Document Fonts)</b>이 한 폴더에 담깁니다.{" "}
-            <b>idml만 받으면 사진이 따라오지 않습니다</b>(IDML은 사진을 담지 않고 경로로 가리키기만 합니다).
-            글꼴이 들어가 수십 MB가 되고, 묶는 데 몇 초 걸립니다.
-          </p>
-          {/* 이어서 시키려면 클로드에게 이 번호를 줘야 한다 — 'ctx_dc_… 이어서 고쳐 줘'. */}
-          <div className="dc_row">
-            <span className="note">이 문서 번호</span>
-            <code className="dc_num">{doc.context_id}</code>
-            <button type="button" className="pill" onClick={() => {
-              navigator.clipboard.writeText(doc.context_id).then(() => setCopied(true), () => undefined);
-              setTimeout(() => setCopied(false), 2000);
-            }}>{copied ? "복사함" : "복사"}</button>
-            <span className="note">클로드에게 주면 <b>이 문서를 이어서</b> 고칩니다.</span>
-          </div>
-          {err && <p className="warn">{err}</p>}
-
-          <div className="watchgrid">
-            <div>
-              {shots.length > 1 && (
-                <div className="pagebar" role="tablist" aria-label="쪽 고르기">
-                  {shots.map((_, i) => (
-                    <button key={i} type="button" role="tab" aria-selected={page === i + 1}
-                      className={`pill${page === i + 1 ? " on" : ""}`} onClick={() => setPage(i + 1)}>{i + 1}쪽</button>
-                  ))}
-                </div>
-              )}
-              {shot
-                // eslint-disable-next-line @next/next/no-img-element
-                ? <img className="dc_shot" src={shot} alt={`${doc.filename} ${page}쪽`} />
-                : <div className="empty">아직 그려진 쪽이 없습니다.</div>}
-            </div>
-            <div>
-              <h3 className="dc_sub">만든 문서 검사 {doc.preflight.length}건</h3>
-              <IssueRows rows={doc.preflight} empty="문제를 찾지 못했습니다." />
-              {/* 글꼴은 만들 때 골라 넣었으니 없을 일이 드물다. 그래도 한글이 없는 글꼴로 짜였으면
-                  글자가 PDF에 안 찍히므로 같은 화면으로 알려 준다. 패키지 안내는 해당 없다. */}
-              <FontNotice s={doc} advise={false} />
-            </div>
-          </div>
-        </section>
-      )}
     </>
   );
 }
