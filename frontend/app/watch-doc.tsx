@@ -156,9 +156,13 @@ export default function WatchDoc() {
   }, [rows, docs]);
 
   // 마지막 걸음이 '끝'이 아니면 아직 돌고 있다. 기록이 끊긴 지 오래면 멈춘 것으로 본다.
-  const lastStep = [...rows].reverse().find((r) => r.kind === "dc_step")?.payload;
+  const last = [...rows].reverse().find((r) => r.kind === "dc_step");
+  const lastStep = last?.payload;
   const busy = !!lastStep && lastStep.phase !== "끝" && lastStep.phase !== "멈춤";
-  const live = rows.length ? rows[rows.length - 1].ctx : "";
+  // **저절로 따라가는 것은 에이전트가 손댄 문서뿐이다.** 인쇄 검수에 올린 파일도 이 PC에서 일어난
+  // 일이라 위 줄에는 남지만, 그걸 '그 문서'로 잡으면 **만들지도 않은 파일이 기본값처럼 떠 있다** —
+  // 여는 사람은 그걸 앱이 끼워 둔 견본으로 읽는다. 올린 것은 인쇄 검수 화면이 맡는다.
+  const live = last?.ctx ?? "";
 
   // 아래 칸이 보는 문서. **새 일이 시작되면 저절로 그쪽을 따라간다** — 번호를 지운 자리에
   // 다시 '무엇을 고르세요'를 놓으면 아무것도 나아지지 않는다. 사람이 고르면 그때부터 머문다.
