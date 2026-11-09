@@ -205,6 +205,92 @@ def test_a_number_nobody_made_is_not_adoptable():
         assert c.post("/designcraft/ctx_dc_nosuchthing/adopt").status_code == 404
 
 
+# ---------- 지우기 ----------
+# 넣은 사람이 지울 수 있어야 한다. 로그인을 했든 안 했든 같다 — 주인을 가리는 값은 로그인
+# 여부가 아니라 토큰 속 subject이고, 그건 익명 세션에도 있다.
+def test_i_can_erase_my_job_and_its_log(tmp_path):
+    from pg_agents.common_log import query
+    with client() as c:
+        r = c.post("/jobs", data={"file": ""}, files={"file": ("a.pdf", PDF, "application/pdf")})
+        ctx = r.json()["data"]["context_id"]
+        wait(c, ctx, {"completed", "completed_partial", "failed", "input-required"})
+        assert query(contexts={ctx})                       # 지우기 전에는 기록이 있다
+        d = c.delete(f"/jobs/{ctx}").json()["data"]
+        assert d["context_id"] == ctx and d["log_rows"] > 0
+        assert query(contexts={ctx}) == []                 # 소통 기록까지 같이 지운다
+        assert c.get(f"/jobs/{ctx}").status_code == 404
+        assert [j["context_id"] for j in c.get("/jobs").json()["data"] if j["context_id"] == ctx] == []
+
+
+def test_i_cannot_erase_someone_elses_job():
+    """남의 것은 '없는 의뢰'다. 있는지 없는지도 알려 주지 않는다."""
+    with client("brow-A") as a:
+        ctx = a.post("/jobs", files={"file": ("a.pdf", PDF, "application/pdf")}).json()["data"]["context_id"]
+        wait(a, ctx, {"completed", "completed_partial", "failed", "input-required"})
+    with client("brow-B") as b:
+        assert b.delete(f"/jobs/{ctx}").status_code == 404
+    with client("brow-A") as a:
+        assert a.get(f"/jobs/{ctx}").status_code == 200    # 남의 지우기 시도로 사라지지 않았다
+
+
+def test_erase_all_of_mine_leaves_other_browsers_alone():
+    with client("brow-A") as a:
+        # 옵션을 달리한다. 같은 파일·같은 옵션이면 멱등성으로 **한 의뢰**가 되어 둘이 안 된다
+        for paper in ("art", "matte"):
+            ctx = a.post("/jobs", data={"options": json.dumps({"paper_id": paper})},
+                         files={"file": ("a.pdf", PDF, "application/pdf")}).json()["data"]["context_id"]
+            wait(a, ctx, {"completed", "completed_partial", "failed", "input-required"})
+    with client("brow-B") as b:
+        mine = b.post("/jobs", files={"file": ("b.pdf", PDF, "application/pdf")}).json()["data"]["context_id"]
+        wait(b, mine, {"completed", "completed_partial", "failed", "input-required"})
+    with client("brow-A") as a:
+        d = a.delete("/jobs").json()["data"]
+        assert d["jobs"] >= 2
+        assert a.get("/jobs").json()["data"] == []
+    with client("brow-B") as b:
+        assert [j["context_id"] for j in b.get("/jobs").json()["data"]] == [mine]
+
+
+def test_erasing_a_job_keeps_a_pdf_another_job_still_points_at(tmp_path):
+    """올린 PDF는 내용 해시로 보관한다. 같은 파일을 둘이 가리킬 수 있어서, 혼자 남았을 때만 지운다."""
+    from pg_agents.config import STORE
+    # 다른 시험과 **다른 바이트**를 쓴다. 보관은 내용 해시라, 같은 바이트를 쓰면 다른 시험이 넣어
+    # 둔 의뢰가 같은 파일을 보고 있어서 지워지지 않는다(그건 올바른 동작이고, 시험만 흔들린다).
+    only = PDF + b"% erase-test only\n"
+    with client("brow-erase") as c:      # 다른 시험이 쌓아 둔 의뢰 수에 걸리지 않게 주인도 따로 쓴다
+        one = c.post("/jobs", data={"options": json.dumps({"paper_id": "art"})},
+                     files={"file": ("a.pdf", only, "application/pdf")}).json()["data"]["context_id"]
+        wait(c, one, {"completed", "completed_partial", "failed", "input-required"})
+        ref = c.get(f"/jobs/{one}").json()["data"]["pdf_ref"]
+        assert (STORE / f"{ref}.pdf").is_file()
+        two = c.post("/jobs", data={"options": json.dumps({"paper_id": "matte"})},
+                     files={"file": ("a.pdf", only, "application/pdf")}).json()["data"]["context_id"]
+        wait(c, two, {"completed", "completed_partial", "failed", "input-required"})
+        assert two != one                                  # 옵션이 달라 다른 의뢰, 같은 PDF를 본다
+
+        c.delete(f"/jobs/{one}")
+        assert (STORE / f"{ref}.pdf").is_file()            # 아직 보는 의뢰가 있으면 남긴다
+        c.delete(f"/jobs/{two}")
+        assert not (STORE / f"{ref}.pdf").exists()         # 아무도 안 보면 지운다
+
+
+def test_erasing_a_document_takes_its_log_too():
+    from pg_agents.common_log import log_event, query
+    ctx = _seed_source("ctx_dc_toerase")
+    log_event(ctx, "dc_step", source="orchestrator", payload={"phase": "끝"})
+    with client() as c:
+        assert query(contexts={ctx})
+        d = c.delete(f"/designcraft/{ctx}").json()["data"]
+        assert d["log_rows"] > 0 and query(contexts={ctx}) == []
+        assert c.get(f"/designcraft/{ctx}").status_code == 404
+
+
+def test_i_cannot_erase_someone_elses_document():
+    ctx = _seed_source("ctx_dc_notmine", owner="someone-else")
+    with client() as c:
+        assert c.delete(f"/designcraft/{ctx}").status_code == 404
+
+
 # ---------- 번호 없이 따라 보기 ----------
 # 번호를 매번 복사해 오게 하면 아무도 안 본다. 이 PC의 도구(클로드·커서)가 만든 것은 이 PC의
 # 브라우저에 그냥 보여 준다 — 그 둘은 같은 사람이다. 바깥에서 들어온 요청에는 안 열린다.
