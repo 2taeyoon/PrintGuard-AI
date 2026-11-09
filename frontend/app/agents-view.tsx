@@ -67,8 +67,15 @@ function DeleteJob({ label, what, run, done }:
       <button type="button" className="pill on" disabled={busy} onClick={() => {
         setBusy(true);
         run().then((r) => { setSaid(`지웠습니다 — 기록 ${r.log_rows}줄`); done(); })
-          .catch((e: unknown) => setSaid(`지우지 못했습니다: ${e instanceof Error ? e.message : String(e)}`))
-          .finally(() => { setBusy(false); setTimeout(() => setSaid(""), 4000); });
+          .catch((e: unknown) => {
+            const m = e instanceof Error ? e.message : String(e);
+            // 405는 '이 주소를 모르는 에이전트'다. 상태 코드를 그대로 보여 주면 쓰는 사람은
+            // 무엇을 해야 할지 알 수 없다 — 할 일을 적는다(에이전트를 다시 켜는 것).
+            setSaid(/^40[45]/.test(m)
+              ? "지우기는 이 기능이 생긴 뒤의 에이전트에서만 됩니다. 에이전트를 돌리는 PC에서 다시 켜 주세요"
+              : `지우지 못했습니다: ${m}`);
+          })
+          .finally(() => { setBusy(false); setTimeout(() => setSaid(""), 8000); });
       }}>{busy ? "지우는 중…" : "지웁니다"}</button>
     </span>
   );
