@@ -764,10 +764,13 @@ async def compose(req: AgentRequest) -> dict[str, Any]:
 # 파일 접근은 `--automation-*-root`가 막는다. 명령을 열어 줘도 **그 폴더 밖은 읽지도 쓰지도
 # 못한다** — 명령을 하나하나 고르는 것보다 이 울타리가 확실하다(`script.run`도 엔진 명령줄만 돈다).
 MAX_EDIT_CMDS = max(1, int(os.environ.get("PG_DESIGNCRAFT_MAX_CMDS", "40")))
-# 쪽 그림을 몇 장까지 뽑을까. 8장이던 때는 **10쪽을 만들어도 화면에 8쪽만** 보였다 —
-# 시킨 사람은 두 쪽이 안 만들어진 것으로 읽는다(쪽수는 맞는데 그림이 모자란 것뿐이다).
-# 한 장에 0.3초쯤 드니 24장이면 7초 안쪽이다. 더 두꺼운 책은 환경변수로 올린다.
-MAX_PREVIEW_PAGES = max(1, int(os.environ.get("PG_DESIGNCRAFT_PREVIEW_PAGES", "24")))
+# 쪽 그림은 **문서에 있는 쪽을 전부** 뽑는다. 한도를 두었더니 10쪽을 만들어도 화면에 8쪽만
+# 보였고, 시킨 사람은 두 쪽이 안 만들어진 것으로 읽었다. "그림만 모자란 것"이라고 적어 주는
+# 것은 고친 것이 아니다 — 10쪽을 만들었으면 10쪽이 보여야 한다.
+#
+# 환경변수는 남겨 둔다. 0(기본)이면 한도가 없고, 수백 쪽짜리를 되풀이해 고치느라 기다리기
+# 싫은 사람만 숫자를 넣는다. 기본값이 '전부'인 것이 중요하다.
+MAX_PREVIEW_PAGES = max(0, int(os.environ.get("PG_DESIGNCRAFT_PREVIEW_PAGES", "0")))
 # 명령 스무 개짜리 JSON은 길다. 기본 한도에서는 답이 중간에 끊긴다(실측으로 겪었다).
 COMPOSE_TOKENS = max(1024, int(os.environ.get("PG_DESIGNCRAFT_COMPOSE_TOKENS", "8192")))
 
@@ -799,7 +802,7 @@ def _state(m: Mcp, out: Path) -> dict[str, Any]:
     pdf = out / "doc.pdf"
     m.ex("file.exportPdf", path=str(pdf))
     shots: list[str] = []
-    for i in range(min(pages, MAX_PREVIEW_PAGES)):
+    for i in range(pages if MAX_PREVIEW_PAGES <= 0 else min(pages, MAX_PREVIEW_PAGES)):
         name = f"page{i + 1}.png"
         if _shot(m, i + 1, out / name):
             shots.append(name)
