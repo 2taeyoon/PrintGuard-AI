@@ -149,14 +149,26 @@ from ..llm import gemini as _gemini  # noqa: E402
 DETECTORS = {"rules": rules, "kiwi_typo": kiwi_typo, "kiwi_space": kiwi_space, "llm": llm}
 
 
-def detect(text: str, methods: list[str]) -> list[dict[str, Any]]:
-    """여러 탐지기 결과를 합치고, 같은 위치를 겹쳐 가리키는 제안은 하나만 남긴다(먼저 온 방법 우선)."""
+def detect(text: str, methods: list[str]) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    """여러 탐지기 결과를 합치고, 같은 위치를 겹쳐 가리키는 제안은 하나만 남긴다(먼저 온 방법 우선).
+
+    **탐지기 하나가 넘어져도 나머지는 살린다.** 전에는 한 덩어리로 돌려서, LLM이 분당 한도(429)에
+    걸리면 이미 다 찾아 둔 규칙·Kiwi 결과까지 같이 버려졌다 — 화면에는 '교정 실패'만 남고
+    '자동으로 고칠 수 있는 것 0건'이 되었다. 맞춤법 하나도 못 고치는 것처럼 보이지만, 실은
+    찾아 놓고 버린 것이다. 넘어진 방법과 그 이유를 같이 돌려준다.
+    """
     seen: list[tuple[int, int]] = []
-    out = []
+    out: list[dict[str, Any]] = []
+    bad: dict[str, str] = {}
     for m in methods:
-        for s in DETECTORS[m](text):
+        try:
+            found = DETECTORS[m](text)
+        except Exception as e:                      # noqa: BLE001 - 어떤 이유든 나머지는 살린다
+            bad[m] = str(e)[:200]
+            continue
+        for s in found:
             if any(not (s["end"] <= a or s["start"] >= b) for a, b in seen):
                 continue
             seen.append((s["start"], s["end"]))
             out.append(s)
-    return sorted(out, key=lambda s: s["start"])
+    return sorted(out, key=lambda s: s["start"]), bad

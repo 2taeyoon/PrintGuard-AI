@@ -140,12 +140,15 @@ export function useBlob(ctx: string | null, name: string | null) {
   return got && got.key === key ? got.url : null;
 }
 
-/** 한 쪽의 전후 비교. 1쪽만 그리면 여러 쪽짜리에서 정작 바뀐 쪽을 못 본다. */
-export function Compare({ ctx, shot }: { ctx: string; shot: { page: number; before: string; after: string } }) {
+/** 한 쪽의 전후 비교. 1쪽만 그리면 여러 쪽짜리에서 정작 바뀐 쪽을 못 본다.
+ *  `compact`는 **작게 늘어놓는 쪽**이다 — 바뀐 쪽이 여럿이면 큰 그림이 화면을 덮어,
+ *  무엇이 바뀌었는지 적어 둔 목록까지 내려가지 못한다. */
+export function Compare({ ctx, shot, compact = false }:
+  { ctx: string; shot: { page: number; before: string; after: string }; compact?: boolean }) {
   const before = useBlob(ctx, shot.before);
   const after = useBlob(ctx, shot.after);
   return (
-    <div className="dc_compare">
+    <div className={`dc_compare${compact ? " mini" : ""}`}>
       <figure>
         <figcaption>{shot.page}쪽 · 수정 전</figcaption>
         {/* eslint-disable-next-line @next/next/no-img-element */}

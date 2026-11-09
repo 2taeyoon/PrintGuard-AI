@@ -76,7 +76,11 @@ export async function waitJob(ctx: string, onUpdate: (j: JobView) => void, timeo
 const b64 = (s: string) => Uint8ClampedArray.from(atob(s), (c) => c.charCodeAt(0));
 
 /** 에이전트 결과 → 화면 형식. 색 결과가 있으면 사전 검사의 'RGB 이미지 포함' 경고는 ΔE 결과로 대체되므로 뺀다. */
-export function toScreen(v: JobView): { analysis: Analysis; risks: (Risk & { hits: Hit[] })[]; hits: Record<number, Hit[]>; texts: string[] } {
+/** 이번 검수에서 **빠진 교정 방법**. 분당 한도에 걸리면 LLM 교정이 통째로 빠지는데,
+ *  그걸 말하지 않으면 '맞춤법이 하나도 없네'가 '이 파일은 깨끗하다'로 읽힌다. */
+export type ProofSkip = { method: string; label: string; reason: string };
+
+export function toScreen(v: JobView): { analysis: Analysis; risks: (Risk & { hits: Hit[] })[]; hits: Record<number, Hit[]>; texts: string[]; proofSkipped: ProofSkip[] } {
   const pf = v.results.preflight ?? {}, co = v.results.color ?? {}, gd = v.results.guide?.hits ?? {};
   const colorIssues = (co.issues ?? []) as (Issue & { key: string; heat?: { w: number; h: number; rgba: string } })[];
   const base = ((pf.issues ?? []) as (Issue & { key: string })[]).filter((it) => !(colorIssues.length && it.title === "RGB 이미지 포함"));
@@ -102,7 +106,7 @@ export function toScreen(v: JobView): { analysis: Analysis; risks: (Risk & { hit
   });
   const risks = ((v.results.risk?.risks ?? []) as Risk[]).map((r) => ({ ...r, hits: (gd[`risk:${r.id}`] ?? []).slice(0, 1).map(toHit) }));
   const analysis: Analysis = { pages: pf.pages ?? 0, pageSizes: pf.page_sizes ?? [], issues, colorSummary: pf.color_summary ?? {}, texts: pf.texts ?? [], colorReport: co.color_report ?? null };
-  return { analysis, risks, hits, texts: pf.texts ?? [] };
+  return { analysis, risks, hits, texts: pf.texts ?? [], proofSkipped: (v.results.proofread?.skipped ?? []) as ProofSkip[] };
 }
 export type JobRow = { context_id: string; status: string; filename: string; created: number };
 export const listJobs = async () => j<JobRow[]>(await call("/jobs"));

@@ -33,24 +33,46 @@ def page_texts(pdf_ref: str) -> list[tuple[str, Any]]:
     return [(p.get_text("text"), p) for p in doc]
 
 
-def suggest(pdf_ref: str, methods: list[str]) -> list[dict[str, Any]]:
-    out = []
+def suggest(pdf_ref: str, methods: list[str]) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    """쪽마다 탐지기를 돌려 제안을 모은다. 넘어진 방법은 **그 쪽에서 빼고 계속 간다.**
+
+    탐지는 쪽 단위다. 20쪽짜리면 LLM을 스무 번 부르는데, 무료 등급은 분당 횟수가 정해져 있어
+    중간에 429가 난다. 한 번 한도에 걸린 방법을 남은 열아홉 쪽에서 계속 부르면, 쪽마다 35초씩
+    기다렸다 또 실패한다 — 검수가 몇 분씩 늘어지고 결과는 같다. 그래서 한 번 넘어지면 뺀다.
+    무엇이 빠졌는지는 돌려줘서 화면이 말할 수 있게 한다.
+    """
+    out: list[dict[str, Any]] = []
+    left = list(methods)
+    bad: dict[str, str] = {}
     for no, (text, page) in enumerate(page_texts(pdf_ref), start=1):
-        for s in detect(text, methods):
+        found, broke = detect(text, left)
+        for m, why in broke.items():
+            bad.setdefault(m, why)
+            if m in left:
+                left.remove(m)
+        for s in found:
             if text[s["start"]:s["end"]] != s["original"]:
                 continue
             hits = page.search_for(s["original"])
             r = hits[0] if hits else None
             out.append({**s, "page": no, "kind_label": KIND_LABEL.get(s["kind"], s["kind"]), "key": f"pr-{len(out) + 1}",
                         "rect": [r.x0, r.y0, r.x1, r.y1] if r else None})
-    return out
+    return out, bad
+
+
+# 방법 이름을 사람 말로. 화면이 '무엇이 빠졌는지'를 말하려면 이 이름이 필요하다.
+METHOD_LABEL = {"rules": "규칙 사전", "kiwi_typo": "Kiwi 오타 모델", "kiwi_space": "Kiwi 띄어쓰기", "llm": "LLM 교정"}
 
 
 async def suggest_corrections(req):
     methods = [m for m in str(req.input.get("methods") or DEFAULT_METHODS).split(",") if m]
-    sug = suggest(str(req.input.get("pdf_ref")), methods)
-    return {"status": "completed", "output": {"suggestions": sug, "methods": methods},
-            "evidence": {"queries": [], "data_summary": f"제안 {len(sug)}건 ({', '.join(methods)})", "ref_ids": []}}
+    sug, bad = suggest(str(req.input.get("pdf_ref")), methods)
+    # 넘어진 방법이 있어도 **완료로 돌려준다.** 전에는 통째로 실패여서, LLM이 분당 한도에 걸리면
+    # 규칙·Kiwi가 찾아 둔 맞춤법까지 같이 사라지고 뒤의 원본 수정 단계도 서지 못했다.
+    skipped = [{"method": m, "label": METHOD_LABEL.get(m, m), "reason": why} for m, why in bad.items()]
+    note = f" · 빠짐 {', '.join(s['label'] for s in skipped)}" if skipped else ""
+    return {"status": "completed", "output": {"suggestions": sug, "methods": methods, "skipped": skipped},
+            "evidence": {"queries": [], "data_summary": f"제안 {len(sug)}건 ({', '.join(methods)}){note}", "ref_ids": []}}
 
 
 app = create_agent_app(CARD, {"suggest_corrections": suggest_corrections})
