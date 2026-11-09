@@ -16,3 +16,8 @@ os.environ.setdefault("PG_DATA_DIR", tempfile.mkdtemp(prefix="pg-test-"))
 # 설정이 살아 있게 하려고), 그대로 두면 개발자 PC의 열쇠와 설정이 시험 결과를 바꾼다 —
 # `GEMINI_API_KEY`가 있으면 진짜 LLM을 부르러 가고, `PG_PROOF_METHODS`는 교정 방식을 갈아 버린다.
 os.environ.setdefault("PG_NO_ENV_FILES", "1")
+
+# 열쇠는 아예 지운다. `.env`를 안 읽어도 셸에 export돼 있으면 시험이 **진짜 API를 부르고**,
+# 그건 돈이 나가는 일이다. 시험은 가짜를 끼워 넣고 본다(test_llm.py).
+for _key in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY"):
+    os.environ.pop(_key, None)
