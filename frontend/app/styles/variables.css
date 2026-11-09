@@ -19,8 +19,7 @@
   --redLight: #ffecea;   /* 주의 상자 배경(붉은 계열의 옅은 면) */
   --redPoint: #ffd5d1;
   --greenBright: #34c759;
-  --amberBright: #b35309;  /* 수정 권장 — 빨강(위험)과 초록(확인) 사이. 흰 바탕에서 4.5:1을 넘긴다 */
-  --purpleBright: #af52de;  /* 인쇄소 지도의 두 번째 표시 색 */
+  --purpleBright: #af52de;
 
   --font: "Pretendard", "Malgun Gothic", sans-serif;
   --field: 40px;   /* select·input·file 공통 높이 — 나란히 두면 높이가 어긋나 보인다 */
