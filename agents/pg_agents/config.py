@@ -16,7 +16,15 @@ def load_env_files(paths: tuple[Path, ...] = ENV_FILES) -> list[str]:
     `#` 주석과 빈 줄은 넘기고, 따옴표로 감싼 값은 벗긴다. 값을 화면에 찍지 않는다(키가 로그에 남지 않게).
     `KEY=`처럼 값이 빈 줄은 설정하지 않는다(앞 파일의 빈 줄이 뒤 파일의 실제 값을 가리지 않게).
     읽은 파일 목록을 돌려준다. 파일이 없으면 아무 일도 하지 않는다(선택 기능이라 없는 것이 정상).
+
+    **시험은 이 PC의 `.env`를 읽지 않는다**(`PG_NO_ENV_FILES=1`, conftest가 세운다). 막는 자리를
+    여기 하나로 둔 이유가 있다 — 전에는 `config` 안에서만 막았고, `mcp_server`가 불러오는 순간
+    따로 한 번 더 읽었다. 그래서 그 모듈을 들여오는 시험이 돌면 개발자 PC의 열쇠가 환경에 올라오고,
+    뒤이어 도는 교정 시험이 **진짜 API를 불렀다**(돈이 나간다). 경로를 직접 준 경우는 읽는다 —
+    그건 시험이 만든 임시 파일이고, 읽는 동작 자체를 재는 시험이 있다.
     """
+    if paths is ENV_FILES and os.environ.get("PG_NO_ENV_FILES") == "1":
+        return []
     read: list[str] = []
     for p in paths:
         try:
@@ -44,7 +52,7 @@ def load_env_files(paths: tuple[Path, ...] = ENV_FILES) -> list[str]:
 #
 # 테스트는 읽지 않는다(`PG_NO_ENV_FILES=1`, conftest가 세운다). 개발자 PC의 열쇠와 설정이
 # 시험 결과를 바꾸면 안 된다 — `GEMINI_API_KEY`가 있으면 진짜 LLM을 부르러 간다.
-ENV_LOADED: list[str] = [] if os.environ.get("PG_NO_ENV_FILES") == "1" else load_env_files()
+ENV_LOADED: list[str] = load_env_files()      # 막는 일은 load_env_files 안에서 한다
 
 DATA = Path(os.environ.get("PG_DATA_DIR", ROOT / "agents" / ".data"))
 STORE = DATA / "pdf"  # 의뢰한 PDF를 sha256 이름으로 둔다(에이전트끼리는 pdf_ref만 주고받는다)

@@ -1,10 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { GsMark } from "./gs-mark";
 
 /** 검사 옵션에 쓰인 인쇄 용어 풀이. 전문 지식 없이 들어온 사람이 옵션을 보고 멈추지 않게 한다.
- *  펼치면 여러 칸으로 흘러서 스크롤 없이 한눈에 들어온다(globals.css의 .terms). */
+ *  **늘 펼쳐 둔다** — 여러 칸으로 흘러서 스크롤 없이 한눈에 들어온다(globals.css의 .terms). */
 
 type Term = { t: string; d: string; sub?: [string, string][] };
 
@@ -39,19 +37,17 @@ const TERMS: Term[] = [
 ];
 
 export function TermsPanel() {
-  const [open, setOpen] = useState(false);
-
+  // 접지 않는다. 바로 아래 칸에서 '변환 방식'·'총 잉크량 한도'를 고르게 해 놓고 그 뜻은 접어
+  // 두면, 모르는 사람은 접힌 줄이 있다는 것도 모른 채 기본값으로 넘긴다.
   return (
-    <section className={`gsearch panel terms_panel${open ? " open" : ""}`}>
-      <button type="button" className="gs_toggle" aria-expanded={open} aria-controls="terms_body" onClick={() => setOpen((v) => !v)}>
+    <section className="gsearch panel terms_panel open">
+      <div className="gs_head">
         <b>인쇄 용어 풀이</b>
         <span className="note">
           변환 방식 · 총 잉크량 한도 · 종이 흰색 측정값처럼 아래 옵션에 나오는 말 {TERMS.length}개를 한자리에 풀었습니다.
         </span>
-        <GsMark open={open} />
-      </button>
-      {open && (
-        <div className="gs_body" id="terms_body">
+      </div>
+      <div className="gs_body" id="terms_body">
           <dl className="terms">
             {TERMS.map((x) => (
               <div className="term" key={x.t}>
@@ -67,8 +63,7 @@ export function TermsPanel() {
               </div>
             ))}
           </dl>
-        </div>
-      )}
+      </div>
     </section>
   );
 }
