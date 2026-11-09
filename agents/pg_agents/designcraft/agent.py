@@ -632,15 +632,14 @@ def _compose_prompt(request: str, doc: dict[str, Any], catalog: list[dict[str, A
 
 def _compose_blocking(request: str, doc: dict[str, Any], client=None,
                       assets: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-    from ..llm import TruncatedAnswer, gemini, have_key
+    from ..llm import TruncatedAnswer, ask, have_key
     if client is None and not have_key():
         return {"available": False, "commands": [], "says": "", "dropped": [],
-                "reason": "이 PC의 에이전트에 LLM 열쇠(GEMINI_API_KEY)가 없습니다"}
+                "reason": "이 PC의 에이전트에 LLM 열쇠가 없습니다. agents/.env에 ANTHROPIC_API_KEY를 넣어 주세요"}
     cat = [c for c in _commands_blocking()["commands"] if c["id"] in COMPOSE_OK]
     prompt = _compose_prompt(request, doc, cat, assets)
     try:
-        raw = (client(prompt) if client
-               else gemini(prompt, os.environ["GEMINI_API_KEY"], temperature=0.2, max_tokens=COMPOSE_TOKENS))
+        raw = client(prompt) if client else ask(prompt, max_tokens=COMPOSE_TOKENS)
     except TruncatedAnswer:
         return {"available": True, "commands": [], "says": "", "dropped": [],
                 "reason": "부탁이 길어 답이 끝나기 전에 끊겼습니다. 한 번에 한두 가지씩 나눠서 적어 주세요"}

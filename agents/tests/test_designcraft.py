@@ -486,11 +486,16 @@ def test_compose_only_keeps_commands_it_knows():
 
 
 def test_compose_is_off_without_a_key(monkeypatch):
-    """LLM은 늘 선택이다. 열쇠가 없으면 꺼졌다고 말하고 끝낸다 — 앱의 나머지는 그대로 돈다."""
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    """LLM은 늘 선택이다. 열쇠가 없으면 꺼졌다고 말하고 끝낸다 — 앱의 나머지는 그대로 돈다.
+
+    어느 열쇠든 없으면 꺼진다. 둘 중 하나만 지우고 끝내면, 다른 하나가 개발자 PC에 있을 때
+    이 시험이 **진짜 API를 부르러 간다**.
+    """
+    for k in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
     r = dc._compose_blocking("아무거나", {"pages": 1})
     assert r["available"] is False and r["commands"] == []
-    assert "GEMINI_API_KEY" in r["reason"]
+    assert "ANTHROPIC_API_KEY" in r["reason"]
 
 
 def test_a_plan_that_puts_the_font_after_the_text_is_fixed():

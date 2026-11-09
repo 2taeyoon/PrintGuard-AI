@@ -29,6 +29,7 @@ sys.path.insert(0, str(ROOT / "agents"))
 sys.stdout.reconfigure(encoding="utf-8")
 from pg_agents.config import load_env_files  # noqa: E402
 from pg_agents.proofread import detectors as det  # noqa: E402
+from pg_agents import llm as llm_mod  # noqa: E402
 from pg_agents.proofread.detectors import MISUSE, detect  # noqa: E402
 
 random.seed(7)
@@ -100,18 +101,21 @@ METHODS = {"규칙": ["rules"], "Kiwi 오타": ["kiwi_typo"], "Kiwi 띄어쓰기
            "규칙+Kiwi 오타+띄어쓰기": ["rules", "kiwi_typo", "kiwi_space"]}
 
 
-# LLM 교정기는 GEMINI_API_KEY가 있을 때만 평가에 넣는다(키가 없으면 조합을 아예 넣지 않는다 — 빈 결과를 0점으로 적지 않기 위해).
-# 같은 글을 방법 조합마다 다시 묻지 않도록 호출을 캐시한다(문서 60개의 오류본·원문 + 전체 원문 1개 = API 호출 121회).
-load_env_files()  # agents/.env 또는 레포 루트 .env의 GEMINI_API_KEY를 쓴다
-LLM_MODEL = os.environ.get("PG_LLM_MODEL", "gemini-2.5-flash")
-LLM_ON = bool(os.environ.get("GEMINI_API_KEY"))
+# LLM 교정기는 **열쇠가 있을 때만** 평가에 넣는다(없으면 조합을 아예 넣지 않는다 — 빈 결과를
+# 0점으로 적지 않기 위해). 어느 열쇠로 돌았는지는 표에 적는다. 같은 글을 방법 조합마다 다시
+# 묻지 않도록 호출을 캐시한다(문서 60개의 오류본·원문 + 전체 원문 1개 = API 호출 121회).
+load_env_files()  # agents/.env 또는 레포 루트 .env의 열쇠를 쓴다
+_WHO = llm_mod.provider()
+LLM_MODEL = ((os.environ.get("PG_CLAUDE_MODEL") or llm_mod.CLAUDE_MODEL) if _WHO == "anthropic"
+             else os.environ.get("PG_LLM_MODEL", llm_mod.GEMINI_MODEL))
+LLM_ON = bool(_WHO)
 if LLM_ON:
     det.DETECTORS["llm"] = lru_cache(maxsize=None)(det.DETECTORS["llm"])
     METHODS["LLM"] = ["llm"]
     METHODS["규칙+Kiwi 오타+LLM"] = ["rules", "kiwi_typo", "llm"]
-    print(f"LLM 교정기 평가: {LLM_MODEL} (GEMINI_API_KEY 있음)")
+    print(f"LLM 교정기 평가: {LLM_MODEL}")
 else:
-    print("LLM 교정기 평가 건너뜀: GEMINI_API_KEY 없음")
+    print("LLM 교정기 평가 건너뜀: ANTHROPIC_API_KEY도 GEMINI_API_KEY도 없음")
 
 
 def score(doc: dict, sug: list[dict]) -> tuple[list[bool], list[bool]]:
@@ -133,7 +137,7 @@ def boot(per_doc: list[tuple[int, int]], n: int = 2000) -> list[float]:
 np.random.seed(0)
 clean_chars = sum(len(d["base"]) for d in DOCS)
 res = {"n_docs": len(DOCS), "n_errors": sum(len(d["errors"]) for d in DOCS), "methods": {},
-       "llm": f"실시: {LLM_MODEL}" if LLM_ON else "미실시: GEMINI_API_KEY 없음"}
+       "llm": f"실시: {LLM_MODEL}" if LLM_ON else "미실시: LLM 열쇠 없음"}
 for name, ms in METHODS.items():
     rec_doc, prec_doc, by_kind = [], [], {}
     fp_clean = 0
