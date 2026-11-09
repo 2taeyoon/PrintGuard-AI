@@ -418,12 +418,6 @@ export default function WatchDoc() {
                 // eslint-disable-next-line @next/next/no-img-element
                 ? <img className="dc_shot" src={shot} alt={`${doc.filename} ${page}쪽`} />
                 : <div className="empty">아직 그려진 쪽이 없습니다.</div>}
-              {/* 쪽 그림에는 한도가 있다. 적어 주지 않으면 **쪽이 덜 만들어진 것**으로 읽힌다 —
-                  문서는 그대로 다 있고 그림만 모자란 것이다. */}
-              {!!doc.pages && shots.length > 0 && shots.length < doc.pages && (
-                <p className="note">문서는 <b>{doc.pages}쪽</b>인데 미리보기는 {shots.length}쪽까지만 그렸습니다.
-                  받으시는 파일에는 {doc.pages}쪽이 모두 들어 있습니다.</p>
-              )}
             </div>
             <div>
               <h3 className="dc_sub">만든 문서 검사 {doc.preflight.length}건</h3>

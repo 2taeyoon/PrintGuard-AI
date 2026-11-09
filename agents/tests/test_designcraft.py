@@ -665,3 +665,33 @@ def test_the_package_folder_is_not_left_behind(tmp_path):
     assert (out / r["name"]).is_file()
     assert not (out / dc.PACKAGE_DIR).exists()
     assert r["links"] == []            # 사진이 없으면 Links/도 없다 — 그래도 묶음은 나온다
+
+
+@needs_cli
+def test_every_page_gets_a_picture(tmp_path):
+    """**10쪽을 만들었으면 10쪽이 보여야 한다.** 한도를 두었더니 8장만 뽑혔고, 시킨 사람은
+    두 쪽이 안 만들어진 것으로 읽었다. '그림만 모자란 것'이라고 적어 주는 것은 고친 것이 아니다."""
+    out = tmp_path / "out"
+    out.mkdir()
+    pages = 12
+    with Mcp(read_roots=[tmp_path], write_roots=[tmp_path]) as m:
+        m.tool("new_document", {"preset": "A4", "margins": 36, "pages": pages})
+        m.ex("frame.create", rect=[36, 36, 300, 120], content="text", text="Hello")
+        r = dc._state(m, out)
+    assert r["pages"] == pages
+    assert len(r["shots"]) == pages, r["shots"]
+    for n in r["shots"]:
+        assert (out / n).is_file(), n
+
+
+@needs_cli
+def test_the_limit_is_opt_in(monkeypatch, tmp_path):
+    """한도를 쓰고 싶은 사람(수백 쪽짜리를 되풀이해 고치는 사람)만 환경변수로 켠다."""
+    monkeypatch.setattr(dc, "MAX_PREVIEW_PAGES", 3)
+    out = tmp_path / "out"
+    out.mkdir()
+    with Mcp(read_roots=[tmp_path], write_roots=[tmp_path]) as m:
+        m.tool("new_document", {"preset": "A4", "margins": 36, "pages": 8})
+        m.ex("frame.create", rect=[36, 36, 300, 120], content="text", text="Hello")
+        r = dc._state(m, out)
+    assert r["pages"] == 8 and len(r["shots"]) == 3
