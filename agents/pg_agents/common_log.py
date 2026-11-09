@@ -38,6 +38,17 @@ def log_event(context_id: str, kind: str, *, source: str, requester: str | None 
         pass
 
 
+def forget(context_id: str) -> int:
+    """한 의뢰의 소통 기록을 **지운다.** 지운 줄 수를 돌려준다.
+
+    지우기는 로그 쓰기와 달리 조용히 실패하면 안 된다. 쓰기는 거들어 주는 일이라 실패해도
+    검수가 돌아야 하지만, 지우기는 **사람이 '지워 달라'고 한 일**이다. 안 지워졌는데 지웠다고
+    말하면 그게 더 나쁘다 — 그래서 여기서는 예외를 삼키지 않는다.
+    """
+    with _lock, _conn() as c:
+        return int(c.execute("DELETE FROM common_log WHERE context_id=?", (context_id,)).rowcount)
+
+
 def query(context_id: str | None = None, limit: int = 300, contexts: set[str] | None = None) -> list[dict[str, Any]]:
     """contexts를 주면 그 의뢰들의 줄만 돌려준다. 빈 집합이면 아무것도 돌려주지 않는다
     (호출한 쪽이 '보여 줄 의뢰가 없다'고 판단한 것이므로, 전체를 보여 주면 안 된다)."""

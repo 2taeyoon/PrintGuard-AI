@@ -111,6 +111,17 @@ export function toScreen(v: JobView): { analysis: Analysis; risks: (Risk & { hit
 export type JobRow = { context_id: string; status: string; filename: string; created: number };
 export const listJobs = async () => j<JobRow[]>(await call("/jobs"));
 
+/** 의뢰와 그 소통 기록을 **지운다.** 로그인 여부와 상관없다 — 주인을 가리는 값은 토큰 속
+ *  subject이고, 그건 익명 세션에도 있다. 되돌릴 수 없어서 부르는 쪽이 먼저 묻는다. */
+export type Erased = { context_id: string; log_rows: number; files: boolean; pdf?: boolean };
+export const deleteJob = async (ctx: string) =>
+  j<Erased>(await call(`/jobs/${encodeURIComponent(ctx)}`, { method: "DELETE" }));
+export const deleteMyJobs = async () =>
+  j<{ jobs: number; log_rows: number }>(await call("/jobs", { method: "DELETE" }));
+/** 만들었거나 올린 문서와 그 기록. 올린 원본 폴더는 아무도 안 보고 있을 때만 같이 지워진다. */
+export const deleteDoc = async (ctx: string) =>
+  j<Erased & { source: boolean }>(await call(`/designcraft/${encodeURIComponent(ctx)}`, { method: "DELETE" }));
+
 // ---- 6단계: 추적(공통 로그의 요청↔결과 짝으로 만든 구간·관문·사건). 로그에 있는 것만 담긴다 ----
 export type TraceSpan = { agent: string; skill: string | null; requester: string | null; start_ms: number; end_ms: number | null; ms: number | null;
   status: string | null; outcome: string | null; grade: string | null; open: boolean; unpaired?: boolean };

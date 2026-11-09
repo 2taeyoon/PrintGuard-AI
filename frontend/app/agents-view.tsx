@@ -3,7 +3,8 @@
 // 에이전트 화면 본체: 왼쪽에 에이전트 목록(기본 접힘, 누르면 그 자리에서 skill을 펼친다), 오른쪽에 의뢰 추적과 소통 기록.
 // '인쇄 검수'에서 에이전트 검사 모드를 고르면 이 화면이 그 자리에 펼쳐진다(따로 된 탭은 없앴다).
 import { useEffect, useState } from "react";
-import { getTrace, listAgents, listJobs, listLogs, orchestratorUp, type AgentInfo, type JobRow, type LogRow, type Trace } from "@/lib/agentClient";
+import { deleteJob, deleteMyJobs, getTrace, listAgents, listJobs, listLogs, orchestratorUp,
+  type AgentInfo, type JobRow, type LogRow, type Trace } from "@/lib/agentClient";
 import { agentLabel, jobNo, skillLabel, SkillName, statusLabel } from "./agent-ui";
 
 const KIND: Record<string, string> = {
@@ -44,6 +45,35 @@ const when = (iso: string) => {
   const p = parts(t);
   return `${p.year}년 ${p.month}월 ${p.day}일 ${p.dayPeriod} ${p.hour}시 ${p.minute}분 ${p.second}초`;
 };
+/** 지우는 단추. **한 번 더 눌러야 지운다.**
+ *
+ *  `confirm()`을 쓰지 않는 이유가 있다. 그 창에는 무엇이 지워지는지 적을 자리가 없고, 글자가
+ *  이 앱의 말투도 아니다. 그래서 자리에서 물어보고, 무엇이 사라지는지 그 자리에 적는다.
+ *  지운 뒤에는 몇 줄이 지워졌는지 말해 준다 — 지웠다는 말만 하면 정말 지워졌는지 알 수 없다. */
+function DeleteJob({ label, what, run, done }:
+  { label: string; what: string; run: () => Promise<{ log_rows: number }>; done: () => void }) {
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState("");
+
+  if (said) return <span className="note">{said}</span>;
+  if (!asking) {
+    return <button type="button" className="pill" onClick={() => setAsking(true)}>{label}</button>;
+  }
+  return (
+    <span className="job_del">
+      <span className="warn">{what}</span>
+      <button type="button" className="pill" disabled={busy} onClick={() => setAsking(false)}>그만두기</button>
+      <button type="button" className="pill on" disabled={busy} onClick={() => {
+        setBusy(true);
+        run().then((r) => { setSaid(`지웠습니다 — 기록 ${r.log_rows}줄`); done(); })
+          .catch((e: unknown) => setSaid(`지우지 못했습니다: ${e instanceof Error ? e.message : String(e)}`))
+          .finally(() => { setBusy(false); setTimeout(() => setSaid(""), 4000); });
+      }}>{busy ? "지우는 중…" : "지웁니다"}</button>
+    </span>
+  );
+}
+
 /** 의뢰 목록처럼 좁은 자리에는 시각만 적는다 — '오전 9시 30분' */
 const clock = (epochSec: number) => {
   const t = new Date(epochSec * 1000);
@@ -201,6 +231,17 @@ export default function AgentsView({ initialCtx = "", showWarn = true, withFix =
                 </option>
               ))}
             </select>
+            {/* 넣은 사람이 지울 수 있어야 한다. 로그인을 했든 안 했든 같다 — 주인을 가리는 값은
+                로그인 여부가 아니라 토큰이고, 그건 익명으로 써도 있다.
+                **되돌릴 수 없는 일이라 두 번 묻는다.** 누르면 무엇이 지워지는지 적고, 한 번 더
+                눌러야 지운다(브라우저의 confirm 창은 쓰지 않는다 — 무엇이 지워지는지 못 적는다). */}
+            {ctx
+              ? <DeleteJob label="이 의뢰 지우기"
+                  what={`이 의뢰와 소통 기록, 만들어진 쪽 그림까지 지웁니다. 되돌릴 수 없습니다.`}
+                  run={() => deleteJob(ctx)} done={() => { setCtx(""); setTrace(null); }} />
+              : jobs.length > 0 && <DeleteJob label={`내 의뢰 ${jobs.length}건 모두 지우기`}
+                  what={`내 의뢰 ${jobs.length}건과 소통 기록을 모두 지웁니다. 되돌릴 수 없습니다.`}
+                  run={deleteMyJobs} done={() => setTrace(null)} />}
             <span className="note">2초마다 갱신</span>
           </div>
 

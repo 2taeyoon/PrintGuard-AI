@@ -19,6 +19,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -33,7 +34,7 @@ from fastapi.responses import FileResponse
 from .. import google
 from ..auth import Claims, bearer, mint, secret, tool_subject, verify
 from ..client import call_agent, new_meta
-from ..common_log import log_event, query
+from ..common_log import forget, log_event, query
 from ..config import CORS_ORIGIN_REGEX, DC_OUT, PORTS, SRC, STORE, agent_url, ensure_dirs, set_agent_name
 from ..contracts import AgentCard, AgentRequest
 from ..tracing import build_trace
@@ -266,6 +267,77 @@ async def list_jobs(authorization: str | None = Auth) -> dict[str, Any]:
     mine = _mine(_who(authorization))
     rows = sorted((j for j in JOBS.values() if j.context_id in mine), key=lambda j: -j.created)[:30]
     return {"data": [{"context_id": j.context_id, "status": j.status, "filename": j.filename, "created": j.created} for j in rows], "meta": {}}
+
+
+# ---------- 지우기 ----------
+# 넣은 사람이 **지울 수 있어야 한다.** 로그인을 했든 안 했든 같다 — 주인을 가리는 값은 로그인
+# 여부가 아니라 토큰 속 subject이고, 그건 익명 세션에도 있다.
+#
+# 무엇을 지우는가: 의뢰 자체(메모리), 그 의뢰의 소통 기록(공통 로그), 그 의뢰로 만들어진 결과
+# 파일(쪽 그림·고친 PDF). 올린 PDF는 **내용 해시로 보관**해서 다른 의뢰가 같은 파일을 가리킬 수
+# 있으므로, 아무도 안 보고 있을 때만 지운다. 남의 의뢰를 지우려 들면 '없는 의뢰'다(있는지
+# 없는지도 알려 주지 않는다).
+
+
+def _rmtree(path: Path) -> bool:
+    try:
+        shutil.rmtree(path)
+        return True
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return False        # 다른 프로세스가 쥐고 있을 수 있다. 기록과 목록은 이미 지운 뒤다
+
+
+def _drop_pdf(pdf_ref: str, keep: str) -> bool:
+    """그 PDF를 보는 의뢰가 더 없으면 지운다. 해시로 보관하므로 같은 파일을 둘이 가리킬 수 있다."""
+    if not pdf_ref:
+        return False
+    if any(c != keep and j.pdf_ref == pdf_ref for c, j in JOBS.items()):
+        return False
+    if any((j.get("inspect") or {}).get("pdf_ref") == pdf_ref for j in DCJOBS.values()):
+        return False
+    try:
+        (STORE / f"{pdf_ref}.pdf").unlink()
+        return True
+    except OSError:
+        return False
+
+
+def _erase_job(ctx: str) -> dict[str, Any]:
+    j = JOBS.pop(ctx, None)
+    # 같은 PDF·같은 옵션이면 지난 의뢰를 돌려주는 색인(멱등성)도 같이 비운다. 안 비우면 그 색인이
+    # **지워진 번호를 계속 가리켜**, 같은 파일을 다시 올리는 순간 터진다(시험이 그 자리에서 잡았다).
+    for k, c in list(BY_KEY.items()):
+        if c == ctx:
+            BY_KEY.pop(k, None)
+    gone = {"context_id": ctx, "log_rows": forget(ctx), "files": _rmtree(DC_OUT / ctx)}
+    if j is not None:
+        gone["pdf"] = _drop_pdf(j.pdf_ref, ctx)
+    return gone
+
+
+@app.delete("/jobs/{ctx}")
+async def delete_job(ctx: str, authorization: str | None = Auth) -> dict[str, Any]:
+    """의뢰 하나와 그 소통 기록을 지운다. 되돌릴 수 없다."""
+    who = _who(authorization)
+    _owned(ctx, who)
+    gone = _erase_job(ctx)
+    # 지웠다는 사실은 남긴다. 지운 의뢰 번호가 아니라 **이 줄이 있었다는 것**만 남으므로,
+    # 다음 줄에서 바로 지워지지 않는다(지운 의뢰의 번호로 쓰지 않는다).
+    log_event("ctx_admin", "job_erased", source=NAME, payload={"log_rows": gone["log_rows"]})
+    return {"data": gone, "meta": {}}
+
+
+@app.delete("/jobs")
+async def delete_my_jobs(authorization: str | None = Auth) -> dict[str, Any]:
+    """내 의뢰를 **모두** 지운다. 하나씩 지우게만 두면 서른 개를 서른 번 눌러야 한다."""
+    who = _who(authorization)
+    if not who:
+        raise HTTPException(401, "토큰이 필요합니다")
+    gone = [_erase_job(c) for c in sorted(_mine(who))]
+    log_event("ctx_admin", "job_erased", source=NAME, payload={"jobs": len(gone)})
+    return {"data": {"jobs": len(gone), "log_rows": sum(g["log_rows"] for g in gone)}, "meta": {}}
 
 
 @app.get("/.well-known/agent-card.json")
@@ -957,6 +1029,24 @@ async def dc_get(ctx: str, authorization: str | None = Auth) -> dict[str, Any]:
     j = _dc_owned(ctx, _who(authorization))
     return {"data": {"context_id": ctx, "filename": j["filename"], "made": bool(j.get("made")),
                      **(j.get("inspect") or {})}, "meta": {}}
+
+
+@app.delete("/designcraft/{ctx}")
+async def dc_delete(ctx: str, authorization: str | None = Auth) -> dict[str, Any]:
+    """만들었거나 올린 문서와 그 기록을 지운다. 되돌릴 수 없다.
+
+    올린 원본 폴더(`SRC/<src_ref>`)는 **아무 의뢰도 안 보고 있을 때만** 지운다. 한 번 올린 것을
+    여러 의뢰가 가리킬 수 있어서다.
+    """
+    who = _writer(authorization).subject
+    j = _dc_owned(ctx, who)
+    DCJOBS.pop(ctx, None)
+    gone = {"context_id": ctx, "log_rows": forget(ctx), "files": _rmtree(DC_OUT / ctx), "source": False}
+    src = str(j.get("src_ref") or "")
+    if src and not any(x.get("src_ref") == src for x in DCJOBS.values()):
+        gone["source"] = _rmtree(SRC / src)
+    log_event("ctx_admin", "doc_erased", source=NAME, payload={"log_rows": gone["log_rows"]})
+    return {"data": gone, "meta": {}}
 
 
 @app.post("/designcraft/{ctx}/apply")
