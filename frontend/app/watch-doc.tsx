@@ -118,6 +118,20 @@ export default function WatchDoc() {
     return () => { alive = false; clearInterval(t); };
   }, []);
 
+  // 마지막 걸음이 '끝'이 아니면 아직 돌고 있다. 기록이 끊긴 지 오래면 멈춘 것으로 본다.
+  const last = [...rows].reverse().find((r) => r.kind === "dc_step");
+  const lastStep = last?.payload;
+  const busy = !!lastStep && lastStep.phase !== "끝" && lastStep.phase !== "멈춤";
+  // **저절로 따라가는 것은 에이전트가 손댄 문서뿐이다.** 인쇄 검수에 올린 파일도 이 PC에서 일어난
+  // 일이라 걸음 줄에는 남지만, 그걸 '만든 문서'로 잡으면 **만들지도 않은 파일이 기본값처럼 떠 있다** —
+  // 여는 사람은 그걸 앱이 끼워 둔 견본으로 읽는다. 올린 것은 인쇄 검수 화면이 맡는다.
+  const live = last?.ctx ?? "";
+
+  // '만든 문서' 칸이 보는 문서이자, 걸음 줄에 그릴 문서. **새 일이 시작되면 저절로 그쪽을 따라간다** — 번호를 지운 자리에
+  // 다시 '무엇을 고르세요'를 놓으면 아무것도 나아지지 않는다. 사람이 고르면 그때부터 머문다.
+  // 상태로 두지 않고 계산한다(효과 안에서 상태를 바꾸면 한 박자 늦게 그려진다).
+  const pick = pinned && chosen ? chosen : (live || chosen);
+
   // 한 줄씩 들어온 기록을 사람이 읽는 말로. 명령은 묶어서 한 줄로 만든다.
   const msgs = useMemo<Msg[]>(() => {
     const out: Msg[] = [];
@@ -137,7 +151,10 @@ export default function WatchDoc() {
         });
       }
     };
-    for (const r of rows) {
+    // **고른 문서의 줄만 그린다.** 전에는 보이는 문서를 전부 한 줄기에 쌓았다. 아래 '문서
+    // 고르기'로 하나를 골라도 화면은 그대로여서, 고른 것이 아무 일도 하지 않는 것처럼 보였다.
+    // 고를 것이 없을 때만(아직 아무것도 안 잡혔을 때) 전부 보여 준다.
+    for (const r of (pick ? rows.filter((x) => x.ctx === pick) : rows)) {
       const p = r.payload;
       const same = r.ctx === room && !(r.kind === "dc_create_opened" || r.kind === "dc_source_opened");
       if (!same) flush();
@@ -184,21 +201,7 @@ export default function WatchDoc() {
     }
     flush();
     return out;
-  }, [rows, docs]);
-
-  // 마지막 걸음이 '끝'이 아니면 아직 돌고 있다. 기록이 끊긴 지 오래면 멈춘 것으로 본다.
-  const last = [...rows].reverse().find((r) => r.kind === "dc_step");
-  const lastStep = last?.payload;
-  const busy = !!lastStep && lastStep.phase !== "끝" && lastStep.phase !== "멈춤";
-  // **저절로 따라가는 것은 에이전트가 손댄 문서뿐이다.** 인쇄 검수에 올린 파일도 이 PC에서 일어난
-  // 일이라 위 줄에는 남지만, 그걸 '그 문서'로 잡으면 **만들지도 않은 파일이 기본값처럼 떠 있다** —
-  // 여는 사람은 그걸 앱이 끼워 둔 견본으로 읽는다. 올린 것은 인쇄 검수 화면이 맡는다.
-  const live = last?.ctx ?? "";
-
-  // 아래 칸이 보는 문서. **새 일이 시작되면 저절로 그쪽을 따라간다** — 번호를 지운 자리에
-  // 다시 '무엇을 고르세요'를 놓으면 아무것도 나아지지 않는다. 사람이 고르면 그때부터 머문다.
-  // 상태로 두지 않고 계산한다(효과 안에서 상태를 바꾸면 한 박자 늦게 그려진다).
-  const pick = pinned && chosen ? chosen : (live || chosen);
+  }, [rows, docs, pick]);
 
   // 고른 것만 바꾼다. 다시 받아 오는 일은 아래 두 효과가 알아서 한다 — 그 둘이 보는 꼬리표에
   // 고른 문서가 들어 있어서, 문서가 바뀌면 꼬리표가 바뀐다.
