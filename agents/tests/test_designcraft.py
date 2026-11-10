@@ -933,3 +933,14 @@ def test_unknown_layout_kinds_are_dropped(tmp_path, monkeypatch):
         input={"src_ref": "tok", "filename": "a.idml", "layout": ["margin", "rm -rf", "intent"]})))
     assert r["status"] == "input-required"
     assert "자리·크기 2가지" in r["question"]["text"]
+
+
+def test_what_the_engine_says_while_exporting_is_said_in_korean():
+    """검사 결과만 우리말로 옮기고 내보낼 때의 경고를 영어로 두면, 고친 자리에 영어 한 줄이
+    섞여 거기서 읽기가 끊긴다. 같은 자리에 적히는 말은 같은 말투여야 한다."""
+    assert issue_text.ko("PDF/X-4: form fields and media were left out").startswith("PDF/X-4: 입력 양식")
+    got = issue_text.ko("PDF/X-4: RGB fills or strokes on page 4: "
+                        "under a CMYK output intent RGB needs an ICC profile")
+    assert "4쪽에 RGB 색" in got and got.startswith("PDF/X-4:")
+    assert "만든 날짜" in issue_text.ko("PDF/X-4: the XMP metadata date couldn't be added")
+    assert "투명을 눌러 없애지 못했습니다" in issue_text.ko("PDF/X-1a: the transparency flattener failed: oops")

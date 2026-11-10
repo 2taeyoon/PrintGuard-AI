@@ -511,7 +511,8 @@ def _export_pdf(m: Mcp, path: Path, standard: str) -> tuple[list[dict[str, Any]]
     if standard:
         try:
             r = m.ex("file.exportPdf", path=str(path), standard=standard) or {}
-            warn = [str(w) for w in (r.get("warnings") or [])][:5]
+            # 엔진이 남기는 말도 우리말로. 고친 자리에 영어 한 줄이 섞이면 거기서 읽기가 끊긴다
+            warn = [issue_text.ko(w) for w in (r.get("warnings") or [])][:5]
             done.append({"kind": "intent", "page": None,
                          "what": f"PDF를 {PDF_STD_KO.get(standard, standard)}로 내보냈습니다 — 출력 의도가 들어갑니다"
                                  + (f". 엔진이 남긴 말: {' / '.join(warn)}" if warn else "")})

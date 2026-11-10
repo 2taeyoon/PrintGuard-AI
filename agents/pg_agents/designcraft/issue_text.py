@@ -49,6 +49,21 @@ _RULES: list[tuple[re.Pattern[str], Callable[[re.Match[str]], str]]] = [
     (re.compile(r"^Placed graphic layer visibility overrides are preserved but are not applied "
                 r"to rendering or PDF output$"),
      lambda _m: "앉힌 그림의 레이어 표시 설정은 파일에 그대로 남지만, 미리보기와 PDF에는 반영되지 않습니다"),
+    # ── 내보낼 때 엔진이 남기는 말 ── 검사 결과는 아니지만 같은 자리에 같은 말투로 적힌다.
+    # PDF/X-4: form fields and media were left out
+    (re.compile(r"^(PDF/[\w-]+): form fields and media were left out$"),
+     lambda m: f"{m[1]}: 입력 양식과 동영상·소리는 빼고 내보냈습니다 — 이 규격이 담지 못합니다"),
+    # PDF/X-4: the XMP metadata date couldn't be added
+    (re.compile(r"^(PDF/[\w-]+): the XMP metadata date couldn't be added$"),
+     lambda m: f"{m[1]}: 만든 날짜(XMP)를 적지 못했습니다"),
+    # PDF/X-4: RGB fills or strokes on page 4: under a CMYK output intent RGB needs an ICC profile
+    (re.compile(r"^(PDF/[\w-]+): RGB fills or strokes on page (\d+): "
+                r"under a CMYK output intent RGB needs an ICC profile$"),
+     lambda m: f"{m[1]}: {m[2]}쪽에 RGB 색이 그대로 있습니다 — CMYK 출력 의도에서는 "
+               f"RGB에 ICC 프로파일이 있어야 합니다"),
+    # PDF/X-1a: the transparency flattener failed: …
+    (re.compile(r"^(PDF/[\w-]+): the transparency flattener failed: (.+)$"),
+     lambda m: f"{m[1]}: 투명을 눌러 없애지 못했습니다 — {m[2]}"),
 ]
 
 
