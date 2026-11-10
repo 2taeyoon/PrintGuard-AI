@@ -9,6 +9,22 @@ import type { Issue } from "./analyze";
 
 export type Fix = { page: number | null; original: string; suggestion: string; key?: string };
 
+/** **글자 말고 자리와 크기로 고치는 것.** 맞춤법만 고쳐 주고 나머지는 전부 '사람이 보고
+ *  판단할 항목'으로 넘기고 있었다. 그런데 이 셋은 사람이 인디자인에서 하는 일이 정해져 있다 —
+ *  그래서 편집 파일(.idml)로 맡기시면 검수 끝에 묻고 기계가 한다(designcraft `apply_fixes`).
+ *
+ *  사진은 **줄이기만** 한다. 없는 화소를 만들어 낼 수는 없으니, 크게 써야 하면 사진을 바꾸는
+ *  수밖에 없고 그건 사람이 정할 일이다. */
+export const LAYOUT_FIX: Record<string, string> = {
+  resolution: "사진을 150ppi가 되는 크기로 줄입니다(크게 쓰시려면 사진을 바꿔야 합니다)",
+  safe: "글상자를 여백 안으로 들여놓습니다",
+  clip: "글상자를 여백 안으로 들여놓습니다",
+  intent: "PDF/X-4로 다시 내보내 출력 의도를 넣습니다",
+};
+/** 기계가 고칠 수 있는가. 글자 교정이 붙어 있거나, 자리·크기로 고치는 종류이거나. */
+export const autoFixOf = (i: { kind: string; edit?: { original: string; suggestion: string } }): string =>
+  (i.edit?.original && i.edit.suggestion) ? "글자를 찾아 바꿉니다" : (LAYOUT_FIX[i.kind] ?? "");
+
 const ESC = (s: string) => s.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/[\r\n]+/g, " ").trim();
 
 /** `\|`는 글자 그대로의 `|`다. 그 자리에서 풀어야 칸 나누기와 안 헷갈린다. */
@@ -33,7 +49,10 @@ function splitCells(line: string): string[] {
 /** 검수 결과 → 붙여넣기용 글. 고칠 수 있는 것과 사람이 봐야 하는 것을 나눠 적는다. */
 export function buildFixText(issues: Issue[], opts: { filename?: string; mode?: string } = {}): string {
   const editable = issues.filter((i) => i.edit?.original && i.edit.suggestion);
-  const manual = issues.filter((i) => !(i.edit?.original && i.edit.suggestion));
+  // 자리·크기로 고치는 것은 '쪽 | 원래 | 수정' 줄로 적을 수 없다(바꿀 글자가 없다). 그래도
+  // 사람이 못 고치는 것처럼 보이면 안 되므로, 무엇이 자동으로 되는지 따로 적는다.
+  const layout = issues.filter((i) => !(i.edit?.original && i.edit.suggestion) && LAYOUT_FIX[i.kind]);
+  const manual = issues.filter((i) => !(i.edit?.original && i.edit.suggestion) && !LAYOUT_FIX[i.kind]);
   const when = new Date().toLocaleString("ko-KR", { dateStyle: "medium", timeStyle: "short" });
   const L = [
     "# PrintGuard 검수 결과",
@@ -45,6 +64,12 @@ export function buildFixText(issues: Issue[], opts: { filename?: string; mode?: 
     for (const i of editable) L.push(`${i.page || ""} | ${ESC(i.edit!.original)} | ${ESC(i.edit!.suggestion)}`);
   } else {
     L.push("# (자동으로 고칠 수 있는 항목이 없습니다)");
+  }
+  if (layout.length) {
+    L.push("", `# ─── 자리·크기로 고치는 항목 ${layout.length}건 (편집 파일로 맡기시면 묻고 고칩니다) ───`);
+    for (const i of layout) {
+      L.push(`# ${i.page ? `${i.page}쪽 ` : ""}${i.title.replace(/[\r\n]+/g, " ")} → ${LAYOUT_FIX[i.kind]}`);
+    }
   }
   if (manual.length) {
     L.push("", `# ─── 사람이 보고 판단할 항목 ${manual.length}건 (자동으로 못 고칩니다) ───`);

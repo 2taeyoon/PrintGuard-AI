@@ -88,11 +88,15 @@ CARD = AgentCard.model_validate({
                            "glyph_blocked": "string[] 글꼴에 그 글자가 없어 PDF에 찍히지 않은 곳",
                            "document_fonts": "number 올린 패키지의 Document Fonts/에서 실려 온 글꼴 수",
                            "trust": "{text_readable, layout_faithful} 미리보기를 어디까지 믿을 수 있는가"}},
-        {"id": "apply_fixes", "description": "교정 목록을 원본에 반영하고 PDF로 내보낸다(묻고 나서 고치며, 파일 쓰기는 safety를 거친다)", "grade": "A",
+        {"id": "apply_fixes", "description": "교정과 자리·크기 문제를 원본에 반영하고 PDF로 내보낸다(묻고 나서 고치며, 파일 쓰기는 safety를 거친다)", "grade": "A",
          "allowed_requesters": ["orchestrator"],
          "input_schema": {"src_ref": "sha256", "filename": "string", "confirm": "yes | no (없으면 사용자에게 묻는다)",
-                          "fixes": "[{page?: number(1부터), original: string, suggestion: string, key?: string}]"},
+                          "fixes": "[{page?: number(1부터), original: string, suggestion: string, key?: string}]",
+                          "layout": "string[] 자리·크기로 고칠 것 — resolution(사진을 기준 ppi로 줄이기) | "
+                                    "margin(여백 밖 글상자 들여놓기) | intent(PDF/X-4로 내보내 출력 의도 넣기)"},
          "output_schema": {"applied": "[]", "failed": "[]", "pdf_ref": "sha256", "source_out": "고친 편집 파일 이름",
+                           "layout_applied": "[{kind, page, item, what}] 자리·크기로 고친 것",
+                           "layout_failed": "[{kind, page, item, reason}] 고치지 못한 것과 그 이유",
                            "shots": "[{page, before, after}] 바뀐 쪽의 전후 그림",
                            "fonts": "[]", "missing_fonts": "string[]", "trust": "{}"}},
         {"id": "compose", "description": "말로 부탁한 것을 엔진 명령으로 짜 준다(짜 주기만 하고 고치지는 않는다)", "grade": "read",
@@ -397,7 +401,136 @@ def _shot(m: Mcp, page: int, path: Path) -> bool:
         return False
 
 
-def _apply_blocking(src: Path, ext: str, out: Path, fixes: list[dict[str, Any]]) -> dict[str, Any]:
+# ---------- 자리와 크기로 고치는 것 ----------
+# **맞춤법만 고쳐 주던 자리다.** 그런데 '사진이 32ppi다', '글이 재단선에 붙었다', '출력 의도가
+# 없다'도 인디자인을 열어 사람이 하는 일은 **정해져 있다** — 사진을 줄이고, 글상자를 여백 안으로
+# 들여놓고, 내보낼 때 PDF/X를 고르는 것. 정해진 일이면 기계가 한다.
+#
+# 대신 두 가지를 지킨다.
+# 1. **무엇을 어떻게 바꿨는지 한 줄씩 적어** 돌려준다. 자리와 크기는 눈에 띄는 변화라,
+#    무엇이 움직였는지 모르면 고쳐 준 것이 아니라 망가뜨린 것으로 읽힌다.
+# 2. 사진은 **줄이기만** 한다. 없는 화소를 만들어 낼 수는 없다 — 크게 쓰고 싶으면 사진을
+#    바꾸는 수밖에 없고, 그건 사람이 정할 일이다.
+MIN_PPI = max(72, int(os.environ.get("PG_DESIGNCRAFT_MIN_PPI", "150")))
+# 여백을 벗어난 글상자를 들여놓을 때, 이보다 작게 어긋난 것은 그냥 둔다(0.5pt ≈ 0.18mm).
+MARGIN_SLACK = 0.5
+_PPI_SAYS = re.compile(r"effective (\d+(?:\.\d+)?) ppi")
+
+
+def _shrink_low_res(m: Mcp) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """해상도가 모자란 사진을 **기준 ppi가 되는 크기로 줄인다.**
+
+    고르는 자리는 엔진의 검사 결과다 — 그 줄이 사진의 `item` 번호와 지금 ppi를 같이 들고 있어,
+    어느 사진인지 짐작으로 맞출 일이 없다(쪽과 네모로 더듬어 찾으면 같은 쪽의 다른 사진을 줄인다).
+    """
+    done: list[dict[str, Any]] = []
+    bad: list[dict[str, Any]] = []
+    pf = m.ex("preflight.run", minPpi=MIN_PPI) or {}
+    low = [i for i in pf.get("issues", []) if i.get("kind") == "lowResolution"]
+    if not low:
+        return done, bad
+    doc = m.tool("inspect_document")
+    box = {it["id"]: it["bounds"] for sp in doc.get("spreads", []) for it in sp.get("items", [])}
+    for i in low:
+        iid = i.get("item")
+        page = (i["page"] + 1) if isinstance(i.get("page"), int) else None
+        said = _PPI_SAYS.search(str(i.get("message") or ""))
+        note = {"kind": "resolution", "page": page, "item": iid}
+        if iid not in box or not said:
+            bad.append({**note, "reason": "어느 사진인지 가릴 수 없습니다"})
+            continue
+        ppi = float(said[1])
+        if ppi <= 0:
+            bad.append({**note, "reason": "해상도를 읽지 못했습니다"})
+            continue
+        x0, y0, x1, y1 = box[iid]
+        k = ppi / MIN_PPI          # 줄이는 비율. 넓이가 반이 되면 ppi는 두 배가 된다
+        to = [x0, y0, x0 + (x1 - x0) * k, y0 + (y1 - y0) * k]
+        try:
+            m.ex("transform.resize", **{"from": box[iid], "to": to, "ids": [iid], "content": True})
+        except McpError as e:
+            bad.append({**note, "reason": f"줄이지 못했습니다: {e}"[:200]})
+            continue
+        done.append({**note, "what": f"사진을 {MIN_PPI}ppi가 되도록 줄였습니다"
+                                     f"({ppi:.0f}ppi → {MIN_PPI}ppi, 가로 {(x1 - x0) / MM:.0f}mm → "
+                                     f"{(x1 - x0) * k / MM:.0f}mm). 크게 쓰시려면 사진을 바꿔야 합니다"})
+    return done, bad
+
+
+def _pull_inside_margin(m: Mcp) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """여백을 벗어난 **글상자**를 여백 안으로 들여놓는다.
+
+    사진은 건드리지 않는다. 사진이 여백을 넘는 것은 흔히 **일부러** 한 것이다(도련까지 깔아야
+    재단 뒤에 흰 줄이 안 생긴다). 잘려서 큰일 나는 것은 글자다.
+    """
+    done: list[dict[str, Any]] = []
+    bad: list[dict[str, Any]] = []
+    doc = m.tool("inspect_document")
+    for sp in doc.get("spreads", []):
+        for pg in sp.get("pages", []):
+            rects = pg.get("columnRects") or []
+            if not rects:
+                continue
+            mx0, my0, mx1, my1 = rects[0]          # 여백 안쪽 네모(= 글이 앉아야 하는 자리)
+            page = int(pg.get("index", 0)) + 1
+            for it in sp.get("items", []):
+                if it.get("kind") != "<text frame>" or it.get("locked"):
+                    continue
+                x0, y0, x1, y1 = it["bounds"]
+                # 벗어난 쪽으로 밀어 넣는다. 양쪽으로 다 넘치면(= 여백보다 크면) 아래에서 걸린다
+                dx = max(0.0, mx0 - x0) - max(0.0, x1 - mx1)
+                dy = max(0.0, my0 - y0) - max(0.0, y1 - my1)
+                if abs(dx) < MARGIN_SLACK and abs(dy) < MARGIN_SLACK:
+                    continue
+                note = {"kind": "margin", "page": page, "item": it["id"]}
+                if (x1 - x0) > (mx1 - mx0) + MARGIN_SLACK or (y1 - y0) > (my1 - my0) + MARGIN_SLACK:
+                    bad.append({**note, "reason": "글상자가 여백보다 커서 옮기는 것으로는 들어가지 않습니다"})
+                    continue
+                try:
+                    m.ex("transform.move", dx=round(dx, 3), dy=round(dy, 3), ids=[it["id"]])
+                except McpError as e:
+                    bad.append({**note, "reason": f"옮기지 못했습니다: {e}"[:200]})
+                    continue
+                done.append({**note, "what": f"글상자를 여백 안으로 들여놓았습니다"
+                                             f"(가로 {dx / MM:+.1f}mm, 세로 {dy / MM:+.1f}mm)"})
+    return done, bad
+
+
+PDF_STD_KO = {"x4": "PDF/X-4", "x1a": "PDF/X-1a", "a2b": "PDF/A-2b"}
+
+
+def _export_pdf(m: Mcp, path: Path, standard: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """PDF로 내보낸다. `standard`가 있으면 그 규격으로 — **출력 의도는 여기서 들어간다.**
+
+    '출력 의도(Output Intent) 미지정'은 문서의 흠이 아니라 **내보내기 설정**이다. PDF/X로
+    내보내면 어떤 인쇄 조건을 기준으로 만든 PDF인지가 파일 안에 적힌다. 규격을 못 맞추면
+    (글꼴을 못 심는 따위) 그냥 내보낸다 — 고치는 일 전체를 여기서 멈출 까닭이 없다.
+    """
+    done: list[dict[str, Any]] = []
+    bad: list[dict[str, Any]] = []
+    if standard:
+        try:
+            r = m.ex("file.exportPdf", path=str(path), standard=standard) or {}
+            warn = [str(w) for w in (r.get("warnings") or [])][:5]
+            done.append({"kind": "intent", "page": None,
+                         "what": f"PDF를 {PDF_STD_KO.get(standard, standard)}로 내보냈습니다 — 출력 의도가 들어갑니다"
+                                 + (f". 엔진이 남긴 말: {' / '.join(warn)}" if warn else "")})
+            return done, bad
+        except McpError as e:
+            bad.append({"kind": "intent", "page": None,
+                        "reason": f"{PDF_STD_KO.get(standard, standard)}로 내보내지 못해 보통 PDF로 내보냈습니다: {e}"[:300]})
+    m.ex("file.exportPdf", path=str(path))
+    return done, bad
+
+
+# 바깥에서 고르라고 열어 두지 않는다. 인쇄소가 받는 꼴이 X-4이고, 그보다 옛 규격(X-1a)은
+# 투명을 눌러 없애므로 '고쳐 준다면서 모양을 바꾸는' 일이 된다.
+PDF_STANDARD = os.environ.get("PG_DESIGNCRAFT_PDF_STANDARD", "x4")
+LAYOUT_KINDS = ("resolution", "margin", "intent")
+
+
+def _apply_blocking(src: Path, ext: str, out: Path, fixes: list[dict[str, Any]],
+                    layout: list[str] | None = None) -> dict[str, Any]:
     applied: list[dict[str, Any]] = []
     failed: list[dict[str, Any]] = []
     with Mcp(read_roots=[_pkg_root(src), out], write_roots=[out]) as m:
@@ -443,45 +576,85 @@ def _apply_blocking(src: Path, ext: str, out: Path, fixes: list[dict[str, Any]])
                 continue
             applied.append({**note, "story": hit["story"], "at": [hit["start"], hit["end"]]})
 
+        # ── 글자 다음에 자리와 크기 ──
+        # 글자를 먼저 고친다. 글이 줄거나 늘면 넘침이 달라지고, 그 뒤에 글상자를 옮겨야
+        # 옮긴 자리가 최종 모습이다. 사진 줄이기는 글과 상관이 없어 순서를 타지 않는다.
+        want = [k for k in LAYOUT_KINDS if k in set(layout or [])]
+        lay_done: list[dict[str, Any]] = []
+        lay_bad: list[dict[str, Any]] = []
+        if "resolution" in want:
+            a, b = _shrink_low_res(m)
+            lay_done += a
+            lay_bad += b
+        if "margin" in want:
+            a, b = _pull_inside_margin(m)
+            lay_done += a
+            lay_bad += b
+        # 자리를 옮긴 쪽도 전후 그림을 찍을 자리다. 다만 '수정 전'은 이미 지나갔으므로
+        # 새로 더하지 않는다 — 비교 그림 없이 '무엇을 바꿨다'는 줄로 알린다.
+
         shot_pages = [p for p in shot_pages if _shot(m, p, out / f"after_p{p}.png")]
         pdf = out / "fixed.pdf"
-        m.ex("file.exportPdf", path=str(pdf))
+        a, b = _export_pdf(m, pdf, PDF_STANDARD if "intent" in want else "")
+        lay_done += a
+        lay_bad += b
         # 받는 형식은 둘 다 같은 형식으로 돌려준다
         s = out / ("fixed.idml" if ext == ".idml" else "fixed.designcraft")
         m.ex("file.exportIdml" if ext == ".idml" else "file.saveAs", path=str(s))
         source_out = s.name
         # 고친 뒤 남은 문제도 알려 준다(교정이 넘침을 새로 만들었을 수 있다)
-        pf = m.ex("preflight.run", minPpi=150) or {}
+        pf = m.ex("preflight.run", minPpi=MIN_PPI) or {}
         # 글꼴은 **건드리지 않았다.** 그래도 상태를 같이 내보낸다 — 내려받은 PDF가 원본과 다르게
         # 보이는 이유를 그 자리에서 알 수 있어야 하기 때문이다.
         fonts = _fonts(m)
     return {"applied": applied, "failed": failed, "pdf_path": str(pdf), "source_out": source_out,
+            "layout_applied": lay_done, "layout_failed": lay_bad,
             **_font_summary(fonts, pf.get("issues", [])),
             "shots": [{"page": p, "before": f"before_p{p}.png", "after": f"after_p{p}.png"} for p in shot_pages],
             "shots_total": want_total,
             "preflight_after": issue_text.rows(pf.get("issues", []))}
 
 
-def _ask_first(fixes: list[dict[str, Any]], filename: str) -> dict[str, Any]:
+LAYOUT_KO = {
+    "resolution": f"해상도가 모자란 사진을 {MIN_PPI}ppi가 되는 크기로 줄이기",
+    "margin": "여백을 벗어난 글상자를 여백 안으로 들여놓기",
+    "intent": "PDF를 PDF/X-4로 내보내 출력 의도 넣기",
+}
+
+
+def _ask_first(fixes: list[dict[str, Any]], layout: list[str], filename: str) -> dict[str, Any]:
     """고치기 전에 묻는다. **원본을 바꾸는 일이라 되돌릴 수 없다** — 검수를 맡겼다고 해서
-    원본을 고쳐도 된다는 뜻은 아니다. 무엇을 고치는지 앞의 몇 건을 그대로 보여 준다."""
+    원본을 고쳐도 된다는 뜻은 아니다. 무엇을 고치는지 앞의 몇 건을 그대로 보여 준다.
+
+    자리·크기 교정은 글자 교정과 **다른 말로** 적는다. 글자는 '무엇을 무엇으로'가 전부지만,
+    자리와 크기는 눈에 보이는 모양이 바뀐다 — 무엇이 움직이는지 모르고 누르면 안 된다.
+    """
     sample = "  ·  ".join(f"{f.get('original')} → {f.get('suggestion')}" for f in fixes[:3])
+    more = f" 외 {len(fixes) - 3}건" if len(fixes) > 3 else ""
+    lay = [LAYOUT_KO[k] for k in LAYOUT_KINDS if k in set(layout)]
+    what = " · ".join(x for x in [f"글자 교정 {len(fixes)}건" if fixes else "",
+                                  f"자리·크기 {len(lay)}가지" if lay else ""] if x)
     return {"status": "input-required", "reason_code": "customer_input", "output": {},
             "question": {
                 "field": "apply_fixes",
-                "text": f"교정 {len(fixes)}건을 원본({filename})에 바로 반영할까요?",
-                "why": f"{sample}{' 외 ' + str(len(fixes) - 3) + '건' if len(fixes) > 3 else ''} — "
-                       "올린 원본은 그대로 두고 고친 사본을 PDF와 IDML로 내려 드립니다. "
-                       "찾지 못했거나 같은 문구가 여러 군데인 교정은 건너뛰고 이유를 적습니다.",
+                "text": f"{what}를 원본({filename})에 바로 반영할까요?",
+                "why": (f"{sample}{more}. " if fixes else "")
+                       + ("".join(f"[{x}] " for x in lay) if lay else "")
+                       + "— 올린 원본은 그대로 두고 고친 사본을 PDF와 IDML로 내려 드립니다. "
+                         "찾지 못했거나 같은 문구가 여러 군데인 교정은 건너뛰고 이유를 적습니다.",
                 "options": [
-                    {"value": "yes", "label": "원본 고치기", "hint": "DesignCraft가 글자를 찾아 바꾸고 다시 내보냅니다"},
+                    {"value": "yes", "label": "원본 고치기", "hint": "DesignCraft가 글자를 찾아 바꾸고, 자리와 크기를 고쳐 다시 내보냅니다"},
                     {"value": "no", "label": "검수만 하기", "hint": "교정 목록은 결과에 그대로 남습니다"},
                 ]}}
 
 
 async def apply_fixes(req: AgentRequest) -> dict[str, Any]:
     fixes = req.input.get("fixes") or []
-    if not isinstance(fixes, list) or not fixes:  # 파일을 들추기 전에 싼 검사부터
+    fixes = fixes if isinstance(fixes, list) else []
+    # 자리·크기로 고칠 것. **무엇을 고칠지만** 받는다(어느 사진·어느 글상자인지는 엔진이 연 문서에서
+    # 찾는다) — 검수는 PDF를 보고 번호를 매기고, 고치는 것은 편집 파일이라 그 둘의 번호가 다르다.
+    layout = [k for k in LAYOUT_KINDS if k in set(req.input.get("layout") or [])]
+    if not fixes and not layout:  # 파일을 들추기 전에 싼 검사부터
         return {"status": "rejected", "outcome": "INVALID_INPUT", "output": {"message": "반영할 교정이 없습니다"}}
     src_ref, filename = str(req.input.get("src_ref") or ""), str(req.input.get("filename") or "")
     src, ext = _src_path(src_ref, filename)
@@ -490,31 +663,37 @@ async def apply_fixes(req: AgentRequest) -> dict[str, Any]:
     # 사람이 직접 '반영' 단추를 누른 길(앱의 원본 수정)은 confirm을 들고 온다.
     want = str(req.input.get("confirm") or "")
     if want not in ("yes", "no"):
-        return _ask_first(fixes, Path(filename).name)
+        return _ask_first(fixes, layout, Path(filename).name)
     if want == "no":
         return {"status": "completed", "outcome": "skipped",
-                "output": {"skipped": True, "applied": [], "failed": [], "asked": len(fixes)},
-                "evidence": {"queries": [], "ref_ids": [], "data_summary": f"교정 {len(fixes)}건을 반영하지 않기로 했습니다"}}
+                "output": {"skipped": True, "applied": [], "failed": [], "asked": len(fixes),
+                           "asked_layout": layout},
+                "evidence": {"queries": [], "ref_ids": [],
+                             "data_summary": f"교정 {len(fixes)}건과 자리·크기 {len(layout)}가지를 반영하지 않기로 했습니다"}}
 
     # 파일을 쓰는 행동이므로 safety를 거친다(A 등급). 닿지 못하면 거절한다(fail-closed).
-    key = "designcraft:" + hashlib.sha256(f"{req.meta.context_id}|{src_ref}|{len(fixes)}".encode()).hexdigest()[:20]
+    key = "designcraft:" + hashlib.sha256(
+        f"{req.meta.context_id}|{src_ref}|{len(fixes)}|{','.join(layout)}".encode()).hexdigest()[:20]
     gate = await call_agent("safety", AgentRequest(
         meta=req.meta.model_copy(update={"idempotency_key": key}), skill="execute",
         input={"action": "designcraft.apply_fixes", "idempotency_key": key,
-               "params": {"context_id": req.meta.context_id, "fixes": len(fixes), "ext": ext}}))
+               "params": {"context_id": req.meta.context_id, "fixes": len(fixes), "layout": layout, "ext": ext}}))
     d = gate.output if gate.status == TaskStatus.COMPLETED else None
     if not d or d.get("decision") != "executed":
         return {"status": "rejected", "outcome": "SAFETY_REJECTED",
                 "output": {"reason": (d or {}).get("reason", "safety에 닿지 못해 거절(fail-closed)")}}
 
     out = _job_dir(req.meta.context_id)
-    r = await asyncio.to_thread(_apply_blocking, src, ext, out, fixes)
+    r = await asyncio.to_thread(_apply_blocking, src, ext, out, fixes, layout)
     r["pdf_ref"] = await asyncio.to_thread(_store_pdf, Path(r.pop("pdf_path")))
     r["decision"] = d
     n, bad = len(r["applied"]), len(r["failed"])
-    return {"status": "completed" if not bad else "completed", "outcome": "partial" if bad else None, "output": r,
+    ln, lbad = len(r["layout_applied"]), len(r["layout_failed"])
+    return {"status": "completed", "outcome": "partial" if (bad or lbad) else None, "output": r,
             "evidence": {"queries": [], "ref_ids": [d["execution_id"], r["pdf_ref"][:12]],
-                         "data_summary": f"교정 {n + bad}건 중 {n}건 반영, {bad}건 실패"}}
+                         "data_summary": f"교정 {n + bad}건 중 {n}건 반영, {bad}건 실패"
+                                         + (f" · 자리·크기 {ln}곳 고침" if ln else "")
+                                         + (f", {lbad}곳 못 고침" if lbad else "")}}
 
 
 MM = 72 / 25.4          # 1mm는 몇 pt인가. DesignCraft의 길이는 전부 pt다
