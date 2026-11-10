@@ -35,6 +35,7 @@ export default function FixResultPanel({ ctx, filename, r }: { ctx: string; file
   }
 
   const applied = r.applied ?? [], failed = r.failed ?? [], shots = r.shots ?? [];
+  const lay = r.layout_applied ?? [], layBad = r.layout_failed ?? [];
   // 손댄 쪽을 차례대로. 쪽을 모르는 건(0)은 맨 뒤로 보낸다.
   const pages = [...new Set([...applied, ...failed].map((x) => x.page ?? 0))]
     .sort((a, b) => (a === 0 ? 1 : b === 0 ? -1 : a - b));
@@ -70,6 +71,26 @@ export default function FixResultPanel({ ctx, filename, r }: { ctx: string; file
       {(r.shots_total ?? 0) > shots.length && (
         <p className="note">바뀐 쪽이 {r.shots_total}쪽인데 앞의 {shots.length}쪽만 그렸습니다.
           나머지는 내려받은 PDF에서 보세요.</p>
+      )}
+
+      {/* 자리·크기로 고친 것은 **따로 적는다.** 글자 교정은 '무엇을 무엇으로'가 전부지만,
+          이쪽은 눈에 보이는 모양이 바뀐 것이라 무엇이 얼마나 움직였는지 적어야 확인할 수 있다. */}
+      {(lay.length > 0 || layBad.length > 0) && (
+        <>
+          <h3 className="dc_sub">자리·크기로 고친 것 {lay.length}곳</h3>
+          <ul className="dc_log">
+            {lay.map((x, i) => (
+              <li key={`l${i}`} className="ok">
+                <b>{x.page ? `${x.page}쪽` : "문서 전체"}</b> <span className="arrow">→</span> {x.what}
+              </li>
+            ))}
+            {layBad.map((x, i) => (
+              <li key={`lb${i}`} className="bad">
+                <b>{x.page ? `${x.page}쪽` : "문서 전체"}</b> <span className="why">{x.reason}</span>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
 
       {/* **쪽을 기준으로 묶는다.** 들어간 것과 못 들어간 것을 따로 늘어놓으면, '내가 보고 있는

@@ -797,3 +797,139 @@ def test_rows_counts_pages_from_one():
     assert r[0]["page"] == 2 and r[0]["message"].startswith("글상자 밖으로 넘친 글 7자")
     assert r[1]["page"] is None and r[1]["kind"] == "rgbColor"
     assert issue_text.rows(None) == []
+
+
+# ---------- 자리와 크기로 고치기 ----------
+# 맞춤법만 고쳐 주던 자리다. 사진 해상도·여백 침범·출력 의도는 사람이 인디자인에서 하는 일이
+# 정해져 있어서, 기계가 할 수 있다. 여기서 보는 것은 **정말 고쳐지는가**와 **고치면 안 되는 것을
+# 건드리지 않는가** 둘이다.
+def _doc_with_layout_problems(tmp_path, m) -> None:
+    """낮은 해상도 사진 한 장 + 여백을 벗어난 글상자 + 도련까지 깔린 사진(건드리면 안 된다)."""
+    png = tmp_path / "small.png"
+    png.write_bytes(_png(40, 40))                      # 40px짜리를 크게 앉히면 해상도가 모자란다
+    m.tool("new_document", {"preset": "A4", "margins": 36})
+    m.ex("file.place", path=str(png), x=36, y=36, width=400)        # 40px / (400pt/72) ≈ 7ppi
+    m.ex("frame.create", rect=[4, 4, 300, 30], content="text")      # 여백(36pt) 밖에 있는 글상자
+    m.ex("type.char", attrs={"fontFamily": "Malgun Gothic", "size": 11})
+    m.ex("text.insert", text="재단선에 바싹 붙은 제목")
+
+
+@needs_cli
+def test_a_photo_too_coarse_to_print_is_shrunk_until_it_is_not(tmp_path):
+    """**없는 화소를 만들어 낼 수는 없다.** 그래서 고치는 길은 줄이는 것 하나뿐이고, 줄이면
+    실제로 기준 해상도를 넘는다 — 그걸 확인한다(줄였다고 적어 놓고 안 줄면 거짓말이 된다)."""
+    with Mcp(read_roots=[tmp_path], write_roots=[tmp_path]) as m:
+        _doc_with_layout_problems(tmp_path, m)
+        before = [i for i in (m.ex("preflight.run", minPpi=150) or {}).get("issues", [])
+                  if i["kind"] == "lowResolution"]
+        assert before, "시험할 거리가 없다 — 낮은 해상도 사진이 안 만들어졌다"
+        done, bad = dc._shrink_low_res(m)                # noqa: SLF001
+        after = [i for i in (m.ex("preflight.run", minPpi=150) or {}).get("issues", [])
+                 if i["kind"] == "lowResolution"]
+    assert len(done) == len(before) and not bad, (done, bad)
+    assert not after, after
+    assert "ppi" in done[0]["what"] and "사진을 바꿔야" in done[0]["what"]
+
+
+@needs_cli
+def test_text_outside_the_margin_is_pulled_in_and_a_full_bleed_photo_is_left_alone(tmp_path):
+    """글상자는 들여놓고 **사진은 그대로 둔다.** 사진이 여백을 넘는 것은 흔히 일부러 한 것이다 —
+    도련까지 깔지 않으면 재단 뒤에 흰 줄이 생긴다. 그걸 '고쳐' 버리면 인쇄가 망가진다."""
+    png = tmp_path / "bleed.png"
+    png.write_bytes(_png(40, 40))
+    with Mcp(read_roots=[tmp_path], write_roots=[tmp_path]) as m:
+        m.tool("new_document", {"preset": "A4", "margins": 36})
+        m.ex("file.place", path=str(png), x=-9, y=-9, width=620)     # 도련까지 깔린 사진
+        m.ex("frame.create", rect=[4, 4, 300, 30], content="text")
+        m.ex("type.char", attrs={"fontFamily": "Malgun Gothic", "size": 11})
+        m.ex("text.insert", text="여백 밖의 제목")
+        done, bad = dc._pull_inside_margin(m)                        # noqa: SLF001
+        doc = m.tool("inspect_document")
+        kinds = {it["id"]: it["kind"] for sp in doc["spreads"] for it in sp["items"]}
+        box = {it["id"]: it["bounds"] for sp in doc["spreads"] for it in sp["items"]}
+        rect = doc["spreads"][0]["pages"][0]["columnRects"][0]
+    assert len(done) == 1 and not bad, (done, bad)
+    moved = done[0]["item"]
+    assert kinds[moved] == "<text frame>", "사진을 옮겼다"
+    x0, y0, x1, y1 = box[moved]
+    assert x0 >= rect[0] - 0.5 and y0 >= rect[1] - 0.5, (box[moved], rect)
+    # 도련 사진은 있던 자리에 그대로 있다
+    img = next(i for i, k in kinds.items() if k == "<image>")
+    assert box[img][0] < rect[0], "도련까지 깔린 사진을 여백 안으로 끌어들였다"
+
+
+@needs_cli
+def test_a_box_bigger_than_the_margin_says_so_instead_of_moving_it(tmp_path):
+    """옮겨도 안 들어가는 것은 옮기지 않는다. 밀어 넣어 봐야 반대쪽이 튀어나오고, 그러면
+    '고쳤다'는 줄만 남고 문제는 그대로다."""
+    with Mcp(read_roots=[tmp_path], write_roots=[tmp_path]) as m:
+        m.tool("new_document", {"preset": "A4", "margins": 36})
+        m.ex("frame.create", rect=[4, 4, 580, 820], content="text")   # 여백보다 큰 글상자
+        m.ex("type.char", attrs={"fontFamily": "Malgun Gothic", "size": 11})
+        m.ex("text.insert", text="쪽을 거의 다 덮는 글상자")
+        done, bad = dc._pull_inside_margin(m)                          # noqa: SLF001
+    assert not done and len(bad) == 1
+    assert "여백보다 커서" in bad[0]["reason"]
+
+
+@needs_cli
+def test_the_exported_pdf_carries_an_output_intent(tmp_path):
+    """'출력 의도 미지정'은 문서의 흠이 아니라 **내보내기 설정**이다. PDF/X로 내보내면 들어간다."""
+    out = tmp_path / "out"
+    out.mkdir()
+    with Mcp(read_roots=[tmp_path], write_roots=[tmp_path]) as m:
+        m.tool("new_document", {"preset": "A4", "margins": 36})
+        m.ex("frame.create", rect=[36, 36, 300, 120], content="text")
+        m.ex("type.char", attrs={"fontFamily": "Malgun Gothic", "size": 11})
+        m.ex("text.insert", text="출력 의도 시험")
+        done, bad = dc._export_pdf(m, out / "x.pdf", "x4")             # noqa: SLF001
+    assert not bad and len(done) == 1 and done[0]["kind"] == "intent"
+    assert "PDF/X-4" in done[0]["what"]
+    body = (out / "x.pdf").read_bytes()
+    assert b"OutputIntent" in body, "PDF 안에 출력 의도가 없다"
+
+
+@needs_cli
+def test_applying_only_layout_fixes_needs_no_text_fix(tmp_path):
+    """글자 교정이 하나도 없어도 자리·크기만으로 고칠 거리가 된다. 전에는 '반영할 교정이
+    없습니다'로 돌려보냈다 — 고칠 수 있는 것을 눈앞에 두고 그랬다."""
+    src = tmp_path / "레이아웃.designcraft"
+    out = tmp_path / "out"
+    out.mkdir()
+    with Mcp(read_roots=[tmp_path], write_roots=[tmp_path]) as m:
+        _doc_with_layout_problems(tmp_path, m)
+        m.ex("file.saveAs", path=str(src))
+    r = dc._apply_blocking(src, ".designcraft", out, [], ["resolution", "margin", "intent"])  # noqa: SLF001
+    kinds = [x["kind"] for x in r["layout_applied"]]
+    assert "resolution" in kinds and "margin" in kinds and "intent" in kinds, r["layout_applied"]
+    assert not r["layout_failed"], r["layout_failed"]
+    assert not [i for i in r["preflight_after"] if i["kind"] == "lowResolution"], r["preflight_after"]
+    assert (out / "fixed.pdf").is_file() and b"OutputIntent" in (out / "fixed.pdf").read_bytes()
+
+
+def test_asking_comes_before_touching_the_file_even_for_layout_only(tmp_path, monkeypatch):
+    """**원본을 바꾸는 일은 먼저 묻는다.** 자리·크기라고 해서 말없이 고쳐도 되는 것이 아니다."""
+    _dummy_src(tmp_path, monkeypatch)
+    r = asyncio.run(dc.apply_fixes(AgentRequest(
+        meta=meta(), skill="apply_fixes",
+        input={"src_ref": "tok", "filename": "a.idml", "fixes": [], "layout": ["margin"]})))
+    assert r["status"] == "input-required"
+    q = r["question"]
+    assert q["field"] == "apply_fixes" and "자리·크기" in q["text"]
+    assert "여백" in q["why"]
+
+
+def test_nothing_to_fix_is_still_refused():
+    r = asyncio.run(dc.apply_fixes(AgentRequest(
+        meta=meta(), skill="apply_fixes", input={"src_ref": "x" * 64, "filename": "a.idml"})))
+    assert r["status"] == "rejected" and r["outcome"] == "INVALID_INPUT"
+
+
+def test_unknown_layout_kinds_are_dropped(tmp_path, monkeypatch):
+    """바깥에서 오는 목록이다. 모르는 이름이 섞여 와도 엔진에 그대로 넘기지 않는다."""
+    _dummy_src(tmp_path, monkeypatch)
+    r = asyncio.run(dc.apply_fixes(AgentRequest(
+        meta=meta(), skill="apply_fixes",
+        input={"src_ref": "tok", "filename": "a.idml", "layout": ["margin", "rm -rf", "intent"]})))
+    assert r["status"] == "input-required"
+    assert "자리·크기 2가지" in r["question"]["text"]

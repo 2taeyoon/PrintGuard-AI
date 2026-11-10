@@ -313,7 +313,9 @@ export async function analyze(
 
   // 출력 의도
   if (!doc.catalog.has(N("OutputIntents"))) {
-    issues.push(mk("color", "low", 1, "출력 의도(Output Intent) 미지정",
+    // 종류를 'intent'로 따로 둔다. 'color'로 묶어 두면 RGB 이미지와 구별되지 않아, **기계가
+    // 고칠 수 있는 것**(PDF/X로 다시 내보내기)과 사람이 봐야 하는 것이 한 이름으로 섞인다.
+    issues.push(mk("intent", "low", 1, "출력 의도(Output Intent) 미지정",
       "PDF에 출력 프로파일이 지정되지 않았습니다.", "인쇄소가 지정한 PDF/X 프로파일로 내보내세요."));
   }
   issues.push(...checkFonts(doc));

@@ -433,3 +433,25 @@ def test_a_page_the_document_does_not_have_does_not_start_the_engine(monkeypatch
         assert c.get(f"/designcraft/{ctx}/watch/page9.png").status_code == 404
         assert c.get(f"/designcraft/{ctx}/watch/page2.png").status_code == 200
     _forget(ctx)
+
+
+# ---------- 자리·크기로 고칠 것을 검수 결과에서 고른다 ----------
+def test_layout_fixes_are_picked_from_what_the_check_found():
+    """검수가 찾은 종류를 **고칠 일로** 옮긴다. 맞춤법 제안이 하나도 없어도 이것만으로
+    원본 수정 단계가 선다 — 전에는 교정이 없으면 단계 자체가 서지 않아, 고칠 수 있는 것을
+    눈앞에 두고 '자동으로 못 고칩니다'라고 적고 있었다."""
+    from pg_agents.orchestrator import plan
+    from pg_agents.orchestrator.engine import Job
+
+    j = Job(context_id="ctx_job_layout", idempotency_key="k", options={"src_ref": "tok", "src_doc": "a.idml"},
+            pdf_ref="a" * 64, filename="a.pdf", status="working", client="me")
+    j.results["preflight"] = {"issues": [
+        {"kind": "resolution", "page": 3}, {"kind": "safe", "page": 6}, {"kind": "clip", "page": 6},
+        {"kind": "intent", "page": 1}, {"kind": "font", "page": 2},     # font는 자리·크기로 못 고친다
+    ]}
+    assert plan.layout_list(j) == ["resolution", "margin", "intent"]    # 차례도 고정이다
+    assert plan.can_fix(j) is True and plan.fix_list(j) == []
+    assert plan._fix(j)["layout"] == ["resolution", "margin", "intent"]  # noqa: SLF001
+
+    j.results["preflight"] = {"issues": [{"kind": "font", "page": 2}]}
+    assert plan.layout_list(j) == [] and plan.can_fix(j) is False

@@ -202,6 +202,9 @@ export type ApplyResult = FontState & {
   applied: { key?: string; page: number | null; original: string; suggestion: string; story: number; at: [number, number] }[];
   failed: { key?: string; page: number | null; original: string; suggestion: string; reason: string }[];
   pdf_ref: string; source_out: string | null;
+  // 글자 말고 **자리와 크기**로 고친 것(사진 줄이기·글상자 들여놓기·PDF/X로 내보내기)
+  layout_applied: { kind: string; page: number | null; item?: number; what: string }[];
+  layout_failed: { kind: string; page: number | null; item?: number; reason: string }[];
   shots: { page: number; before: string; after: string }[];  // 바뀐 쪽만 찍는다
   shots_total: number;                                        // 바뀐 쪽이 더 있으면 이 수가 더 크다
   preflight_after: PreflightIssue[];

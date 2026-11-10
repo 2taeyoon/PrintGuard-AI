@@ -5,7 +5,7 @@
 3단계: color.predict_color — 1단계에서 못 돌렸으면 고른 종이로 실행
 4단계: paper.assess_risk — 후가공을 모르면 묻는다(input-required)
 5단계: guide.search_guide — 앞 단계의 문제·위험·교정 제안마다 근거 문단 검색
-6단계: designcraft.apply_fixes — **편집 파일로 의뢰했을 때만.** 교정 제안을 원본에 반영할지 묻고 고친다
+6단계: designcraft.apply_fixes — **편집 파일로 의뢰했을 때만.** 교정 제안과 자리·크기 문제를 원본에 반영할지 묻고 고친다
 
 6단계가 조건부인 이유: 고칠 수 있는 것은 편집 파일(IDML)뿐이다. PDF에서는 글자를 집을 수 없어서
 PDF로 들어온 의뢰에는 이 단계가 아예 서지 않는다 — 설 수 없는 단계를 세워 두고 매번 실패시키면
@@ -82,15 +82,32 @@ def fix_list(j: Job) -> list[dict[str, Any]]:
     return out[:MAX_FIXES]
 
 
+# 검수가 찾은 것 가운데 **자리와 크기로 고칠 수 있는 것.** 맞춤법만 고쳐 주고 나머지는 전부
+# '사람이 보고 판단할 항목'으로 넘기고 있었다. 그런데 이 셋은 사람이 인디자인에서 하는 일이
+# 정해져 있다 — 사진을 줄이고, 글상자를 여백 안으로 들여놓고, 내보낼 때 PDF/X를 고르는 것.
+#
+# 번호(어느 사진·어느 글상자)는 넘기지 않는다. 검수는 **PDF**를 보고 매긴 번호이고 고치는 것은
+# **편집 파일**이라, 그 둘을 맞추려 들면 같은 쪽의 다른 것을 건드린다. 여기서는 '무엇을 고칠지'만
+# 넘기고, 어느 것인지는 문서를 연 엔진이 제 눈으로 찾는다.
+LAYOUT_OF = {"resolution": "resolution", "safe": "margin", "clip": "margin", "intent": "intent"}
+
+
+def layout_list(j: Job) -> list[str]:
+    kinds = {LAYOUT_OF[k] for k in
+             (str(i.get("kind") or "") for i in (j.results.get("preflight") or {}).get("issues", []))
+             if k in LAYOUT_OF}
+    return [k for k in ("resolution", "margin", "intent") if k in kinds]
+
+
 def can_fix(j: Job) -> bool:
     """원본 수정 단계를 세울지. 고칠 원본이 있고(편집 파일로 의뢰), 고칠 거리가 있을 때만."""
-    return bool(j.options.get("src_ref")) and bool(fix_list(j))
+    return bool(j.options.get("src_ref")) and bool(fix_list(j) or layout_list(j))
 
 
 def _fix(j: Job) -> dict[str, Any]:
     # confirm은 사용자의 답을 그대로 넘긴다("" = 아직 안 물음 → 에이전트가 묻는다).
     return {"src_ref": str(j.options.get("src_ref") or ""), "filename": str(j.options.get("src_doc") or ""),
-            "fixes": fix_list(j), "confirm": str(j.answers.get("apply_fixes") or "")}
+            "fixes": fix_list(j), "layout": layout_list(j), "confirm": str(j.answers.get("apply_fixes") or "")}
 
 
 # ---------- 오케스트레이터 API와 MCP 서버가 같이 쓰는 입력 만들기 ----------

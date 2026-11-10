@@ -15,6 +15,7 @@ import { CUSTOM, GROUPS as FORMATS, dims, match } from "@/lib/formats";
 import { measure, type Measured } from "@/lib/pagesize";
 import { assess, inputFrom, type Risk } from "@/lib/risk";
 import CopyFixes from "./copy-fixes";
+import { LAYOUT_FIX, autoFixOf } from "@/lib/fixlist";
 import { SignInNote } from "./sign-in";
 import FixResultPanel from "./fix-result";
 import { FontNotice, IssueRows } from "./dc-shared";
@@ -679,14 +680,15 @@ function Home() {
                   만들어 낼 수도, 디자인을 대신 정할 수도 없다. 그걸 목록 안에 섞어 두면 '맡기면
                   다 고쳐지겠지' 하고 기다리게 된다. 숫자로 먼저 말하고, 항목마다 표를 붙인다. */}
               {res.issues.length > 0 && (() => {
-                const auto = res.issues.filter((i) => i.edit?.original && i.edit.suggestion).length;
+                const auto = res.issues.filter((i) => autoFixOf(i)).length;
                 return (
                   <div className="fixsum">
                     <span className="howfix auto">자동 수정 {auto}건</span>
                     <span className="howfix">사람이 고칠 것 {res.issues.length - auto}건</span>
                     <span className="note">
-                      <b>자동 수정</b>은 편집 파일(<code>.idml</code>)로 맡기시면 검수 끝에 묻고 바꿔 드립니다.
-                      나머지는 사진을 바꾸거나 자리를 옮기는 일이라 기계가 대신 정할 수 없습니다.
+                      <b>자동 수정</b>은 편집 파일(<code>.idml</code>)로 맡기시면 검수 끝에 묻고 바꿔 드립니다 —
+                      글자를 찾아 바꾸는 것뿐 아니라 <b>사진 크기·글상자 자리·내보내기 규격</b>까지 고칩니다.
+                      나머지는 사진을 바꾸거나 디자인을 다시 정하는 일이라 기계가 대신 정할 수 없습니다.
                     </span>
                     {/* 교정 방법 하나가 빠진 채로 '자동 수정 0건'을 보여 주면, 그 0이 '이 파일은
                         깨끗하다'로 읽힌다. 빠졌으면 빠졌다고 적는다. */}
@@ -706,14 +708,18 @@ function Home() {
                 <div key={i.id} className={`card ${i.severity} ${sel === i.id ? "sel" : ""}`} onClick={() => pick(i)}>
                   <h4><span className={`sev-${i.severity}`}>{SEV_LABEL[i.severity]}</span> · {i.page}쪽 · {i.title}
                     <span className="src">{SRC[i.source]}</span>
-                    {i.edit?.original && i.edit.suggestion
-                      ? <span className="howfix auto" title="DesignCraft가 원본에서 이 글자를 찾아 바꿉니다">자동 수정</span>
+                    {autoFixOf(i)
+                      ? <span className="howfix auto" title={autoFixOf(i)}>자동 수정</span>
                       : <span className="howfix" title="기계가 대신 정할 수 없는 항목입니다. 사람이 보고 고쳐야 합니다">사람이 고칠 것</span>}
                   </h4>
                   <p>{i.detail}</p>
                   {i.edit?.original && i.edit.suggestion
                     ? <p><b>바꿀 것:</b> <del>{i.edit.original}</del> <span className="arrow">→</span> <ins>{i.edit.suggestion}</ins></p>
-                    : <p><b>수정 제안(직접 수정):</b> {i.fix}</p>}
+                    : LAYOUT_FIX[i.kind]
+                      // 자리·크기는 바꿀 '글자'가 없다. 무엇을 어떻게 움직이는지 그 자리에 적어야
+                      // 누르기 전에 무슨 일이 일어날지 알 수 있다.
+                      ? <p><b>자동으로 할 일:</b> {LAYOUT_FIX[i.kind]}</p>
+                      : <p><b>수정 제안(직접 수정):</b> {i.fix}</p>}
                   {hits[i.id]?.length ? (
                     <details className="guide" open={sel === i.id}>
                       <summary>관련 인쇄 가이드 ({hits[i.id].length})</summary>
