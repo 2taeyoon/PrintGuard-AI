@@ -104,7 +104,9 @@ button.ghost { background: var(--white); color: var(--thema); }
 .sev-na { color: var(--blackmute); font-weight: 600; }
 
 /* ---------- PDF 검수 ---------- */
-form.upload { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
+/* 위쪽 머리띠가 붙박이(sticky)라, 그대로 내려 보내면 칸 제목이 그 띠 밑으로 들어간다.
+   내려앉을 자리를 띠 높이만큼 띄워 둔다('이 문서로 인쇄 검수하기'로 들어올 때 쓴다). */
+form.upload { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; scroll-margin-top: 76px; }
 /* 칸 이름은 그 칸이 무엇인지 말하는 글이다. 회색으로 흐려 두면 칸만 남고 이름이 사라진다. */
 form.upload label { display: flex; flex-direction: column; gap: 4px; font-size: 1.4rem; color: var(--black); font-weight: 500; }
 form.upload label.chk { flex-direction: row; align-items: center; gap: 8px; min-height: 40px; }
@@ -731,7 +733,9 @@ input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, 
 /* 두 번째 머리는 첫 번째와 **같은 모양**이어야 한다. 위에 굵은 선만 더해 갈라 놓는다
    (margin-top·padding-top을 따로 주면 .side_head의 패딩과 겹쳐 혼자 어긋난다) */
 /* 설명은 에이전트 이름과 줄을 맞춘다 — 머리의 패딩 16 + 점 8 + 사이 8 */
-.aitem_why { margin: 0; padding: 0 16px 12px 32px; }
+/* 조건 한 줄. 펼친 칸 안에서 맨 위에 서므로, 가로 여백은 그 칸(.aitem_body)이 들고 있다.
+   눈에 띄어야 하는 줄이라 왼쪽에 선을 긋는다 — 설명과 같은 회색 글이면 그냥 지나친다. */
+.aitem_why { margin: 0 0 12px; padding: 0 0 0 10px; border-left: 2px solid var(--themaBright); }
 .copyfix_text { width: 100%; margin-top: 12px; padding: 12px; border: 1px solid var(--borderLight);
   background: var(--bgMuted); color: var(--black); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 1.4rem; line-height: 1.7; resize: vertical; }

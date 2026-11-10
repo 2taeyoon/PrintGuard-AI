@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from pg_agents.contracts import AgentRequest, RequestMeta, now_utc
-from pg_agents.designcraft import agent as dc
+from pg_agents.designcraft import agent as dc, issue_text
 from pg_agents.designcraft.mcp_client import Mcp, McpError, cli_path
 
 HAVE_CLI = cli_path() is not None
@@ -747,3 +747,53 @@ def test_the_package_carries_a_pdf_too(tmp_path):
     with zipfile.ZipFile(out / r["name"]) as z:
         assert "표지/표지.pdf" in z.namelist(), z.namelist()
         assert z.read("표지/표지.pdf").startswith(b"%PDF")
+
+
+# ---------- 검사 결과를 우리말로 ----------
+def test_every_engine_issue_is_said_in_korean():
+    """엔진이 내는 열한 가지 꼴을 다 옮긴다. 종류만 우리말이고 설명은 영어이던 자리다."""
+    said = {
+        "Overset text: 69 characters": "글상자 밖으로 넘친 글 69자 — 넘친 글은 인쇄되지 않습니다",
+        "Unplaced story: 120 characters have no text frame": "글 120자가 들어앉을 글상자가 없습니다",
+        "Missing font: Nanum Myeongjo Ghost": "이 PC에 없는 글꼴 Nanum Myeongjo Ghost",
+        "Missing font style: Yoon Myungjo 330 Bold (using Regular)":
+            "없는 글꼴 스타일 Yoon Myungjo 330 Bold — Regular(으)로 대신 그렸습니다",
+        "Missing glyphs in Malgun Gothic Regular: ✦ 𠆢 🖨": "글꼴 Malgun Gothic Regular에 없는 글자 ✦ 𠆢 🖨",
+        "Missing glyphs in Malgun Gothic Regular: ✦ 𠆢 and 2 more":
+            "글꼴 Malgun Gothic Regular에 없는 글자 ✦ 𠆢 외 2자",
+        "Missing link: photo.jpg": "끊긴 이미지 링크 photo.jpg",
+        "Missing link: photo.jpg and 2 more": "끊긴 이미지 링크 photo.jpg 외 2개",
+        "9ce5328252c8.jpg: effective 32 ppi (< 150)":
+            "9ce5328252c8.jpg — 실제 해상도 32ppi (인쇄 기준 150ppi에 못 미칩니다)",
+        "Empty text frame": "글이 들어 있지 않은 빈 글상자",
+        "RGB swatch in a print document: WebBlue": "인쇄 문서에 RGB 색 WebBlue — 인쇄는 CMYK로 찍습니다",
+        "Placed graphic layer visibility overrides are preserved but are not applied to rendering or PDF output":
+            "앉힌 그림의 레이어 표시 설정은 파일에 그대로 남지만, 미리보기와 PDF에는 반영되지 않습니다",
+    }
+    for en, ko in said.items():
+        assert issue_text.ko(en) == ko, en
+
+
+def test_names_and_numbers_are_left_alone():
+    """글꼴 이름·파일 이름은 **그대로 둔다.** 옮겨 버리면 그 이름으로 찾아야 하는 사람이 못 찾는다."""
+    assert "Nanum Myeongjo Ghost" in issue_text.ko("Missing font: Nanum Myeongjo Ghost")
+    assert "9ce5328252c8.jpg" in issue_text.ko("9ce5328252c8.jpg: effective 32 ppi (< 150)")
+    # 없는 글자는 한 자도 바뀌면 안 된다 — 그 글자를 찾아 고쳐야 하는 자리다
+    assert "✦ 𠆢 🖨" in issue_text.ko("Missing glyphs in Malgun Gothic Regular: ✦ 𠆢 🖨")
+
+
+def test_a_shape_we_do_not_know_is_left_in_english():
+    """엔진이 새 종류를 내기 시작했을 때, 아는 꼴로 우겨 넣는 것보다 낯선 영어 한 줄이 낫다 —
+    적어도 무엇이 걸렸는지는 읽을 수 있다."""
+    assert issue_text.ko("Some brand new engine complaint") == "Some brand new engine complaint"
+    assert issue_text.ko(None) == ""
+
+
+def test_rows_counts_pages_from_one():
+    """엔진은 쪽을 0부터 센다. 사람이 읽는 자리에는 1부터여야 한다."""
+    r = issue_text.rows([{"severity": "error", "kind": "overset", "message": "Overset text: 7 characters", "page": 1},
+                         {"severity": "warning", "kind": "rgbColor",
+                          "message": "RGB swatch in a print document: WebBlue", "page": None}])
+    assert r[0]["page"] == 2 and r[0]["message"].startswith("글상자 밖으로 넘친 글 7자")
+    assert r[1]["page"] is None and r[1]["kind"] == "rgbColor"
+    assert issue_text.rows(None) == []

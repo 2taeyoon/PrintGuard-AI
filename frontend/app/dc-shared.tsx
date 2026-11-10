@@ -101,6 +101,43 @@ export function FontNotice({ s, advise = true }: { s: Partial<FontState>; advise
   );
 }
 
+/** 엔진이 영어로 적어 준 설명을 우리말로.
+ *
+ *  종류(`kind`)만 우리말로 적고 있었다. 그 옆에 붙는 설명은 엔진이 적은 영어 그대로라
+ *  '없는 글자(글리프) — Missing glyphs in Malgun Gothic Regular: ✦'처럼 반쪽만 우리말이었다.
+ *
+ *  **글꼴 이름·파일 이름·숫자는 건드리지 않는다** — 그 이름으로 찾아 고쳐야 하는 자리다.
+ *  모르는 꼴은 영어 그대로 둔다. 엔진이 새 종류를 내기 시작했을 때 아는 꼴로 우겨 넣는 것보다
+ *  낯선 영어 한 줄이 낫다.
+ *
+ *  에이전트 쪽에서도 같은 일을 한다(`designcraft/issue_text.py`). 거기서 이미 우리말이 된 줄은
+ *  여기 규칙에 걸리지 않아 그대로 지나간다 — 두 번 옮겨지지 않는다. 그런데도 화면이 이 일을
+ *  다시 하는 이유는, **전에 만들어 둔 문서에는 영어가 적힌 채로 보관돼 있기** 때문이다.
+ *  그것까지 우리말로 보이려면 그리는 자리에서 옮기는 수밖에 없다. */
+const KO: [RegExp, (m: RegExpMatchArray) => string][] = [
+  [/^Overset text: (\d+) characters$/, (m) => `글상자 밖으로 넘친 글 ${m[1]}자 — 넘친 글은 인쇄되지 않습니다`],
+  [/^Unplaced story:?\s*(\d+) characters have no text frame$/, (m) => `글 ${m[1]}자가 들어앉을 글상자가 없습니다`],
+  [/^Missing font style: (.+?) \(using (.+?)\)$/, (m) => `없는 글꼴 스타일 ${m[1]} — ${m[2]}(으)로 대신 그렸습니다`],
+  [/^Missing font: (.+)$/, (m) => `이 PC에 없는 글꼴 ${m[1]}`],
+  [/^Missing glyphs in (.+?): (.+?)(?: and (\d+) more)?$/,
+    (m) => `글꼴 ${m[1]}에 없는 글자 ${m[2]}${m[3] ? ` 외 ${m[3]}자` : ""}`],
+  [/^Missing link: (.+?)(?: and (\d+) more)?$/, (m) => `끊긴 이미지 링크 ${m[1]}${m[2] ? ` 외 ${m[2]}개` : ""}`],
+  [/^(.+?): effective (\d+) ppi \(< (\d+)\)$/,
+    (m) => `${m[1]} — 실제 해상도 ${m[2]}ppi (인쇄 기준 ${m[3]}ppi에 못 미칩니다)`],
+  [/^Empty text frame$/, () => "글이 들어 있지 않은 빈 글상자"],
+  [/^RGB swatch in a print document: (.+)$/, (m) => `인쇄 문서에 RGB 색 ${m[1]} — 인쇄는 CMYK로 찍습니다`],
+  [/^Placed graphic layer visibility overrides are preserved but are not applied to rendering or PDF output$/,
+    () => "앉힌 그림의 레이어 표시 설정은 파일에 그대로 남지만, 미리보기와 PDF에는 반영되지 않습니다"],
+];
+export function koIssue(message: string): string {
+  const s = (message ?? "").trim();
+  for (const [re, say] of KO) {
+    const m = s.match(re);
+    if (m) return say(m);
+  }
+  return s;
+}
+
 /** 같은 종류는 묶어서 센다 — 넘침 28건을 28줄로 늘어놓으면 읽을 수가 없다. */
 export function IssueRows({ rows, empty }: { rows: PreflightIssue[]; empty: string }) {
   const grouped = useMemo(() => {
@@ -115,7 +152,7 @@ export function IssueRows({ rows, empty }: { rows: PreflightIssue[]; empty: stri
         <li key={kind} className={`sev-${list[0].severity === "error" ? "high" : "medium"}`}>
           <b>{KIND[kind] ?? kind}</b>
           <span className="chip">{SEV[list[0].severity] ?? list[0].severity}<b>{list.length}</b></span>
-          <span className="dc_msg">{list.slice(0, 3).map((r) => (r.page ? `${r.page}쪽 ` : "") + r.message).join(" / ")}
+          <span className="dc_msg">{list.slice(0, 3).map((r) => (r.page ? `${r.page}쪽 ` : "") + koIssue(r.message)).join(" / ")}
             {list.length > 3 && ` 외 ${list.length - 3}건`}</span>
         </li>
       ))}
