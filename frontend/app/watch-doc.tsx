@@ -45,6 +45,8 @@ const clock = (at: string) => {
   const d = new Date(at);
   return Number.isNaN(d.getTime()) ? "" : d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
 };
+/** 고르기 목록에 적는 시각. 문서의 `created`는 **초 단위 숫자**라 걸음 줄의 `at`과 꼴이 다르다. */
+const madeAt = (sec?: number) => (sec ? clock(new Date(sec * 1000).toISOString()) : "");
 
 /** 끝말고는 조용히 넘기는 걸음들. '저장합니다'까지 말풍선으로 띄우면 한 일이 묻힌다. */
 const QUIET: Record<string, string> = {
@@ -205,9 +207,15 @@ export default function WatchDoc() {
 
   // 고른 것만 바꾼다. 다시 받아 오는 일은 아래 두 효과가 알아서 한다 — 그 둘이 보는 꼬리표에
   // 고른 문서가 들어 있어서, 문서가 바뀌면 꼬리표가 바뀐다.
-  const open = useCallback((ctx: string) => {
-    setChosen(ctx); setPinned(true); setShot(null); setPage(1);
-  }, []);
+  //
+  // **옮겨 갈 때만 그림을 비운다.** 보고 있던 그 문서를 목록에서 다시 골라도 비웠더니,
+  // 다시 받아 올 까닭(`stamp`)은 그대로라 효과가 돌지 않아 빈 자리에
+  // '아직 그려진 쪽이 없습니다'만 남았다 — 멀쩡한 문서가 빈 것처럼 보인다.
+  const turn = (to: string) => { if (to && to !== pick) { setShot(null); setPage(1); } };
+  /** 이 문서에 머문다(목록에서 고르거나, 쌓인 줄의 방 이름을 누르거나). */
+  const open = (ctx: string) => { turn(ctx); setChosen(ctx); setPinned(true); };
+  /** '전체'로 돌아간다 — 이 PC에서 하는 일이 다 흐르고, 새 작업을 따라간다. */
+  const follow = () => { turn(live); setChosen(""); setPinned(false); };
 
   // 보고 있는 문서를 **내 쪽으로 가져온다.** 이걸 해야 파일을 받고 검수로 넘길 수 있다.
   // 걸음이 끝날 때마다 다시 가져온다 — 한 번만 가져오면 아래 칸이 옛날 문서를 말한다.
@@ -285,7 +293,9 @@ export default function WatchDoc() {
     setDoc((d) => (pick === ctx ? null : d));
   }, [chosen, pick]);
 
-  const recent = Object.entries(docs).sort((a, b) => (b[1].created ?? 0) - (a[1].created ?? 0)).slice(0, 6);
+  // 고르기 목록. **새것이 위**다. 단추를 늘어놓던 자리라 여섯 개만 보여 줬는데, 고르는 칸이
+  // 접힌 목록이 되었으니 그럴 까닭이 없어졌다 — 있는 문서는 다 들어간다.
+  const list = Object.entries(docs).sort((a, b) => (b[1].created ?? 0) - (a[1].created ?? 0));
 
   return (
     <>
@@ -298,7 +308,7 @@ export default function WatchDoc() {
             : msgs.length > 0 && <span className="chip">조용합니다</span>}
           <span className="grow" />
           {pinned && live && live !== pick && (
-            <button type="button" className="pill on" onClick={() => { setPinned(false); }}>새 작업 따라가기</button>
+            <button type="button" className="pill on" onClick={follow}>새 작업 따라가기</button>
           )}
         </div>
 
@@ -349,13 +359,31 @@ export default function WatchDoc() {
           <div ref={end} aria-hidden="true" />
         </div>
 
-        {recent.length > 0 && (
+        {/* 문서 고르기. 문서가 쌓이면 단추를 늘어놓는 방식은 줄을 먹고 넘쳐서, 무엇이 있는지도
+            고른 것이 무엇인지도 한눈에 안 보였다. **접히는 목록 하나**로 둔다 — 고르지 않은
+            자리가 '전체'이고, 그때는 이 PC에서 하는 일이 다 흐르면서 새 작업을 따라간다. */}
+        {list.length > 0 && (
           <div className="dc_row">
-            <span className="note">문서 고르기:</span>
-            {recent.map(([c, d]) => (
-              <DocPick key={c} ctx={c} name={d.filename ?? "문서"} on={c === pick}
-                onOpen={() => open(c)} onGone={() => drop(c)} />
-            ))}
+            <label className="note" htmlFor="dc_pick">문서 고르기</label>
+            <select id="dc_pick" value={only}
+              onChange={(e) => (e.target.value ? open(e.target.value) : follow())}>
+              <option value="">전체 — 새 작업을 따라갑니다</option>
+              {list.map(([c, d]) => (
+                <option key={c} value={c}>
+                  {[d.filename || "문서", d.pages ? `${d.pages}쪽` : "", d.made ? "" : "올린 파일",
+                    madeAt(d.created)].filter(Boolean).join(" · ")}
+                </option>
+              ))}
+            </select>
+            {/* 지우는 단추는 **지금 보고 있는 문서**를 가리킨다. '전체'로 두어도 아래 '만든 문서'
+                칸에는 문서 하나가 떠 있으므로, 그것을 못 지우면 눈앞의 것을 못 지우는 셈이다. */}
+            {pick && docs[pick] && (
+              // `key`에 문서 번호를 준다. 단추 하나를 돌려 쓰므로, 묻는 중에 문서를 바꾸면 물음이
+              // 그대로 남아 **한 번 더 누를 때 다른 문서가 지워진다.** 번호가 바뀌면 새로 그려져
+              // 물음이 접힌다(효과 안에서 상태를 되돌리는 것보다 이 편이 어긋날 자리가 없다).
+              <DocDrop key={pick} ctx={pick} name={docs[pick].filename || "문서"}
+                onGone={() => drop(pick)} />
+            )}
           </div>
         )}
 
@@ -435,14 +463,12 @@ export default function WatchDoc() {
 }
 
 
-/** 문서 하나를 고르는 단추와, 그 옆의 **지우는** 단추.
+/** 보고 있는 문서를 **지우는** 단추.
  *
  *  지우기에 `confirm()`을 쓰지 않는다 — 브라우저가 띄우는 창은 화면 밖에서 뜨기도 하고,
  *  막아 둔 사람에게는 아무 일도 일어나지 않는다. 같은 자리에서 한 번 더 묻는다
  *  (의뢰 지우기와 같은 방식이다). */
-function DocPick({ ctx, name, on, onOpen, onGone }: {
-  ctx: string; name: string; on: boolean; onOpen: () => void; onGone: () => void;
-}) {
+function DocDrop({ ctx, name, onGone }: { ctx: string; name: string; onGone: () => void }) {
   const [ask, setAsk] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -451,7 +477,7 @@ function DocPick({ ctx, name, on, onOpen, onGone }: {
   if (ask) {
     return (
       <span className="docdel">
-        <b>{name}</b>을 지울까요? 소통 기록과 쪽 그림까지 같이 지워지고 되돌릴 수 없습니다.
+        <b>{name}</b> — 이 문서를 지울까요? 소통 기록과 쪽 그림까지 같이 지워지고 되돌릴 수 없습니다.
         <button type="button" className="pill on" disabled={busy} onClick={() => {
           setBusy(true);
           // **먼저 가져온 다음 지운다.** 클로드가 만든 문서의 주인은 이 PC의 도구이지 이 브라우저가
@@ -472,11 +498,7 @@ function DocPick({ ctx, name, on, onOpen, onGone }: {
     );
   }
   return (
-    <span className="docpick">
-      <button type="button" className={`pill${on ? " on" : ""}`} onClick={onOpen}>{name}</button>
-      <button type="button" className="pill x" title={`${name} 지우기`} aria-label={`${name} 지우기`}
-        onClick={() => setAsk(true)}>✕</button>
-    </span>
+    <button type="button" className="pill" onClick={() => setAsk(true)}>이 문서 지우기</button>
   );
 }
 
