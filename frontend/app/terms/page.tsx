@@ -73,7 +73,7 @@ export default function Terms() {
         <h2>7. 문의</h2>
         <p>
           <a href="https://github.com/2taeyoon/PrintGuard-AI/issues" target="_blank" rel="noreferrer">GitHub Issues</a>로
-          받습니다. 이 약관이 바뀌면 이 쪽의 기준일을 고칩니다.
+          받습니다. 이 약관이 바뀌면 이 화면의 기준일을 고칩니다.
         </p>
       </section>
     </main>
