@@ -366,3 +366,70 @@ def test_the_orchestrator_card_says_it_receives_nothing():
     assert card["name"] == "orchestrator"
     assert card["skills"] == []
     assert c.post("/a2a", json={}).status_code == 404     # 받는 자리가 아예 없다
+
+
+# ---------- 아직 안 그린 쪽 ----------
+# 쪽 그림은 **그때그때 그려 둔 것**이고, 문서가 몇 쪽인지는 따로 적혀 있다. 한도가 여덟 장이던
+# 때 만든 열 쪽짜리는 그림이 여덟 장뿐이라 쪽 단추도 여덟 개만 나왔다 — 시킨 사람은 두 쪽이
+# 안 만들어진 것으로 읽는다. 없는 쪽은 달라고 할 때 그 자리에서 그려 준다.
+def _doc_with_pages(ctx: str, pages: int, drawn: list[int]):
+    from pg_agents.orchestrator import app as orch
+    here = orch.DC_OUT / ctx
+    here.mkdir(parents=True, exist_ok=True)
+    for n in drawn:
+        (here / f"page{n}.png").write_bytes(b"old")
+    orch.DCJOBS[ctx] = {"client": KEY, "src_ref": "ref0001", "filename": "열쪽.idml", "doc": "열쪽.idml",
+                        "created": time.time(), "made": True, "result": None,
+                        "inspect": {"pages": pages, "shots": [f"page{n}.png" for n in drawn]}}
+    return here
+
+
+def _forget(ctx: str):
+    from pg_agents import jobstore
+    from pg_agents.orchestrator import app as orch
+    orch.DCJOBS.pop(ctx, None)
+    orch._DRAWING.pop(ctx, None)                          # noqa: SLF001
+    jobstore.forget(ctx)
+
+
+def test_a_page_with_no_picture_yet_is_drawn_when_asked_for(monkeypatch):
+    from pg_agents.orchestrator import app as orch
+    ctx = "ctx_dc_drawme01"
+    here = _doc_with_pages(ctx, pages=4, drawn=[1])
+    asked: list[list[int]] = []
+
+    async def fake_ask(agent, skill, _ctx, body):
+        assert (agent, skill) == ("designcraft", "page_shots")
+        asked.append(list(body["pages"]))
+        for n in body["pages"]:
+            (here / f"page{n}.png").write_bytes(b"drawn")
+        return {"status": "completed", "output": {"pages": 4, "shots": [f"page{n}.png" for n in body["pages"]]}}
+
+    monkeypatch.setattr(orch, "_ask", fake_ask)
+    with client() as c:
+        assert c.get(f"/designcraft/{ctx}/watch/page3.png").status_code == 200
+        # 달라는 쪽만이 아니라 **없는 쪽을 한꺼번에** 그린다 — 엔진을 띄우는 값이 그림 한 장보다 크다
+        assert asked == [[2, 3, 4]]
+        # 그린 것은 보관된 모습에도 적힌다. 그래야 다음에 열 때 쪽 단추가 처음부터 맞는다
+        assert orch.DCJOBS[ctx]["inspect"]["shots"] == ["page1.png", "page2.png", "page3.png", "page4.png"]
+        # 한 번 그려 두면 그다음부터는 파일로 바로 나간다
+        assert c.get(f"/designcraft/{ctx}/watch/page4.png").status_code == 200
+        assert len(asked) == 1
+    _forget(ctx)
+
+
+def test_a_page_the_document_does_not_have_does_not_start_the_engine(monkeypatch):
+    """문서에 없는 쪽을 달라고 하면 그냥 없다고 한다. 번호만 알면 누구나 두드릴 수 있는 문이라,
+    여기서 엔진을 띄워 주면 쪽 번호를 올려 가며 띄우게 둘 수 있다."""
+    from pg_agents.orchestrator import app as orch
+    ctx = "ctx_dc_drawme02"
+    _doc_with_pages(ctx, pages=2, drawn=[1, 2])
+
+    async def never(*a, **k):
+        raise AssertionError("없는 쪽에 엔진을 띄웠다")
+
+    monkeypatch.setattr(orch, "_ask", never)
+    with client() as c:
+        assert c.get(f"/designcraft/{ctx}/watch/page9.png").status_code == 404
+        assert c.get(f"/designcraft/{ctx}/watch/page2.png").status_code == 200
+    _forget(ctx)

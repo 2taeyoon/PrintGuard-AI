@@ -971,16 +971,60 @@ async def dc_watch(ctx: str, authorization: str | None = Auth) -> dict[str, Any]
                      "steps": steps[-60:]}, "meta": {}}
 
 
+# 아직 안 그린 쪽을 그리는 중인가. 문서 하나에 하나씩 둔다 — 9쪽·10쪽을 잇따라 누르면 물음이
+# 둘 나가고, 둘 다 엔진을 띄워 같은 일을 두 번 한다.
+_DRAWING: dict[str, asyncio.Lock] = {}
+
+
+async def _draw_missing(ctx: str, j: dict[str, Any], upto: int) -> None:
+    """없는 쪽 그림을 그려 둔다.
+
+    **그림은 그때그때 그려 둔 것이고, 문서가 몇 쪽인지는 따로 적혀 있다.** 열 쪽짜리를 만들어도
+    그때 한도가 여덟 장이었으면 그림은 여덟 장뿐이고, 그 뒤로는 다시 고치기 전까지 그대로다.
+    화면이 9쪽을 달라고 하면 그 자리에서 그려 준다 — 한 번 그려 두면 다음부터는 파일로 나간다.
+    """
+    ins = j.get("inspect") or {}
+    pages = int(ins.get("pages") or 0)
+    if not j.get("src_ref") or upto < 1 or upto > pages:
+        return                                   # 문서에 없는 쪽이다. 엔진을 띄울 까닭이 없다
+    if len(_DRAWING) > 64:                       # 지운 문서의 자물쇠까지 들고 있을 까닭은 없다
+        for gone in [c for c in _DRAWING if c not in DCJOBS]:
+            _DRAWING.pop(gone, None)
+    lock = _DRAWING.setdefault(ctx, asyncio.Lock())
+    async with lock:
+        here = DC_OUT / ctx
+        # 달라는 쪽만이 아니라 **없는 쪽을 한꺼번에** 그린다. 엔진을 띄우는 값이 그림 한 장을
+        # 그리는 값보다 크다 — 9쪽을 그리려고 띄운 김에 10쪽도 그려 둔다.
+        want = [n for n in range(1, pages + 1) if not (here / f"page{n}.png").is_file()]
+        if not want:
+            return                               # 기다리는 사이에 다른 물음이 그려 놓았다
+        r = await _ask("designcraft", "page_shots", ctx,
+                       {"src_ref": j["src_ref"], "filename": j.get("doc") or j.get("filename"), "pages": want})
+        if r.get("status") != "completed":
+            return
+        # 그린 것을 보관된 모습에도 적는다. 그래야 다음에 열 때 쪽 단추가 처음부터 맞는다.
+        out = r.get("output") or {}
+        drawn = sorted({*(ins.get("shots") or []), *(out.get("shots") or [])},
+                       key=lambda s: int(re.sub(r"\D", "", s) or 0))
+        ins["shots"] = drawn
+        j["inspect"] = ins
+        _dc_save(ctx)
+
+
 @app.get("/designcraft/{ctx}/watch/{name}")
 async def dc_watch_file(ctx: str, name: str, authorization: str | None = Auth) -> FileResponse:
     """지켜보기용 쪽 그림. **그림만** 내준다 — 편집 파일과 PDF는 주인만 받는다."""
     if not _who(authorization):
         raise HTTPException(401, "로그인이 필요합니다")
-    _watchable(ctx)
-    if not re.fullmatch(r"(page\d{1,3}|page1)\.png", name):
+    j = _watchable(ctx)
+    if not re.fullmatch(r"page\d{1,3}\.png", name):
         raise HTTPException(404, "지켜보기로는 쪽 그림만 볼 수 있습니다")
     p = (DC_OUT / ctx / name).resolve()
-    if (DC_OUT / ctx).resolve() not in p.parents or not p.is_file():
+    if (DC_OUT / ctx).resolve() not in p.parents:
+        raise HTTPException(404, "없는 그림")
+    if not p.is_file():
+        await _draw_missing(ctx, j, int(re.sub(r"\D", "", name) or 0))
+    if not p.is_file():
         raise HTTPException(404, "없는 그림")
     return FileResponse(p, media_type="image/png")
 
