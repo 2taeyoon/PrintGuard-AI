@@ -99,8 +99,9 @@ def test_card_grades():
     g = {s.id: s.grade for s in dc.CARD.skills}
     # package_document가 read인 이유 — 사람의 문서를 건드리지 않는다. 작업 폴더 안에 사본을
     # 모아 zip 하나를 남길 뿐이라, 되돌릴 것이 생기지 않는다(inspect_source와 같은 자리다).
+    # page_shots도 read다 — 작업 폴더에 쪽 그림을 그려 둘 뿐, 사람의 문서를 건드리지 않는다.
     assert g == {"mcp_status": "read", "inspect_source": "read", "list_commands": "read", "compose": "read",
-                 "package_document": "read",
+                 "package_document": "read", "page_shots": "read",
                  "apply_fixes": "A", "edit_document": "A", "create_document": "A"}
     for sid in ("apply_fixes", "create_document"):
         s = next(x for x in dc.CARD.skills if x.id == sid)
@@ -695,3 +696,54 @@ def test_the_limit_is_opt_in(monkeypatch, tmp_path):
         m.ex("frame.create", rect=[36, 36, 300, 120], content="text", text="Hello")
         r = dc._state(m, out)
     assert r["pages"] == 8 and len(r["shots"]) == 3
+
+
+@needs_cli
+def test_a_missing_page_is_drawn_when_asked_for(tmp_path):
+    """**그림은 그때그때 그려 둔 것이고, 문서가 몇 쪽인지는 따로 적혀 있다.** 한도가 여덟 장이던
+    때 만든 열 쪽짜리는 그림이 여덟 장뿐이라, 쪽 단추도 여덟 개만 나왔다. 뒤늦게 달라고 하면
+    그 자리에서 그려 준다 — 한 번 그려 두면 그다음부터는 파일로 바로 나간다."""
+    src = tmp_path / "열쪽.designcraft"
+    with Mcp(read_roots=[tmp_path], write_roots=[tmp_path]) as m:
+        m.tool("new_document", {"preset": "A4", "margins": 36, "pages": 5})
+        m.ex("frame.create", rect=[36, 36, 300, 120], content="text", text="Hello")
+        m.ex("file.saveAs", path=str(src))
+    out = tmp_path / "out"
+    r = dc._shots_blocking(src, ".designcraft", out, [4, 5])
+    assert r["pages"] == 5
+    assert r["shots"] == ["page4.png", "page5.png"]
+    assert (out / "page4.png").is_file() and (out / "page5.png").is_file()
+    # 달라지 않은 쪽은 그리지 않는다. 열두 쪽짜리를 한 장 보자고 열두 장을 그릴 까닭이 없다
+    assert not (out / "page1.png").exists()
+
+
+@needs_cli
+def test_a_page_the_document_does_not_have_is_skipped(tmp_path):
+    """없는 쪽을 달라고 해도 조용히 넘긴다. 엔진이 터지면 있는 쪽까지 못 받는다."""
+    src = tmp_path / "두쪽.designcraft"
+    with Mcp(read_roots=[tmp_path], write_roots=[tmp_path]) as m:
+        m.tool("new_document", {"preset": "A4", "margins": 36, "pages": 2})
+        m.ex("frame.create", rect=[36, 36, 300, 120], content="text", text="Hello")
+        m.ex("file.saveAs", path=str(src))
+    out = tmp_path / "out"
+    r = dc._shots_blocking(src, ".designcraft", out, [2, 9])
+    assert r["pages"] == 2 and r["shots"] == ["page2.png"]
+    assert not (out / "page9.png").exists()
+
+
+@needs_cli
+def test_the_package_carries_a_pdf_too(tmp_path):
+    """**인쇄소가 맨 먼저 여는 것은 PDF다.** 인디자인 묶음에는 편집 파일·사진·글꼴만 들어가서,
+    묶음을 풀어도 '무엇을 찍는 건지'를 볼 것이 없었다 — 받은 사람이 다시 물어야 했다."""
+    src = tmp_path / "표지.designcraft"
+    with Mcp(read_roots=[tmp_path], write_roots=[tmp_path]) as m:
+        m.tool("new_document", {"preset": "A4", "margins": 36})
+        m.ex("frame.create", rect=[36, 36, 300, 120], content="text", text="Hello")
+        m.ex("file.saveAs", path=str(src))
+    out = tmp_path / "out"
+    out.mkdir()
+    r = dc._package_blocking(src, ".designcraft", out)
+    assert r["pdf"] == "표지.pdf", r["entries"]
+    with zipfile.ZipFile(out / r["name"]) as z:
+        assert "표지/표지.pdf" in z.namelist(), z.namelist()
+        assert z.read("표지/표지.pdf").startswith(b"%PDF")

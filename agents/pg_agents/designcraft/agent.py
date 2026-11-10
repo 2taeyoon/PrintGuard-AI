@@ -119,12 +119,16 @@ CARD = AgentCard.model_validate({
                           "bleed_mm": "number", "text": "string? 첫 글상자에 넣을 글"},
          "output_schema": {"src_ref": "sha256", "doc": "만든 IDML의 이름", "pages": "number", "width_mm": "number",
                            "height_mm": "number"}},
-        {"id": "package_document", "description": "인쇄소에 넘길 묶음(zip)을 만든다 — 편집 파일 + 쓴 사진(Links) + 글꼴(Document Fonts)", "grade": "read",
+        {"id": "package_document", "description": "인쇄소에 넘길 묶음(zip)을 만든다 — 편집 파일 + 쓴 사진(Links) + 글꼴(Document Fonts) + PDF", "grade": "read",
          "allowed_requesters": ["orchestrator"],
          "input_schema": {"src_ref": "sha256", "filename": "string"},
          "output_schema": {"name": "만든 zip 이름", "bytes": "number", "entries": "string[] 묶음 안의 파일",
                            "links": "string[] 같이 담은 사진", "fonts": "string[] 같이 담은 글꼴 파일",
-                           "report": "엔진이 적어 준 묶음 보고서"}},
+                           "pdf": "같이 담은 PDF 이름", "report": "엔진이 적어 준 묶음 보고서"}},
+        {"id": "page_shots", "description": "아직 안 그린 쪽의 그림을 그려 둔다 — 화면이 그 쪽을 달라고 할 때 부른다", "grade": "read",
+         "allowed_requesters": ["orchestrator"],
+         "input_schema": {"src_ref": "sha256", "filename": "string", "pages": "number[] 1부터 센 쪽 번호"},
+         "output_schema": {"pages": "number 문서의 쪽수", "shots": "string[] 이번에 그린 그림 이름"}},
     ],
 })
 
@@ -1091,6 +1095,14 @@ def _package_blocking(src: Path, ext: str, out: Path) -> dict[str, Any]:
     with Mcp(read_roots=[_pkg_root(src), out], write_roots=[out]) as m:
         _open(m, src, ext)
         r = m.ex("file.package", dir=str(work), idml=True) or {}
+        # **PDF도 같이 담는다.** 인디자인 묶음에는 편집 파일·사진·글꼴만 들어간다. 그런데 받은
+        # 사람이 맨 먼저 하는 일은 '무엇을 찍는 건지' 보는 것이고, 그걸 보여 주는 것은 PDF다 —
+        # 묶음을 풀었는데 PDF가 없으면 다시 달라고 물어야 한다.
+        work.mkdir(parents=True, exist_ok=True)
+        try:
+            m.ex("file.exportPdf", path=str(work / f"{src.stem or 'doc'}.pdf"))
+        except McpError:
+            pass                                 # 묶음은 만들어졌다. PDF 하나 때문에 전부 버리지 않는다
 
     stem = src.stem or "package"
     zpath = out / f"{stem}.zip"
@@ -1111,7 +1123,48 @@ def _package_blocking(src: Path, ext: str, out: Path) -> dict[str, Any]:
 
     return {"name": zpath.name, "bytes": zpath.stat().st_size, "entries": entries,
             "links": under("Links"), "fonts": under("Document Fonts"),
+            "pdf": next((e for e in entries if e.lower().endswith(".pdf")), ""),
             "report": str(r.get("report") or "")[:4000]}
+
+
+MAX_DRAW_PAGES = 64
+
+
+def _shots_blocking(src: Path, ext: str, out: Path, want: list[int]) -> dict[str, Any]:
+    """달라는 쪽의 그림을 그려 둔다. **한 번 열어 여러 장을 그린다** — 쪽마다 엔진을 새로 띄우면
+    열두 쪽을 넘길 때 열두 번 기다린다."""
+    out.mkdir(parents=True, exist_ok=True)
+    with Mcp(read_roots=[_pkg_root(src), out], write_roots=[out]) as m:
+        _open(m, src, ext)
+        total = int((m.tool("inspect_document") or {}).get("pageCount") or 0)
+        drew = [f"page{p}.png" for p in want
+                if 1 <= p <= total and _shot(m, p, out / f"page{p}.png")]
+    return {"pages": total, "shots": drew}
+
+
+async def page_shots(req: AgentRequest) -> dict[str, Any]:
+    """아직 안 그린 쪽의 그림.
+
+    그림은 **그때그때 그려 둔 것**이고 문서가 몇 쪽인지는 따로 적혀 있다. 둘이 어긋나면
+    10쪽짜리인데 쪽 단추가 8개만 보인다 — 그려 둔 것이 여덟 장이라서다. 어긋난 자리를 여기서
+    메운다. 한 번 그려 두면 그다음부터는 파일로 바로 나간다.
+    """
+    src, ext = _src_path(str(req.input.get("src_ref") or ""), str(req.input.get("filename") or ""))
+    want: list[int] = []
+    for p in (req.input.get("pages") or [])[:MAX_DRAW_PAGES]:
+        try:
+            n = int(p)
+        except (TypeError, ValueError):
+            continue
+        if n >= 1 and n not in want:
+            want.append(n)
+    if not want:
+        return {"status": "rejected", "outcome": "INVALID_INPUT",
+                "output": {"message": "그릴 쪽 번호가 없습니다"}}
+    r = await asyncio.to_thread(_shots_blocking, src, ext, _job_dir(req.meta.context_id), sorted(want))
+    return {"status": "completed", "output": r,
+            "evidence": {"queries": [], "ref_ids": [],
+                         "data_summary": f"쪽 그림 {len(r['shots'])}장(문서 {r['pages']}쪽)"}}
 
 
 async def package_document(req: AgentRequest) -> dict[str, Any]:
@@ -1126,5 +1179,6 @@ async def package_document(req: AgentRequest) -> dict[str, Any]:
 
 app = create_agent_app(CARD, {"mcp_status": mcp_status, "inspect_source": inspect_source, "apply_fixes": apply_fixes,
                               "create_document": create_document, "package_document": package_document,
+                              "page_shots": page_shots,
                                 "list_commands": list_commands, "edit_document": edit_document,
                                 "compose": compose})

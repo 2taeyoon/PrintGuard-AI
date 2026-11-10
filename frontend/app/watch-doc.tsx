@@ -63,7 +63,9 @@ export default function WatchDoc() {
   const [chosen, setChosen] = useState("");    // 사람이 직접 고른 문서
   const [pinned, setPinned] = useState(false); // 그 자리에 머물러 있는가
   const [err, setErr] = useState("");
-  const [shot, setShot] = useState<string | null>(null);
+  // 쪽 그림. **어느 쪽의 그림인지 같이 들고 있는다** — 없는 쪽을 서버가 그리는 동안(몇 초)
+  // 앞 쪽 그림을 그대로 두면, 9쪽을 눌렀는데 1쪽이 보인다. `url`이 비면 못 그린 것이다.
+  const [shot, setShot] = useState<{ name: string; url: string } | null>(null);
   const [page, setPage] = useState(1);
   const [copied, setCopied] = useState(false);
   const after = useRef(0);
@@ -230,17 +232,24 @@ export default function WatchDoc() {
     return () => { alive = false; };
   }, [pick, mark]);
 
-  // 쪽 그림은 바뀐 것이 있을 때만 다시 받는다.
+  // 쪽 단추는 **문서에 있는 쪽**만큼 둔다. 그려 둔 그림 수로 세었더니 10쪽짜리에 여덟 개만
+  // 나왔다 — 그림은 그때그때 그려 둔 것이고(그릴 때 한도가 여덟 장이었다) 문서가 몇 쪽인지는
+  // 따로 적혀 있다. 없는 그림은 달라고 할 때 서버가 그 자리에서 그려 준다.
   const shots = doc?.shots?.length ? doc.shots : (doc?.png ? [doc.png] : []);
-  const name = shots[Math.min(page, shots.length) - 1] ?? null;
+  const pages = Math.max(doc?.pages ?? 0, shots.length);
+  // 쪽 그림은 바뀐 것이 있을 때만 다시 받는다.
+  const name = pages ? `page${Math.min(page, pages)}.png` : null;
   const stamp = `${pick}|${name}|${rows.length}`;
   useEffect(() => {
     if (!pick || !name || stamp === lastShot.current) return;
     lastShot.current = stamp;
-    let dead: string | null = null;
-    watchShot(pick, name).then((u) => { setShot((old) => { dead = old; return u; }); })
-      .catch(() => { /* 아직 안 그려졌을 수 있다 */ })
-      .finally(() => { if (dead) setTimeout(() => URL.revokeObjectURL(dead!), 1000); });
+    let dead = "";
+    // 못 받았을 때도 '어느 쪽을 보려다 못 받았는지'를 남긴다. 그래야 화면이 '그리는 중'과
+    // '못 그렸다'를 가려 말할 수 있다(서버가 없는 쪽을 그 자리에서 그려 주는 데 몇 초 걸린다).
+    watchShot(pick, name).then(
+      (u) => { setShot((old) => { dead = old?.url ?? ""; return { name, url: u }; }); },
+      () => { setShot((old) => { dead = old?.url ?? ""; return { name, url: "" }; }); },
+    ).finally(() => { if (dead) setTimeout(() => URL.revokeObjectURL(dead), 1000); });
   }, [pick, name, stamp]);
 
   // 새 줄이 붙으면 아래로 따라 내려간다(채팅과 같다).
@@ -402,11 +411,12 @@ export default function WatchDoc() {
               onClick={() => router.push(`/?src=${encodeURIComponent(doc.context_id)}`)}>
               이 문서로 인쇄 검수하기 →
             </button>
+            {/* 받는 길은 **둘뿐이다.** 편집 파일 하나만 받는 길도 있었는데, 그걸 받으면 사진이
+                따라오지 않아 받은 사람이 링크가 끊긴 문서를 연다 — 고를 수 있게 두면 언젠가
+                그걸 고른다. 편집 파일은 패키지 안에 들어 있다. */}
             <button type="button" className="pill" disabled={packing} onClick={() => void pack()}>
               {packing ? "묶는 중…" : "패키지(zip) 받기"}
             </button>
-            <button type="button" className="pill"
-              onClick={() => void dl(["work.idml", "new.idml"], doc.filename)}>idml만 받기</button>
             <button type="button" className="pill"
               onClick={() => void dl(["doc.pdf", "inspect.pdf"], doc.filename.replace(/\.idml$/, ".pdf"))}>PDF 받기</button>
           </div>
@@ -415,10 +425,10 @@ export default function WatchDoc() {
             <b>이 문서에 반영할지 물어봅니다</b>.
           </p>
           <p className="note">
-            인쇄소에 넘기거나 다른 PC에서 열 때는 <b>패키지</b>로 받으세요 — 편집 파일과 함께{" "}
-            <b>쓴 사진(Links)</b>과 <b>글꼴(Document Fonts)</b>이 한 폴더에 담깁니다.{" "}
-            <b>idml만 받으면 사진이 따라오지 않습니다</b>(IDML은 사진을 담지 않고 경로로 가리키기만 합니다).
-            글꼴이 들어가 수십 MB가 되고, 묶는 데 몇 초 걸립니다.
+            인쇄소에 넘기거나 다른 PC에서 열 때는 <b>패키지</b>로 받으세요 — <b>편집 파일(idml)</b>과{" "}
+            <b>쓴 사진(Links)</b>, <b>글꼴(Document Fonts)</b>, <b>PDF</b>가 한 폴더에 담깁니다.
+            글꼴이 들어가 수십 MB가 되고, 묶는 데 몇 초 걸립니다. 눈으로 보기만 할 때는{" "}
+            <b>PDF</b> 한 장이면 됩니다.
           </p>
           {/* 이어서 시키려면 클로드에게 이 번호를 줘야 한다 — 'ctx_dc_… 이어서 고쳐 줘'. */}
           <div className="dc_row">
@@ -434,18 +444,22 @@ export default function WatchDoc() {
 
           <div className="watchgrid">
             <div>
-              {shots.length > 1 && (
+              {pages > 1 && (
                 <div className="pagebar" role="tablist" aria-label="쪽 고르기">
-                  {shots.map((_, i) => (
+                  {Array.from({ length: pages }, (_, i) => (
                     <button key={i} type="button" role="tab" aria-selected={page === i + 1}
                       className={`pill${page === i + 1 ? " on" : ""}`} onClick={() => setPage(i + 1)}>{i + 1}쪽</button>
                   ))}
                 </div>
               )}
-              {shot
-                // eslint-disable-next-line @next/next/no-img-element
-                ? <img className="dc_shot" src={shot} alt={`${doc.filename} ${page}쪽`} />
-                : <div className="empty">아직 그려진 쪽이 없습니다.</div>}
+              {/* 그리는 중과 못 그린 것을 가려 말한다. 전에는 둘 다 '아직 그려진 쪽이 없습니다'
+                  였는데, 그동안 서버가 그리고 있는 쪽까지 '없다'고 말하는 셈이었다. */}
+              {shot?.name !== name
+                ? <div className="empty">{page}쪽 그림을 그리고 있습니다…</div>
+                : shot.url
+                  // eslint-disable-next-line @next/next/no-img-element
+                  ? <img className="dc_shot" src={shot.url} alt={`${doc.filename} ${page}쪽`} />
+                  : <div className="empty">{page}쪽은 아직 그리지 못했습니다.</div>}
             </div>
             <div>
               <h3 className="dc_sub">만든 문서 검사 {doc.preflight.length}건</h3>
