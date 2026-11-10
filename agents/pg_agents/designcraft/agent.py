@@ -56,6 +56,7 @@ from ..common_log import log_event
 from ..config import DC_OUT, SRC
 from ..contracts import AgentCard, AgentRequest, TaskStatus
 from ..server import create_agent_app
+from . import issue_text
 from .mcp_client import Mcp, McpError, probe
 
 NAME = "designcraft"
@@ -317,8 +318,7 @@ def _inspect_blocking(src: Path, ext: str, out: Path) -> dict[str, Any]:
     return {
         "pages": doc.get("pageCount", 0),
         "stories": stories,
-        "preflight": [{"severity": i.get("severity"), "kind": i.get("kind"), "message": i.get("message"),
-                       "page": (i["page"] + 1) if isinstance(i.get("page"), int) else None} for i in issues],
+        "preflight": issue_text.rows(issues),
         **_font_summary(fonts, issues),
         # 문서가 품은 글자 수. PDF에서 뽑힌 글이 이보다 턱없이 적으면 글꼴이 글자를 막은 것이다.
         "text_chars": sum(int(s.get("length") or 0) for s in doc.get("stories", [])),
@@ -459,9 +459,7 @@ def _apply_blocking(src: Path, ext: str, out: Path, fixes: list[dict[str, Any]])
             **_font_summary(fonts, pf.get("issues", [])),
             "shots": [{"page": p, "before": f"before_p{p}.png", "after": f"after_p{p}.png"} for p in shot_pages],
             "shots_total": want_total,
-            "preflight_after": [{"severity": i.get("severity"), "kind": i.get("kind"), "message": i.get("message"),
-                                 "page": (i["page"] + 1) if isinstance(i.get("page"), int) else None}
-                                for i in pf.get("issues", [])]}
+            "preflight_after": issue_text.rows(pf.get("issues", []))}
 
 
 def _ask_first(fixes: list[dict[str, Any]], filename: str) -> dict[str, Any]:
@@ -815,8 +813,7 @@ def _state(m: Mcp, out: Path) -> dict[str, Any]:
         "shots": shots,
         "items": sum(len(sp.get("items") or []) for sp in doc.get("spreads") or []),
         "stories": len(doc.get("stories") or []),
-        "preflight": [{"severity": i.get("severity"), "kind": i.get("kind"), "message": i.get("message"),
-                       "page": (i["page"] + 1) if isinstance(i.get("page"), int) else None} for i in issues],
+        "preflight": issue_text.rows(issues),
         **_font_summary(_fonts(m), issues),
         "pdf_path": str(pdf),
     }

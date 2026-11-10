@@ -133,9 +133,12 @@ function AgentRow({ name, a, open, toggle, why }:
         <span className="note">{STATUS[a.status] ?? a.status}</span>
         <span className="mark" aria-hidden="true">{open ? "－" : "＋"}</span>
       </button>
-      {why && <p className="note aitem_why">{why}</p>}
       {open && (
         <div className="aitem_body">
+          {/* 조건은 **펼쳤을 때** 적는다. 접힌 목록에 늘 붙여 뒀더니, PDF로 맡긴 사람에게는
+              '원본을 고치지 않는다'는 줄이 줄곧 떠 있어 못 하는 일을 먼저 읽게 됐다.
+              이 줄이 궁금해지는 때는 그 에이전트가 무엇을 하는지 열어 볼 때다. */}
+          {why && <p className="note aitem_why">{why}</p>}
           {a.card ? (
             <>
               <p className="note">{a.card.description}</p>

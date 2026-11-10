@@ -75,6 +75,11 @@ function Home() {
   // 고른 것을 지울 때 input의 value까지 비우려면 손잡이가 필요하다
   const pdfRef = useRef<HTMLInputElement>(null);
   const idmlRef = useRef<HTMLInputElement | null>(null);
+  // '이 문서로 인쇄 검수하기'로 들어온 사람을 **올리는 칸 앞에** 내려 준다. 맨 위에서 열리면
+  // 방금 고른 문서가 어디 들어갔는지 보이지 않아, 멀쩡히 들어가 있는데도 다시 고르려고
+  // 파일 칸을 찾아 내려가게 된다. 내려 줄 자리는 고른 것과 판형이 함께 보이는 그 칸이다.
+  const formRef = useRef<HTMLFormElement>(null);
+  const jumped = useRef(false);
   const [risks, setRisks] = useState<(Risk & { hits: Hit[] })[]>([]);
   const [usedPaper, setUsedPaper] = useState<Paper | null>(null);
   const paper = db?.papers.find((p) => p.id === paperId) ?? null;
@@ -210,6 +215,14 @@ function Home() {
       .finally(() => { if (alive) setSrcBusy(false); });
     return () => { alive = false; };
   }, [srcParam, adoptSource]);
+
+  // 다 불러온 뒤에 내려간다. 여는 동안 내려 보내면 칸이 '여는 중…'일 때 자리를 잡고,
+  // 쪽수·판형이 채워지면서 자리가 밀린다. 한 번만 한다 — 그 뒤로는 보던 자리가 흔들리면 안 된다.
+  useEffect(() => {
+    if (!srcParam || srcBusy || jumped.current) return;
+    jumped.current = true;
+    formRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, [srcParam, srcBusy]);
 
   async function openSource(fs: File[]) {
     setSrcBusy(true); setErr(""); setRead(null); setReadFail(false);
@@ -389,7 +402,7 @@ function Home() {
 
       <TermsPanel />
 
-      <form className="upload panel" onSubmit={submit}>
+      <form className="upload panel" ref={formRef} onSubmit={submit}>
         {/* **둘 중 하나만 올린다.** PDF로 맡긴 검수와 IDML로 맡긴 검수는 할 수 있는 일이 다르다
             (IDML 쪽만 끝에서 원본을 고친다). 둘 다 골라 두면 어느 쪽으로 도는지 화면만 보고는
             알 수 없다. 그래서 하나를 고르면 다른 쪽을 잠그고, 잠긴 이유를 그 자리에 적는다.
