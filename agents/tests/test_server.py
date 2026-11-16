@@ -2,6 +2,8 @@
 import os
 from datetime import timedelta
 
+import pytest
+
 from fastapi.testclient import TestClient
 
 from pg_agents.contracts import AgentCard, now_utc
@@ -130,6 +132,11 @@ def test_starting_one_agent_directly_still_reads_env_files():
     import sys
 
     from pg_agents.config import ENV_FILES, ROOT
+
+    # 읽을 `.env`가 아예 없으면 이 시험은 볼 것이 없다. 깃헙 러너가 그렇다 — 열쇠 파일을
+    # 올려 두지 않으니까. 시험을 무르게 만드는 게 아니라, 전제가 없는 기계에서 건너뛰는 것이다.
+    if not any(p.exists() for p in ENV_FILES):
+        pytest.skip(".env가 없는 기계다")
 
     env = {k: v for k, v in os.environ.items() if k not in ("PG_NO_ENV_FILES", "PG_CORS_ORIGIN_REGEX")}
     out = subprocess.run(  # noqa: S603 - 우리가 만든 인자다

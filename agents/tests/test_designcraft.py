@@ -109,6 +109,7 @@ def test_card_grades():
 
 
 # ---------- MCP 가두기 ----------
+@needs_cli
 def test_mcp_refuses_to_start_unconfined(tmp_path):
     """가두지 않은 MCP는 띄우지 않는다. 플래그가 없으면 디스크 전체가 열린다."""
     with pytest.raises(McpError, match="읽기·쓰기 폴더"):
@@ -481,6 +482,7 @@ def test_a_new_text_box_gets_a_hangul_font_without_touching_the_rest(tmp_path):
 # 명령 547개를 펼쳐 놓으면 할 수 있는 일은 많아지지만 처음 온 사람은 무엇을 눌러야 할지 모른다.
 # 그래서 LLM이 명령을 짜 준다. **LLM은 확률적이라 계속 어긋나므로, 어긋남을 코드가 바로잡는다** —
 # 프롬프트를 조이는 것보다 확실하다.
+@needs_cli
 def test_compose_only_keeps_commands_it_knows():
     """목록에 없는 명령은 버린다. 버린 것을 돌려줘야 '모든 명령'에서 직접 쓸 수 있다."""
     fake = lambda _: ('{"says":"넣습니다","commands":['                     # noqa: E731
