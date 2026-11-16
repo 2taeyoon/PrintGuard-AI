@@ -341,22 +341,24 @@ export default function EvalReport() {
           줄바꿈 관련 수치는 원본의 값이 아니라고 적고, 색·해상도·종이는 그대로 맞다고 적습니다.
         </Pick>
         <h3>두 경우가 전혀 다르다</h3>
-        <table className="ev_table">
-          <thead>
-            <tr><th>경우</th><th>PDF에 글이 남나</th><th>교정이 읽나</th><th>줄바꿈</th></tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>글꼴이 아예 없다(<code>missingFont</code>)</td>
-              <td>남는다 — 한글 50자 중 50자</td><td>정상</td><td><b>밀린다</b></td>
-            </tr>
-            <tr>
-              <td>글꼴은 있는데 그 글자가 없다(<code>missingGlyphs</code>)</td>
-              <td><b>안 남는다 — 29자 중 8자</b>(공백·마침표뿐)</td>
-              <td><b>아무것도 못 읽는다</b></td><td>그대로</td>
-            </tr>
-          </tbody>
-        </table>
+        <div className="scroll">
+          <table className="ev_table">
+            <thead>
+              <tr><th>경우</th><th>PDF에 글이 남나</th><th>교정이 읽나</th><th>줄바꿈</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>글꼴이 아예 없다(<code>missingFont</code>)</td>
+                <td>남는다 — 한글 50자 중 50자</td><td>정상</td><td><b>밀린다</b></td>
+              </tr>
+              <tr>
+                <td>글꼴은 있는데 그 글자가 없다(<code>missingGlyphs</code>)</td>
+                <td><b>안 남는다 — 29자 중 8자</b>(공백·마침표뿐)</td>
+                <td><b>아무것도 못 읽는다</b></td><td>그대로</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
         <p className="note">
           첫 줄은 대체 글꼴이 그려 주고 없는 글자는 폴백이 메꿔서 글이 그대로 뽑힙니다(실측: 한글은 Batang,
           라틴은 Source Sans 3). 둘째 줄이 위험합니다 — 글자가 PDF에 남지 않으니 <b>“고칠 것 없음”이라는
@@ -365,14 +367,16 @@ export default function EvalReport() {
 
         <h3>대체되면 줄이 얼마나 밀리나</h3>
         <p className="note">같은 상자(200×140pt)에 같은 글 1,350자를 넣고 글꼴만 바꿨을 때 넘친 글자 수입니다.</p>
-        <table className="ev_table">
-          <thead><tr><th>글꼴</th><th>넘친 글자</th></tr></thead>
-          <tbody>
-            <tr><td>맑은 고딕</td><td>372자</td></tr>
-            <tr><td>굴림</td><td>365자</td></tr>
-            <tr><td>바탕</td><td>365자</td></tr>
-          </tbody>
-        </table>
+        <div className="scroll">
+          <table className="ev_table">
+            <thead><tr><th>글꼴</th><th>넘친 글자</th></tr></thead>
+            <tbody>
+              <tr><td>맑은 고딕</td><td>372자</td></tr>
+              <tr><td>굴림</td><td>365자</td></tr>
+              <tr><td>바탕</td><td>365자</td></tr>
+            </tbody>
+          </table>
+        </div>
         <p className="note">
           같은 글·같은 상자인데 <b>7자가 다릅니다.</b> 그래서 대체 글꼴로 본 넘침·쪽 배분은 원본의 값이 아닙니다.
         </p>
@@ -383,13 +387,15 @@ export default function EvalReport() {
           인디자인의 <b>파일 → 패키지</b>가 만드는 <code>Document Fonts/</code>를 엔진이 문서보다 <b>먼저</b> 읽는지
           재 봤습니다 — 같은 글꼴이 PC에도 깔려 있는 상태로 시험했습니다.
         </p>
-        <table className="ev_table">
-          <thead><tr><th>올린 모양</th><th>실려 온 글꼴</th><th>쓰인 출처</th></tr></thead>
-          <tbody>
-            <tr><td>문서 하나만</td><td>0개</td><td><code>installed</code> (PC에 깔린 것)</td></tr>
-            <tr><td>패키지 폴더째</td><td><b>1개</b></td><td><b><code>document</code></b> (올린 글꼴)</td></tr>
-          </tbody>
-        </table>
+        <div className="scroll">
+          <table className="ev_table">
+            <thead><tr><th>올린 모양</th><th>실려 온 글꼴</th><th>쓰인 출처</th></tr></thead>
+            <tbody>
+              <tr><td>문서 하나만</td><td>0개</td><td><code>installed</code> (PC에 깔린 것)</td></tr>
+              <tr><td>패키지 폴더째</td><td><b>1개</b></td><td><b><code>document</code></b> (올린 글꼴)</td></tr>
+            </tbody>
+          </table>
+        </div>
         <p className="note">
           패키지로 올리면 PC에 깔린 글꼴을 <b>밀어내고</b> 올린 글꼴을 씁니다. 설치하지 않고 그 폴더에서만 읽습니다.
         </p>
@@ -399,12 +405,14 @@ export default function EvalReport() {
           이 PC에 없는 글꼴(<code>Yoon Myungjo 330</code>)을 가리키는 IDML의 글자를 고쳐 내보낸 뒤,
           나온 IDML 안의 글꼴 이름을 전부 긁어 봤습니다.
         </p>
-        <table className="ev_table">
-          <thead><tr><th>고친 결과</th><th>파일에 남은 글꼴 이름</th></tr></thead>
-          <tbody>
-            <tr><td>교정 1건 반영, 실패 0</td><td><b><code>Yoon Myungjo 330</code> 하나뿐</b> (대체한 이름은 안 적힘)</td></tr>
-          </tbody>
-        </table>
+        <div className="scroll">
+          <table className="ev_table">
+            <thead><tr><th>고친 결과</th><th>파일에 남은 글꼴 이름</th></tr></thead>
+            <tbody>
+              <tr><td>교정 1건 반영, 실패 0</td><td><b><code>Yoon Myungjo 330</code> 하나뿐</b> (대체한 이름은 안 적힘)</td></tr>
+            </tbody>
+          </table>
+        </div>
         <p className="note">
           <b>원본이 깨지는 일은 없습니다.</b> 글자만 바꾸고 글꼴은 손대지 않으니, 그 글꼴이 있는 PC에서 열면
           원본대로 보입니다. 이 시험은 <code>agents/tests/test_designcraft.py</code>에 묶여 있어 깨지면 바로 걸립니다.
@@ -423,6 +431,8 @@ export default function EvalReport() {
           <li><b>인쇄 불량 정답 데이터</b> — 공개 데이터셋을 찾지 못했습니다. 그래서 불량은 학습 모델로 예측하지 않고, 자료에서 확인한 원인이 해당하는지만 보여 줍니다. 어느 원인이 얼마나 더 위험한지는 재지 않았습니다.</li>
           <li><b>실제 사용자 질문·실제 원고</b> — 검색 질문과 교정 평가셋은 모두 제가 만들었습니다. 난이도가 실제와 얼마나 맞는지는 모릅니다.</li>
           <li><b>브랜드 종이 측정 프로파일</b>— 454종은 등급 프로파일로 근사했습니다. 종이 흰색을 측정해 넣을 때만 보정합니다.</li>
+          <li><b>회차 비교의 정확도</b> — 글자·그림 비교와 요청 반영 판정은 직접 만든 시험용 PDF 한 쌍으로만 확인했습니다. 그림 비교 문턱(10px 칸, 평균 22/255)도 그 PDF로 정했습니다. 실제 교정지 여러 묶음에서 놓친 변화와 잘못 잡은 변화를 세어 보지 않았습니다.</li>
+          <li><b>브랜드 키트로 만든 결과의 품질</b> — 키트 값(CMYK·글꼴·로고)이 그대로 들어가는지는 시험과 실제 명함 한 장으로 확인했습니다. LLM이 키트를 받아 짠 배치가 보기 좋은지는 사람이 판단할 일이라 재지 않았습니다.</li>
           <li><b>인쇄 비용</b> — 단가를 정할 근거가 없어 견적·주문 기능은 두지 않았습니다. 인쇄소 지도는 찾아 주기만 하고 연락은 사용자가 직접 합니다.</li>
         </ul>
       </Section>

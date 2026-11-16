@@ -31,7 +31,7 @@ from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadF
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from .. import google
+from .. import brand, google
 from ..auth import Claims, bearer, mint, secret, tool_subject, verify
 from ..client import call_agent, new_meta
 from ..common_log import forget, log_event, query
@@ -798,6 +798,124 @@ async def dc_commands() -> dict[str, Any]:
     return {"data": _CMD_CACHE, "meta": {}}
 
 
+# ---------------------------------------------------------------- 브랜드 키트
+# 로고·색·글꼴을 한 번 등록해 두면 말로 부탁해 만드는 문서(compose)가 늘 그 브랜드로 나온다.
+# 저장·검증은 `pg_agents/brand.py`가 한다. 여기서는 누구의 키트인지만 가린다.
+#
+# **이 창구들은 `/designcraft/{ctx}`보다 앞에 둔다.** 뒤에 두면 GET·DELETE `/designcraft/brand`를
+# 그 창구가 '번호가 brand인 문서'로 먼저 받아 가 "없는 의뢰"로 404를 낸다.
+
+
+def _kit_owner(request: Request, authorization: str | None, write: bool = False) -> str:
+    """이 PC에서 온 요청이면(이 PC의 브라우저든 이 PC의 클로드든) 한 사람으로 본다 —
+    `_visible`과 같은 규칙이다. 그래야 화면에서 등록한 키트를 클로드가 MCP로 만들 때 쓴다."""
+    who = _writer(authorization).subject if write else _who(authorization)
+    # 터널(cloudflared 같은 것)을 거쳐 온 요청도 주소는 127.0.0.1이다. 그대로 믿으면 바깥 사람이
+    # 이 PC 주인의 키트를 고칠 수 있다. 중계 머리말이 붙어 있으면 바깥으로 본다.
+    proxied = any(h in request.headers for h in ("x-forwarded-for", "cf-connecting-ip", "forwarded", "x-real-ip"))
+    if _at_this_pc(request) and not proxied:
+        return tool_subject()
+    if not who:
+        raise HTTPException(401, "토큰이 필요합니다")
+    return who
+
+
+def _kit_view(kit: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not kit:
+        return None
+    logo = kit.get("logo") or None
+    # 파일 경로는 밖에 내보내지 않는다 — 이름과 크기만.
+    return {**kit, "logo": {"name": logo.get("name"), "bytes": logo.get("bytes")} if logo else None}
+
+
+@app.get("/designcraft/brand")
+async def dc_brand_get(request: Request, authorization: str | None = Auth) -> dict[str, Any]:
+    return {"data": _kit_view(brand.load(_kit_owner(request, authorization))), "meta": {}}
+
+
+@app.get("/designcraft/brand/fonts")
+async def dc_brand_fonts() -> dict[str, Any]:
+    """이 PC에 깔린, 한글이 들어 있는 글꼴. 키트의 글꼴은 이 목록에서만 고른다."""
+    return {"data": list(await asyncio.to_thread(brand.hangul_fonts)), "meta": {}}
+
+
+@app.put("/designcraft/brand")
+async def dc_brand_put(body: dict[str, Any], request: Request, authorization: str | None = Auth) -> dict[str, Any]:
+    owner = _kit_owner(request, authorization, write=True)
+    fonts = list(await asyncio.to_thread(brand.hangul_fonts))
+    try:
+        kit = brand.validate(body, fonts or None)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+    return {"data": _kit_view(brand.save(owner, kit)), "meta": {}}
+
+
+@app.post("/designcraft/brand/logo")
+async def dc_brand_logo(request: Request, file: UploadFile = File(...),
+                        authorization: str | None = Auth) -> dict[str, Any]:
+    owner = _kit_owner(request, authorization, write=True)
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in ASSET_EXT:
+        raise HTTPException(400, f"로고로 쓸 수 없는 형식입니다: {ext or '(확장자 없음)'} — "
+                                 f"{', '.join(sorted(ASSET_EXT))} 중 하나여야 합니다")
+    data = await file.read(MAX_ASSET + 1)
+    if len(data) > MAX_ASSET:
+        raise HTTPException(413, f"로고가 너무 큽니다(최대 {MAX_ASSET // (1024 * 1024)}MB)")
+    kit = await asyncio.to_thread(brand.set_logo, owner, data, ext, file.filename or f"logo{ext}")
+    return {"data": _kit_view(kit), "meta": {}}
+
+
+@app.get("/designcraft/brand/logo")
+async def dc_brand_logo_get(request: Request, authorization: str | None = Auth) -> FileResponse:
+    kit = brand.load(_kit_owner(request, authorization)) or {}
+    p = (kit.get("logo") or {}).get("path")
+    if not p or not Path(p).exists():
+        raise HTTPException(404, "등록한 로고가 없습니다")
+    return FileResponse(p)
+
+
+@app.delete("/designcraft/brand")
+async def dc_brand_delete(request: Request, authorization: str | None = Auth) -> dict[str, Any]:
+    return {"data": {"deleted": brand.delete(_kit_owner(request, authorization, write=True))}, "meta": {}}
+
+
+@app.post("/designcraft/{ctx}/brand")
+async def dc_brand_apply(ctx: str, request: Request, authorization: str | None = Auth) -> dict[str, Any]:
+    """이 문서에 키트를 쓸 준비 — 로고를 **이 문서의 작업 폴더로** 복사하고 그 경로를 돌려준다.
+
+    클로드가 compose 없이 edit_document로 직접 짤 때 필요하다. 키트 조회(GET)는 PC 안의 경로를
+    감추므로 로고를 넣을 길이 없었고, 엔진은 작업 폴더 밖을 읽지 못한다.
+    """
+    j = _dc_owned(ctx, _writer(authorization).subject)
+    if not j.get("made"):
+        raise HTTPException(409, "만든 문서에만 쓸 수 있습니다")
+    kit = await asyncio.to_thread(_brand_for, ctx, j, _kit_owner(request, authorization))
+    return {"data": kit, "meta": {}}
+
+
+def _brand_for(ctx: str, j: dict[str, Any], owner: str) -> dict[str, Any] | None:
+    """말로 부탁해 만들 때 넘길 키트. 로고가 있으면 **그 문서의 작업 폴더 안으로** 복사해 둔다 —
+    엔진(MCP)은 작업 폴더 밖을 읽지 못한다."""
+    kit = brand.load(owner)
+    if brand.is_empty(kit):
+        return None
+    logo_path = None
+    src = (kit.get("logo") or {}).get("path")
+    if src and Path(src).exists():
+        d = DC_OUT / ctx / "assets"
+        d.mkdir(parents=True, exist_ok=True)
+        dest = d / f"brand_logo{Path(src).suffix.lower()}"
+        if not dest.exists() or dest.stat().st_size != Path(src).stat().st_size:
+            shutil.copyfile(src, dest)
+        logo_path = str(dest)
+        if not any(a.get("path") == logo_path for a in j.get("assets") or []):
+            j.setdefault("assets", []).append({"name": "브랜드 로고", "path": logo_path})
+            _dc_save(ctx)
+    return {"name": kit.get("name") or "", "colors": kit.get("colors") or [],
+            "title_font": kit.get("title_font") or "", "body_font": kit.get("body_font") or "",
+            "logo_path": logo_path}
+
+
 @app.post("/designcraft/{ctx}/edit")
 async def dc_edit(ctx: str, body: dict[str, Any], authorization: str | None = Auth) -> dict[str, Any]:
     """만든 문서에 엔진 명령을 얹는다 — 인디자인이 하는 일 전부가 이 창구로 온다.
@@ -1053,7 +1171,8 @@ async def dc_adopt(ctx: str, authorization: str | None = Auth) -> dict[str, Any]
 
 
 @app.post("/designcraft/{ctx}/compose")
-async def dc_compose(ctx: str, body: dict[str, Any], authorization: str | None = Auth) -> dict[str, Any]:
+async def dc_compose(ctx: str, body: dict[str, Any], request: Request,
+                     authorization: str | None = Auth) -> dict[str, Any]:
     """말로 부탁한 것을 엔진 명령으로 **짜 주기만** 한다. 고치지는 않는다.
 
     짜는 일과 고치는 일을 나눈 이유가 있다. LLM은 틀릴 수 있으므로, 무엇이 일어날지 사람이
@@ -1071,6 +1190,8 @@ async def dc_compose(ctx: str, body: dict[str, Any], authorization: str | None =
     # 무엇을 시켜서 그렇게 된 것인지가 어디에도 안 남는다.
     log_event(ctx, "dc_asked", source=NAME, payload={"text": request[:500]})
     ins = j.get("inspect") or {}
+    # 브랜드 키트가 있으면 색·글꼴·로고를 함께 넘긴다. 로고는 이 문서의 작업 폴더로 복사된다.
+    kit = await asyncio.to_thread(_brand_for, ctx, j, _kit_owner(request, authorization))
     r = await _ask("designcraft", "compose", ctx, {
         "request": request, "pages": ins.get("pages"),
         "width_mm": j.get("width_mm") or ins.get("width_mm"),
@@ -1079,6 +1200,7 @@ async def dc_compose(ctx: str, body: dict[str, Any], authorization: str | None =
         "margin_mm": j.get("margin_mm"), "bleed_mm": j.get("bleed_mm"),
         # 올려 둔 그림의 경로를 같이 넘긴다. 안 넘기면 LLM이 경로를 지어내고 엔진이 거절한다.
         "assets": j.get("assets") or [],
+        "brand": kit,
     })
     if r.get("status") != "completed":
         raise HTTPException(502, (((r.get("output") or {}).get("reason") or (r.get("output") or {}).get("message"))

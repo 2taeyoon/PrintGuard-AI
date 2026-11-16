@@ -14,7 +14,9 @@ from pg_agents.safety import agent as sa  # noqa: E402
 
 READ_TOOLS = {"check_pdf", "get_job", "answer_question", "list_agents", "get_trace", "list_reviews", "search_guide",
               # 인쇄물 만들기 — 짜 주기만 하거나 목록만 보는 것은 조회다
-              "list_engine_commands", "compose_document"}
+              "list_engine_commands", "compose_document",
+              # 브랜드 키트는 읽기만 한다 — 등록·수정은 화면에서 사람이 한다
+              "get_brand_kit"}
 # 문서를 만들고 고치는 것은 쓰기다(그 에이전트가 safety 관문을 거친다)
 WRITE_TOOLS = {"compile_report", "make_document", "edit_document"}
 

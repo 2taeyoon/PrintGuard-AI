@@ -946,3 +946,27 @@ def test_what_the_engine_says_while_exporting_is_said_in_korean():
     assert "4쪽에 RGB 색" in got and got.startswith("PDF/X-4:")
     assert "만든 날짜" in issue_text.ko("PDF/X-4: the XMP metadata date couldn't be added")
     assert "투명을 눌러 없애지 못했습니다" in issue_text.ko("PDF/X-1a: the transparency flattener failed: oops")
+
+
+# ---------- 브랜드 키트 ----------
+def test_brand_kit_reaches_the_prompt_and_the_font_fallback(monkeypatch):
+    """키트의 색·로고 경로가 프롬프트에 **값 그대로** 들어가고, LLM이 한글 글꼴을 빠뜨리면
+    맑은 고딕이 아니라 키트의 본문 글꼴을 세운다."""
+    kit = {"name": "여백", "colors": [{"name": "주색", "c": 100, "m": 80, "y": 0, "k": 10}],
+           "title_font": "Batang", "body_font": "Dotum", "logo_path": "/dc/ctx/assets/brand_logo.png"}
+    seen = {}
+
+    def fake(prompt):
+        seen["p"] = prompt
+        return ('{"says":"넣습니다","commands":['
+                '{"command":"frame.create","params":{"spread":0,"rect":[1,2,3,4],"content":"text"}},'
+                '{"command":"text.insert","params":{"text":"한글"}}]}')
+    # 엔진 CLI 없이도 돌게 명령표를 가짜로 둔다
+    monkeypatch.setattr(dc, "_commands_blocking", lambda: {"commands": [
+        {"id": i, "params": ""} for i in ("frame.create", "text.insert", "type.char")]})
+    r = dc._compose_blocking("명함", {"pages": 1, "width_mm": 90, "height_mm": 50, "facing": False},
+                             client=fake, brand=kit)
+    assert "주색(c100 m80 y0 k10)" in seen["p"] and "/dc/ctx/assets/brand_logo.png" in seen["p"]
+    assert seen["p"].index("브랜드 키트") < seen["p"].index("<부탁>")
+    font = [c for c in r["commands"] if c["command"] == "type.char"][0]["params"]["attrs"]["fontFamily"]
+    assert font == "Dotum"

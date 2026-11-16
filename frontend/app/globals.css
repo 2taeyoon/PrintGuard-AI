@@ -217,7 +217,9 @@ details.guide summary { cursor: pointer; font-size: 1.4rem; color: var(--thema);
 .pcard p { font-size: 1.6rem; margin: 0 0 12px; }
 .pcard table { width: 100%; font-size: 1.4rem; border-collapse: collapse; }
 .pcard th { text-align: left; color: var(--blacklight); font-weight: 400; padding: 4px 8px 4px 0; vertical-align: top; width: 40%; }
-.pcard td { padding: 4px 0; }
+.pcard td { padding: 4px 0; overflow-wrap: anywhere; }   /* 긴 제품 번호·주소도 칸 안에서 접힌다 */
+/* 도움말의 표는 열이 많아 휴대폰 폭보다 넓다. 쪽 전체가 옆으로 밀리지 않게 표만 가로로 넘긴다. */
+.qa_table { display: block; max-width: 100%; overflow-x: auto; }
 .pcard small { color: var(--blackmute); }
 
 /* ---------- 인쇄소 지도 ---------- */
@@ -622,7 +624,10 @@ button.ghost { background: var(--white); color: var(--thema); border-color: var(
 /* 3) 인쇄 가이드 찾아보기: 접지 않고 늘 펼쳐 둔다(호버도 없다) */
 .gs_head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 12px; padding: 16px 24px 0; }
 .gs_head b { font-size: 1.6rem; }
-.gs_head .note { flex: 1; min-width: 240px; }
+/* 설명 글: 자리가 240px 이상 남으면 제목 옆에, 모자라면 다음 줄로 내려간다(flex-basis가 그 기준).
+   전에는 min-width: 240px로 이 일을 했는데, 아래 규칙이 min-width를 0으로 덮어써 휴대폰 폭에서
+   글이 3px 폭으로 눌린 채 옆으로 새어 나가 첫 화면이 6px 가로로 넘쳤다. */
+.gs_head .note { flex: 1 1 240px; min-width: 0; }
 /* 4) 소통 기록 시각이 '2026년 10월 30일 오전 6시 31분 20초'라 시각 칸을 넓힌다(초까지 들어가 앞 칸이 밀리지 않게) */
 .timeline li { grid-template-columns: 248px 160px 1fr auto; }
 .agent_main .timeline li { grid-template-columns: 248px 150px 1fr auto; }
@@ -956,3 +961,102 @@ input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, 
 .docdel { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px;
   padding: 4px 10px; border: 1px solid var(--borderStrong); background: var(--bgMuted); font-size: 1.5rem; }
 
+
+/* ===== 회차 비교(/compare) ===== */
+.cmp_form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px; }
+.cmp_file, .cmp_req { display: flex; flex-direction: column; gap: 8px; font-size: 1.5rem; }
+.cmp_req { grid-column: 1 / -1; }
+.cmp_req textarea { width: 100%; font: inherit; font-size: 1.5rem; padding: 8px 12px; border: 1px solid var(--borderLight); border-radius: 0; resize: vertical; }
+.cmp_go { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.cmp_go .note { flex: 1 1 240px; min-width: 0; }
+.cmp_chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.cmp_c_text { background: var(--themaLight); color: var(--thema); }
+.cmp_c_vis { background: var(--bgMuted); color: var(--black); box-shadow: inset 3px 0 0 var(--orangeBright); }
+.cmp_c_warn { background: var(--redLight); color: var(--redBright); }
+.cmp_h2 { font-size: 1.7rem; font-weight: 700; margin: 16px 0 8px; }
+.cmp_table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 1.4rem; }
+.cmp_table th, .cmp_table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--borderSubtle); vertical-align: middle; }
+.cmp_table th { color: var(--blacklight); font-weight: 600; white-space: nowrap; }
+.cmp_st_ok { background: var(--greenLight); color: #1f8a3c; }
+.cmp_st_miss { background: var(--redLight); color: var(--redBright); }
+.cmp_st_check { background: var(--bgMuted); color: var(--blackmute); }
+.cmp_pg { padding: 2px 8px; font-size: 1.4rem; min-height: 0; }
+/* 쪽 목록 | 이전·수정 두 장 | 바뀐 것 목록 */
+.cmp_ws { display: grid; grid-template-columns: 96px minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
+.cmp_view { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding: 16px; background: var(--bgMuted); }
+.cmp_side { margin: 0; }
+.cmp_side figcaption { font-size: 1.4rem; font-weight: 700; color: var(--blacklight); margin-bottom: 8px; }
+.cmp_mark { position: absolute; pointer-events: none; }
+.cmp_del { background: rgba(255, 59, 48, 0.22); outline: 1px solid var(--redBright); }
+.cmp_ins { background: rgba(52, 199, 89, 0.24); outline: 1px solid var(--greenBright); }
+.cmp_vis { outline: 2px solid var(--orangeBright); background: rgba(255, 149, 0, 0.10); }
+.cmp_mark.on { outline-width: 3px; background-color: rgba(0, 113, 227, 0.22); outline-color: var(--thema); }
+.cmp_list { position: sticky; top: 88px; }
+.cmp_items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cmp_item { width: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; text-align: left; font-size: 1.4rem; padding: 6px 8px; border-color: var(--borderLight); color: var(--black); }
+.cmp_item.on { border-color: var(--thema); background: var(--themaLight); }
+.cmp_item del { color: var(--redBright); }
+.cmp_item ins { color: #1f8a3c; text-decoration: none; font-weight: 600; }
+.cmp_k_rep { background: var(--themaLight); color: var(--thema); }
+.cmp_k_del { background: var(--redLight); color: var(--redBright); }
+.cmp_k_ins { background: var(--greenLight); color: #1f8a3c; }
+@media (max-width: 1280px) { .cmp_ws { grid-template-columns: 96px minmax(0, 1fr); } .cmp_list { grid-column: 1 / -1; position: static; } }
+@media (max-width: 768px) {
+  .cmp_form { grid-template-columns: minmax(0, 1fr); }
+  .cmp_ws { grid-template-columns: minmax(0, 1fr); }
+  .cmp_ws .pages { flex-direction: row; flex-wrap: wrap; }
+  .cmp_view { grid-template-columns: minmax(0, 1fr); padding: 8px; }
+}
+
+/* ---------- 브랜드 키트(작업 만들기) ----------
+   색 네모는 화면용 어림 색이라 작게 둔다. 값(CMYK)이 주인이고 네모는 알아보기용이다. */
+.bk_grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 12px 0 4px; }
+.bk_field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.bk_field input, .bk_field select { width: 100%; }
+.bk_colors, .bk_logo { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+.bk_color { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.bk_chead, .bk_chs { display: contents; }
+.bk_drop { order: 1; }   /* 넓은 화면에서는 빼기가 CMYK 뒤에 온다 */
+.bk_swatch { width: 28px; height: 28px; border: 1px solid var(--borderStrong); flex: 0 0 auto; }
+.bk_cname { width: 140px; }
+.bk_ch { display: inline-flex; align-items: center; gap: 4px; }
+.bk_ch span { font-size: 1.4rem; font-weight: 700; color: var(--blacklight); width: 12px; }
+.bk_ch input[type="number"] { width: 72px; }
+.bk_colors > button { align-self: flex-start; }
+.bk_logo_row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.bk_logo_img { max-width: 160px; max-height: 64px; object-fit: contain; border: 1px solid var(--borderLight); background: var(--white); padding: 4px; }
+.bk_logo_none { font-size: 1.5rem; color: var(--blackmute); min-width: 48px; }
+.bk_go { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; }
+.bk_ok { color: var(--thema); font-size: 1.5rem; }
+.bk_sum { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin-top: 12px; }
+.bk_sum_body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.bk_sum_name { font-size: 1.8rem; }
+.bk_sum_colors { display: flex; flex-wrap: wrap; gap: 8px; }
+.bk_chip { display: inline-flex; align-items: center; gap: 6px; font-size: 1.5rem; padding: 4px 10px 4px 4px; border: 1px solid var(--borderLight); }
+.bk_chip .bk_swatch { width: 20px; height: 20px; }
+.bk_chip small { color: var(--blackmute); font-size: 1.3rem; }
+button.bk_danger { background: var(--redBright); border-color: var(--redBright); color: var(--white); }
+@media (max-width: 768px) {
+  .bk_grid { grid-template-columns: minmax(0, 1fr); }
+  .bk_color { flex-direction: column; align-items: stretch; padding-bottom: 12px; border-bottom: 1px solid var(--borderLight); }
+  .bk_chead { display: flex; align-items: center; gap: 8px; }
+  .bk_cname { flex: 1 1 auto; min-width: 0; width: auto; }
+  .bk_chs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .bk_ch { min-width: 0; }
+  /* 폰 폭에서는 칸이 좁아 기본 안쪽 여백 12px이면 '100'이 잘린다 */
+  .bk_ch input[type="number"] { width: 100%; min-width: 0; padding: 0 4px 0 6px; }
+  .bk_logo_row input[type="file"] { width: 100%; min-width: 0; }
+}
+
+/* ---------- 글 속 링크 ----------
+   맨 위 `a { color: inherit; text-decoration: none }` 때문에 문장 안의 링크가 둘레 글자와 똑같이 보였다.
+   "도움말에 적어 두었습니다"의 '도움말'이 눌리는 줄 아무도 몰랐다. 글 속 링크는 **파란 글자 + 밑줄**로 둔다.
+   메뉴·카드·단추처럼 생김새로 이미 눌리는 것임을 말하는 링크는 뺀다. */
+main a:not(.pill):not(.ghost):not(.card):not(.shoplist a):not(.qa_shot a):not(.leaflet-container a),
+.sitefoot a {
+  color: var(--thema); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px;
+}
+@media (hover: hover) {
+  main a:not(.pill):not(.ghost):not(.card):not(.shoplist a):not(.qa_shot a):not(.leaflet-container a):hover,
+  .sitefoot a:hover { text-decoration-thickness: 2px; }
+}

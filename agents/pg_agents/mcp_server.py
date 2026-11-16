@@ -444,6 +444,9 @@ async def edit_document(context_id: str, commands: list[dict[str, Any]] | None =
 async def compose_document(context_id: str, request: str) -> dict[str, Any]:
     """말로 부탁한 것을 엔진 명령으로 **짜 준다**(고치지는 않는다). 돌려받은 commands를 edit_document에 넘긴다.
 
+    브랜드 키트(get_brand_kit)가 등록돼 있으면 그 색·글꼴·로고로 짠다. 부탁에 다른 색·글꼴을
+    적으면 그쪽을 따른다.
+
     에이전트를 돌리는 PC에 LLM 열쇠가 없으면 available=false로 돌아온다 — 그때는
     list_engine_commands를 보고 직접 명령을 만들면 된다.
     """
@@ -451,3 +454,20 @@ async def compose_document(context_id: str, request: str) -> dict[str, Any]:
     return {"available": r.get("available"), "says": r.get("says"), "commands": r.get("commands"),
             "dropped": r.get("dropped"), "reason": r.get("reason"),
             "note": "이 도구는 짜 주기만 합니다. 실제로 넣으려면 edit_document를 부르세요."}
+
+
+@mcp.tool()
+async def get_brand_kit(context_id: str = "") -> dict[str, Any]:
+    """등록된 브랜드 키트 — 로고·색(CMYK)·제목/본문 글꼴. 없으면 registered=false.
+
+    compose_document는 이 키트를 저절로 쓴다. edit_document로 **직접** 명령을 짤 때는 여기서 읽은
+    색을 swatch.create에 그대로(이름까지) 쓰고, 글꼴을 type.char의 fontFamily에 쓴다.
+    context_id(만든 문서 번호)를 주면 로고를 그 문서 폴더로 복사해 `logo_path`를 돌려준다 —
+    file.place의 path에 그 값을 그대로 쓴다(엔진은 문서 폴더 밖을 읽지 못한다).
+    키트는 'PrintGuard-AI 작업 만들기' 화면에서 등록·수정·삭제한다.
+    """
+    kit = await (_orch("POST", f"/designcraft/{context_id}/brand") if context_id
+                 else _orch("GET", "/designcraft/brand"))
+    if not kit:
+        return {"registered": False, "note": "등록된 브랜드 키트가 없습니다. '작업 만들기' 화면에서 등록할 수 있습니다."}
+    return {"registered": True, **kit}
