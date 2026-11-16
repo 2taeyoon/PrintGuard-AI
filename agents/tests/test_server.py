@@ -2,6 +2,8 @@
 import os
 from datetime import timedelta
 
+import pytest
+
 from fastapi.testclient import TestClient
 
 from pg_agents.contracts import AgentCard, now_utc
