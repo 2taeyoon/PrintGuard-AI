@@ -26,10 +26,10 @@ CARD = AgentCard.model_validate({
 
 
 def page_texts(pdf_ref: str) -> list[tuple[str, Any]]:
-    import fitz
+    import pymupdf
     if not (len(pdf_ref) == 64 and all(c in "0123456789abcdef" for c in pdf_ref)):
         raise ValueError("pdf_ref 형식이 아닙니다")
-    doc = fitz.open(STORE / f"{pdf_ref}.pdf")
+    doc = pymupdf.open(STORE / f"{pdf_ref}.pdf")
     return [(p.get_text("text"), p) for p in doc]
 
 
