@@ -48,6 +48,10 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - name: 타입
-        run: npx tsc --noEmit
+        # `LayoutProps` 같은 타입은 Next가 만들어 준다. 빌드 없이 tsc만 돌리면 그 타입이
+        # 없어서 깨진다 — 그래서 먼저 타입을 뽑는다(전체 빌드보다 훨씬 빠르다).
+        run: |
+          npx next typegen
+          npx tsc --noEmit
       - name: 린트
         run: npm run lint

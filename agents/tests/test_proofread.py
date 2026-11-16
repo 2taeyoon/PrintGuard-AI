@@ -3,6 +3,8 @@ import os
 import tempfile
 from pathlib import Path
 
+import pytest
+
 os.environ.setdefault("PG_DATA_DIR", tempfile.mkdtemp())
 
 from pg_agents.proofread import agent as pa  # noqa: E402
@@ -69,13 +71,22 @@ def test_llm_off_without_key(monkeypatch):
     assert llm(TEXT) == []
 
 
+# 한글을 찍어 봐야 하는 시험이라 한글 글꼴이 필요하다. 윈도 경로를 박아 뒀더니 리눅스
+# (깃헙 러너)에서 글꼴을 못 열어 깨졌다 — 시험이 틀린 게 아니라 그 기계에 글꼴이 없었다.
+KR_FONT = next((p for p in (r"C:\Windows\Fonts\malgun.ttf",
+                            "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+                            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc")
+                if Path(p).exists()), None)
+
+
+@pytest.mark.skipif(KR_FONT is None, reason="한글 글꼴이 없는 기계다")
 def test_pdf_pages_and_rects():
     import pymupdf
     import hashlib
     doc = pymupdf.open()
     for t in ["첫 쪽은 정상이다.", "둘째 쪽에는 몇일 뒤 인새 품질을 본다."]:
         pg = doc.new_page()
-        pg.insert_font("kr", r"C:\Windows\Fonts\malgun.ttf")
+        pg.insert_font("kr", KR_FONT)
         pg.insert_text((72, 100), t, fontname="kr", fontsize=12)
     data = doc.tobytes()
     ref = hashlib.sha256(data).hexdigest()
