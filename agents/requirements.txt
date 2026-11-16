@@ -7,7 +7,7 @@ python-multipart==0.0.32      # 오케스트레이터 POST /jobs의 PDF 업로�
 httpx==0.28.1                 # 에이전트끼리 A2A 호출
 pydantic==2.14.1              # A2A 계약(contracts.py)
 numpy==2.5.4                  # guide의 BM25·점수 정규화
-pymupdf==2.0                  # proofread의 쪽별 글·위치(import fitz — 2.0에서는 쓸 때 경고가 난다)
+pymupdf==2.0                  # proofread의 쪽별 글·위치(import pymupdf — 옛 이름 fitz는 2.0에서 경고가 난다)
 kiwipiepy==0.24.1             # proofread 오타·띄어쓰기 탐지
 onnxruntime==1.31.1           # guide의 e5-small 임베딩(브라우저와 같은 int8 ONNX를 그대로 돌린다 — torch 안 씀)
 tokenizers==0.23.3            # 같은 모델의 tokenizer.json

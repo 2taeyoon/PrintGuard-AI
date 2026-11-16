@@ -70,9 +70,9 @@ def test_llm_off_without_key(monkeypatch):
 
 
 def test_pdf_pages_and_rects():
-    import fitz
+    import pymupdf
     import hashlib
-    doc = fitz.open()
+    doc = pymupdf.open()
     for t in ["첫 쪽은 정상이다.", "둘째 쪽에는 몇일 뒤 인새 품질을 본다."]:
         pg = doc.new_page()
         pg.insert_font("kr", r"C:\Windows\Fonts\malgun.ttf")
