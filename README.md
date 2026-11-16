@@ -486,6 +486,27 @@ LANGSMITH_PROJECT=printguard
 
 LangSmith로 나가는 것은 공통 로그로 만든 추적(에이전트·skill·시간·상태·관문 결정)뿐입니다. PDF 본문과 입력값은 공통 로그에 애초에 남기지 않으므로 나가지 않습니다.
 
+## PR 코드 검수 (CodeRabbit)
+
+PR을 올리면 **CodeRabbit**이 읽고 한국어로 의견을 답니다. 설정은 저장소 뿌리의
+[`.coderabbit.yaml`](.coderabbit.yaml) 하나이고, PR이 올라온 **그 브랜치의 설정**이 쓰입니다.
+
+처음 한 번은 사람이 켜야 합니다 — [app.coderabbit.ai](https://app.coderabbit.ai/login)에서
+GitHub로 로그인하고 이 저장소를 고릅니다(공개 저장소라 무료 등급으로 돕니다).
+
+| 무엇 | 왜 그렇게 뒀나 |
+|---|---|
+| `language: ko-KR` | 이 저장소의 글은 전부 한국어다. 의견만 영어로 오면 읽는 사람이 둘로 갈린다 |
+| `profile: chill` | 혼자 쓰는 저장소에서 `assertive`는 금세 소음이 된다 |
+| `auto_review.base_branches: [main]` | `dev` → `main` PR 하나가 이 저장소의 길이다 |
+| `ruff`·`markdownlint`·`languagetool` **끔** | 저장소에 설정이 없는 린터는 기본 규칙으로 수백 줄을 쏟는다. 한국어 문서는 줄이 길다 |
+| `eslint`·`shellcheck`·`gitleaks` 켬 | 설정이 있고(`frontend/eslint.config.mjs`), 열쇠가 섞여 들어오는 것은 막아야 한다 |
+| `path_filters` | 만들어지거나 받아 온 것(시험용 PDF 60MB, 인쇄소 17,082곳, 종이 489종)은 검수가 뜻이 없다 |
+| `path_instructions` | 이 저장소에서 **실제로 났던 사고**를 적어 뒀다 — JSX 줄바꿈이 띄어쓰기를 먹는 것, 효과 안에서 setState, 파랑 두 가지 섞어 쓰기, safety 관문을 건너뛴 파일 쓰기 |
+
+PR 댓글로 부릅니다: `@coderabbitai review`(새 커밋만) · `full review`(전부 다시) ·
+`configuration`(지금 적용된 설정) · `pause`/`resume` · `help`.
+
 ## 저장소에 없는 파일
 
 라이선스나 용량 때문에 올리지 않았습니다. 셋 다 없어도 앱은 뜨지만, 모델과 wasm은 CDN에서 받아 오느라 느려지고 ICC가 없으면 색 차이를 재지 못합니다.
