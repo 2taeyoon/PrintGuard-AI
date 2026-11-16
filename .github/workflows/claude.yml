@@ -47,11 +47,9 @@ jobs:
       - name: 클로드에게 맡긴다
         uses: anthropics/claude-code-action@v1
         with:
-          # 구독 토큰(CLAUDE_CODE_OAUTH_TOKEN)이 있으면 그걸 쓴다 — 구독 사용량에서 빠지므로
-          # 따로 돈이 들지 않는다. 없을 때만 API 열쇠로 돈다(이쪽은 쓴 만큼 돈이 나간다).
-          # 터미널에서 `claude setup-token`으로 받은 값을 비밀값에 넣으면 저절로 갈아탄다.
+          # **구독(Max) 토큰만 쓴다.** API 열쇠는 쓰지 않는다 — 쓴 만큼 돈이 나가기 때문이다.
+          # 값은 터미널에서 `claude setup-token`으로 받아 비밀값 CLAUDE_CODE_OAUTH_TOKEN에 넣는다.
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          anthropic_api_key: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN == '' && secrets.ANTHROPIC_API_KEY || '' }}
           # CodeRabbit·CI 같은 봇이 남긴 글도 읽게 한다. 막아 두면 검수 지적을 못 본다.
           allowed_bots: "coderabbitai,github-actions"
           branch_prefix: "claude/"
