@@ -10,17 +10,27 @@
 language: ko-KR
 
 tone_instructions: >-
-  쉬운 한국어로, 번역투 없이. 무엇이 어떻게 잘못되는지 한 줄로 먼저 말하고 근거를 뒤에 붙인다.
-  취향 지적은 하지 않는다 — 인쇄·파일·돈이 걸린 자리만 짚는다.
+  쉬운 한국어로, 번역투 없이. 한 지적은 세 줄 안에 끝낸다 — 무엇이 어떻게 잘못되는지 한 줄,
+  근거 한 줄, 고칠 방향 한 줄. 취향 지적은 하지 않는다. 인쇄·파일·돈이 걸린 자리만 짚는다.
 
 reviews:
   profile: chill                 # assertive는 혼자 쓰는 저장소에서 금세 소음이 된다
   high_level_summary: true
   collapse_walkthrough: true
-  sequence_diagrams: true        # 에이전트 아홉이 주고받는 흐름은 그림이 빠르다
-  assess_linked_issues: true
   poem: false                    # 시는 읽을 거리가 아니다
   review_status: true
+
+  # 검수가 길면 병목이 된다. 읽는 데 시간이 걸리고, 자동 파이프라인에서는 승인이 밀린다.
+  # 그래서 **고칠 거리**만 남기고 곁들이는 읽을거리는 모두 끈다.
+  sequence_diagrams: false       # 그림 한 장이 스무 줄을 잡아먹는다
+  assess_linked_issues: false
+  changed_files_summary: false   # 바뀐 파일은 깃헙이 이미 보여 준다
+  estimate_code_review_effort: false
+  review_details: false          # 건너뛴 파일·쓴 맥락 목록은 읽히지 않는다
+  related_issues: false
+  related_prs: false
+  suggested_labels: false
+  suggested_reviewers: false
 
   auto_review:
     enabled: true
@@ -28,6 +38,12 @@ reviews:
     base_branches:
       - main                     # dev → main PR 하나가 이 저장소의 길이다
     auto_incremental_review: true
+    auto_pause_after_reviewed_commits: 0   # 커밋이 연달아 와도 멈추지 않는다(멈추면 승인이 안 난다)
+
+  # 지적이 다 풀리면 승인한다. 클로드 봇이 연 PR이 검수에서 막히지 않고 끝까지 가는 길이다.
+  # 승인일 뿐 머지는 아니다 — 합치는 것은 사람이 한다.
+  auto_approvals:
+    enabled: true
 
   # 사람이 읽을 코드만 본다. 아래는 만들어지거나 받아 온 것이라 검수가 뜻이 없다.
   path_filters:
@@ -43,6 +59,8 @@ reviews:
     - "!**/.next/**"
     - "!agents/.data/**"                        # 올린 파일과 작업 폴더
 
+  # 아래 지시는 **무엇을 변경 요청으로 올릴지**를 정한다. 실제 버그·안전·인쇄 사고만 요청으로
+  # 올리고, 나머지(취향·다듬기)는 "이건 나중에" 한 줄로 붙인다. 그래야 승인이 밀리지 않는다.
   path_instructions:
     - path: "frontend/app/**/*.tsx"
       instructions: |
