@@ -42,6 +42,16 @@
 | 보고서 report | 8708 | 검수 보고서 작성 | Python |
 | 원본 수정 designcraft | 8709 | 편집 파일(IDML)을 열어 교정을 반영하고, 새 문서도 만듭니다 | Python + DesignCraft MCP |
 
+### 켜졌는지 한 번에 확인하기
+
+에이전트 아홉이 모두 떠 있는지 한 줄로 봅니다. 200이 아니면 그 에이전트가 꺼져 있거나 아직 뜨는 중입니다.
+
+```bash
+for p in 8700 8701 8702 8703 8704 8705 8706 8707 8710; do
+  printf '%s  ' "$p"; curl -s -o /dev/null -w '%{http_code}\n' "http://127.0.0.1:$p/health"
+done
+```
+
 ## 구조
 
 ```
