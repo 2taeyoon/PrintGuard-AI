@@ -57,6 +57,14 @@ async function fontFile(f: LocalFont): Promise<File> {
   const ext = tag === "OTTO" ? ".otf" : tag === "ttcf" ? ".ttc" : ".ttf";
   return new File([blob], `${f.postscriptName || f.fullName}${ext}`, { type: "font/" + ext.slice(1) });
 }
+/** 아무것도 고르지 않았을 때 엔진이 쓰는 글꼴. 키트에는 ""로 남기고 화면에는 이 이름으로 보인다 —
+ *  '기본(맑은 고딕)'과 'Malgun Gothic'이 따로 떠서 다른 글꼴처럼 보이던 것을 하나로 묶었다. */
+const DEFAULT_FONT = "Malgun Gothic";
+/** 글꼴 하나를 키트에 올릴 때 가져갈 굵기 — 보통과 굵게. 둘 다 없으면 첫 굵기 하나. */
+const pickFaces = (faces: LocalFont[]) => {
+  const want = faces.filter((f) => /^(regular|normal|book|roman|bold)$/i.test(f.style));
+  return want.length ? want : faces.slice(0, 1);
+};
 const kb = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)}MB` : `${Math.round(n / 1024)}KB`);
 
 export default function BrandKitPanel() {
@@ -118,7 +126,23 @@ export default function BrandKitPanel() {
   };
 
   const save = () => run("저장 중…", async () => {
-    const k = await saveBrand({ name: kit.name, colors: kit.colors, title_font: kit.title_font, body_font: kit.body_font });
+    // 이 컴퓨터에만 있는 글꼴(서버가 아직 모르는 것)을 골랐으면 그 파일(보통·굵게)을 먼저 올린다.
+    // 서버가 파일에서 읽은 패밀리 이름이 다르면 그 이름으로 바꿔 저장한다 — 엔진은 그 이름으로 찾는다.
+    let draft = { ...kit };
+    for (const slot of ["title_font", "body_font"] as const) {
+      const fam = draft[slot];
+      if (!fam || !local?.has(fam) || fonts.includes(fam) || (draft.fonts ?? []).some((f) => f.family === fam)) continue;
+      let got = fam;
+      for (const face of pickFaces(local.get(fam)!)) {
+        setBusy(`${face.fullName} 올리는 중…`);
+        const k = await uploadBrandFont(await fontFile(face));
+        draft = { ...draft, fonts: k.fonts };
+        got = k.fonts?.[k.fonts.length - 1]?.family ?? fam;
+      }
+      draft = { ...draft, [slot]: got };
+    }
+    setBusy("저장 중…");
+    const k = await saveBrand({ name: draft.name, colors: draft.colors, title_font: draft.title_font, body_font: draft.body_font });
     setSaved(k); setKit(k); setEditing(false);
     setMsg({ ok: true, text: "저장했습니다. 이제 클로드에게 만들게 하면 이 키트로 짭니다." });
   });
@@ -136,29 +160,34 @@ export default function BrandKitPanel() {
     const got = k.fonts?.[k.fonts.length - 1];        // 서버는 새로 올린 것을 끝에 붙인다
     setMsg({ ok: true, text: `글꼴을 올렸습니다 — ${got ? `${got.family} ${got.style}` : f.name}. 위 글꼴 칸에서 고르세요.` });
   });
-  // 내 컴퓨터 글꼴 — 브라우저가 처음 한 번 '글꼴 읽기'를 허락할지 묻는다. 고르면 그 파일을 읽어 위와 같은 길로
-  // 키트에 올린다. 그래서 공개 사이트에서도 된다(에이전트 PC가 아니라 **보고 있는 사람의 컴퓨터** 글꼴이다).
+  // 내 컴퓨터 글꼴(Local Font Access, 크롬·엣지). 한 번 허용하면 화면을 열 때마다 **저절로** 읽어
+  // 제목·본문 select에 넣는다 — 목록을 따로 저장하지 않아도 새로고침 뒤에 그대로 있다. 보고 있는 사람의
+  // 컴퓨터 글꼴이라 공개 사이트에서도 된다. 고른 글꼴은 **저장할 때** 그 파일을 키트에 올린다.
   const [local, setLocal] = useState<Map<string, LocalFont[]> | null>(null);
-  const [localQ, setLocalQ] = useState("");
-  const loadLocal = () => run("내 컴퓨터 글꼴 읽는 중…", async () => {
+  const [localState, setLocalState] = useState<"unsupported" | "prompt" | "granted" | "denied">("prompt");
+  const readLocal = useCallback(async () => {
     const q = (window as unknown as { queryLocalFonts?: () => Promise<LocalFont[]> }).queryLocalFonts;
-    if (!q) throw new Error("이 브라우저는 내 컴퓨터 글꼴을 읽지 못합니다(크롬·엣지에서 됩니다). 아래에서 글꼴 파일을 올려 주세요.");
+    if (!q) { setLocalState("unsupported"); return 0; }
     const all = await q.call(window);
     const byFamily = new Map<string, LocalFont[]>();
     for (const f of all) byFamily.set(f.family, [...(byFamily.get(f.family) ?? []), f]);
-    setLocal(byFamily);
-    setMsg({ ok: true, text: `이 컴퓨터 글꼴 ${byFamily.size}종을 읽었습니다. 이름으로 찾아 굵기를 누르면 키트에 올립니다(한글이 있는 것만 받습니다).` });
+    setLocal(byFamily); setLocalState("granted");
+    return byFamily.size;
+  }, []);
+  useEffect(() => {
+    if (!("queryLocalFonts" in window)) { void Promise.resolve().then(() => setLocalState("unsupported")); return; }
+    navigator.permissions.query({ name: "local-fonts" as PermissionName })
+      .then((st) => {
+        if (st.state === "granted") return readLocal();
+        setLocalState(st.state === "denied" ? "denied" : "prompt");
+      })
+      .catch(() => undefined);              // 권한 이름을 모르는 브라우저 — 단추로 물어본다
+  }, [readLocal]);
+  const loadLocal = () => run("이 컴퓨터 글꼴 읽는 중…", async () => {
+    const n = await readLocal();
+    if (!n) throw new Error("이 브라우저는 내 컴퓨터 글꼴을 읽지 못합니다(크롬·엣지에서 됩니다). 아래에서 글꼴 파일을 올려 주세요.");
+    setMsg({ ok: true, text: `이 컴퓨터 글꼴 ${n}종을 제목·본문 글꼴 칸에 넣었습니다. 고르고 저장하면 그 글꼴을 키트에 올립니다.` });
   });
-  const pickLocal = (f: LocalFont) => run(`${f.fullName} 올리는 중…`, async () => {
-    const k = await uploadBrandFont(await fontFile(f));
-    setSaved((sv) => ({ ...(sv ?? k), fonts: k.fonts })); setKit((cur) => ({ ...cur, fonts: k.fonts }));
-    setEditing(true);
-    setMsg({ ok: true, text: `글꼴을 올렸습니다 — ${f.fullName}. 위 글꼴 칸에서 고르세요.` });
-  });
-  const localShown = local
-    ? [...local.entries()].filter(([fam]) => !localQ || fam.toLowerCase().includes(localQ.toLowerCase()))
-      .sort(([a], [b]) => a.localeCompare(b, "ko")).slice(0, 40)
-    : [];
   const dropFont = (name: string) => run("글꼴 빼는 중…", async () => {
     const k = await deleteBrandFont(name);
     setSaved(k); setKit((cur) => ({ ...cur, fonts: k.fonts, title_font: k.title_font, body_font: k.body_font }));
@@ -174,23 +203,36 @@ export default function BrandKitPanel() {
   const dirty = JSON.stringify({ ...kit, logo: null }) !== JSON.stringify({ ...(saved ?? EMPTY), logo: null });
   const form = !saved || editing;
   const cancel = () => { setKit(saved ?? EMPTY); setEditing(false); setMsg(null); };
-  // 고를 수 있는 글꼴 = 키트에 올린 글꼴(앞) + 이 PC에 깔린 한글 글꼴
-  const uploaded = [...new Set((kit.fonts ?? []).map((f) => f.family))];
-  const installed = fonts.filter((f) => !uploaded.includes(f));
-  const fontOpts = (cur: string) => (cur && !installed.includes(cur) && !uploaded.includes(cur) ? [cur, ...installed] : installed);
-  const fontSelect = (slot: "title_font" | "body_font") => (
-    <select value={kit[slot]} onChange={(e) => setKit({ ...kit, [slot]: e.target.value })}>
-      <option value="">기본(맑은 고딕)</option>
-      {uploaded.length > 0 && (
-        <optgroup label="키트에 올린 글꼴">
-          {uploaded.map((f) => <option key={f} value={f}>{f}</option>)}
-        </optgroup>
-      )}
-      <optgroup label="이 PC에 깔린 한글 글꼴">
-        {fontOpts(kit[slot]).map((f) => <option key={f} value={f}>{f}</option>)}
-      </optgroup>
-    </select>
-  );
+  // 고를 수 있는 글꼴 — 겹치지 않게 한 번씩만:
+  //   기본(Malgun Gothic) / 키트에 올린 글꼴 / 에이전트 PC에 깔린 한글 글꼴 / 이 컴퓨터의 다른 글꼴(저장할 때 올림)
+  const uploaded = [...new Set((kit.fonts ?? []).map((f) => f.family))].filter((f) => f !== DEFAULT_FONT);
+  const installed = fonts.filter((f) => f !== DEFAULT_FONT && !uploaded.includes(f));
+  const known = new Set([DEFAULT_FONT, ...uploaded, ...installed]);
+  const others = local ? [...local.keys()].filter((f) => !known.has(f)).sort((a, b) => a.localeCompare(b, "ko")) : [];
+  const fontSelect = (slot: "title_font" | "body_font") => {
+    const cur = kit[slot] || DEFAULT_FONT;
+    return (
+      <select value={cur} onChange={(e) => setKit({ ...kit, [slot]: e.target.value === DEFAULT_FONT ? "" : e.target.value })}>
+        <option value={DEFAULT_FONT}>{DEFAULT_FONT} (기본)</option>
+        {!known.has(cur) && !others.includes(cur) && <option value={cur}>{cur}</option>}
+        {uploaded.length > 0 && (
+          <optgroup label="키트에 올린 글꼴">
+            {uploaded.map((f) => <option key={f} value={f}>{f}</option>)}
+          </optgroup>
+        )}
+        {installed.length > 0 && (
+          <optgroup label="한글 글꼴 — 바로 쓸 수 있음">
+            {installed.map((f) => <option key={f} value={f}>{f}</option>)}
+          </optgroup>
+        )}
+        {others.length > 0 && (
+          <optgroup label="이 컴퓨터 글꼴 — 저장할 때 올림(한글이 없으면 거절)">
+            {others.map((f) => <option key={f} value={f}>{f}</option>)}
+          </optgroup>
+        )}
+      </select>
+    );
+  };
 
   return (
     <section className="panel bk">
@@ -212,7 +254,7 @@ export default function BrandKitPanel() {
             : <span className="bk_logo_none">{saved.logo ? saved.logo.name : "로고 없음"}</span>}
           <div className="bk_sum_body">
             <b className="bk_sum_name">{saved.name || "이름 없는 브랜드"}</b>
-            <span className="note">제목 {saved.title_font || "맑은 고딕(기본)"} · 본문 {saved.body_font || "맑은 고딕(기본)"}</span>
+            <span className="note">제목 {saved.title_font || `${DEFAULT_FONT} (기본)`} · 본문 {saved.body_font || `${DEFAULT_FONT} (기본)`}</span>
             <div className="bk_sum_colors">
               {saved.colors.map((c) => (
                 <span className="bk_chip" key={c.name}>
@@ -255,31 +297,21 @@ export default function BrandKitPanel() {
           </ul>
         )}
         <div className="bk_local">
-          <button type="button" className="ghost small" disabled={!!busy} onClick={() => void loadLocal()}>
-            이 컴퓨터 글꼴에서 고르기
-          </button>
-          {local && (
-            <input value={localQ} placeholder={`글꼴 이름으로 찾기 (${local.size}종)`} aria-label="내 컴퓨터 글꼴 찾기"
-              onChange={(e) => setLocalQ(e.target.value)} />
+          {localState === "granted" && local && (
+            <span className="note">이 컴퓨터 글꼴 {local.size}종이 위 글꼴 칸에 들어 있습니다.</span>
+          )}
+          {localState === "prompt" && (
+            <button type="button" className="ghost small" disabled={!!busy} onClick={() => void loadLocal()}>
+              이 컴퓨터 글꼴 불러오기
+            </button>
+          )}
+          {localState === "denied" && (
+            <span className="note">이 컴퓨터 글꼴을 읽는 권한이 막혀 있습니다. 주소창 왼쪽 자물쇠 → 사이트 설정 → 글꼴에서 허용하면 불러옵니다.</span>
+          )}
+          {localState === "unsupported" && (
+            <span className="note">이 브라우저는 내 컴퓨터 글꼴을 읽지 못합니다(크롬·엣지에서 됩니다). 글꼴 파일을 올려 주세요.</span>
           )}
         </div>
-        {local && (
-          <ul className="bk_local_list">
-            {localShown.map(([fam, faces]) => (
-              <li key={fam}>
-                <b>{fam}</b>
-                {fonts.includes(fam) && <span className="note">이 PC에 깔려 있어 올리지 않고도 고를 수 있음</span>}
-                <span className="bk_local_styles">
-                  {faces.map((f) => (
-                    <button key={f.postscriptName || f.fullName} type="button" className="ghost small" disabled={!!busy}
-                      onClick={() => void pickLocal(f)}>{f.style}</button>
-                  ))}
-                </span>
-              </li>
-            ))}
-            {localShown.length === 0 && <li className="note">찾는 글꼴이 없습니다.</li>}
-          </ul>
-        )}
         <input type="file" accept=".ttf,.otf,.ttc"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) void addFont(f); e.target.value = ""; }} />
         <p className="note">

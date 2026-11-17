@@ -1076,7 +1076,3 @@ main a:not(.pill):not(.ghost):not(.card):not(.shoplist a):not(.qa_shot a):not(.l
 /* 브랜드 키트 — 내 컴퓨터 글꼴에서 고르기 */
 .bk_local { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .bk_local input { width: 280px; max-width: 100%; }
-.bk_local_list { list-style: none; margin: 0; padding: 8px; max-height: 320px; overflow-y: auto;
-  border: 1px solid var(--borderLight); display: flex; flex-direction: column; gap: 6px; }
-.bk_local_list li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.bk_local_styles { display: inline-flex; flex-wrap: wrap; gap: 4px; }
