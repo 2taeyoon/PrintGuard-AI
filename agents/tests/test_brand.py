@@ -264,3 +264,28 @@ def test_prompt_tells_which_weights_an_uploaded_font_has():
     b = brand.prompt_block({**KIT, "title_font": "Pretendard",
                             "fonts": [{"family": "Pretendard", "style": "Bold", "file": "p.ttf"}]}, None, "Malgun Gothic")
     assert '"Pretendard"는 올린 글꼴이라 굵기가 Bold뿐' in b
+
+
+
+def test_pc_owner_sees_the_same_kit_through_the_public_site():
+    """이 PC 앞에서 구글로 로그인한 계정은 공개 사이트(터널)로 들어와도 이 PC의 키트 — 클로드가
+    쓰는 그 키트 — 를 본다. 예전에는 계정 몫으로 키트가 따로 생겨, 화면의 키트와 클로드가 만든
+    문서가 달랐다. 바깥 사람은 여전히 자기 키트만 본다."""
+    tunnel = {"X-Forwarded-For": "203.0.113.9"}
+    owner = {"Authorization": f"Bearer {mint('browser', subject='g-owner', label='owner@example.com')}"}
+    stranger = {"Authorization": f"Bearer {mint('browser', subject='g-stranger', label='who@example.com')}"}
+    anon = {"Authorization": f"Bearer {mint('browser', subject='anon-1', label='anon')}"}
+    with TestClient(app, client=("127.0.0.1", 50000)) as c:
+        c.put("/designcraft/brand", json=KIT, headers=anon)          # 이 PC의 키트(익명으로 등록)
+        # 터널로 온 구글 계정은 아직 이 PC 주인으로 적히지 않았다 → 자기 키트(없음)
+        assert c.get("/designcraft/brand", headers={**owner, **tunnel}).json()["data"] is None
+        # 이 PC 앞에서 같은 계정으로 한 번 열면 적힌다
+        assert c.get("/designcraft/brand", headers=owner).json()["data"]["name"] == "여백 출판사"
+        assert c.get("/designcraft/brand", headers={**owner, **tunnel}).json()["data"]["name"] == "여백 출판사"
+        # 익명 토큰은 적지 않는다, 바깥 사람은 여전히 따로다
+        assert not brand.is_pc_owner("anon-1")
+        assert c.get("/designcraft/brand", headers={**stranger, **tunnel}).json()["data"] is None
+        # 터널로 들어온 사람은 자기를 이 PC 주인으로 적을 수 없다
+        c.get("/designcraft/brand", headers={**stranger, **tunnel})
+        assert not brand.is_pc_owner("g-stranger")
+        c.delete("/designcraft/brand", headers=anon)
