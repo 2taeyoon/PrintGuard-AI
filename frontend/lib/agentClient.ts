@@ -308,11 +308,14 @@ export async function dcFile(ctx: string, name: string): Promise<Blob> {
 // ---- 브랜드 키트. 로고·색·글꼴을 한 번 등록하면 말로 부탁해 만드는 문서가 늘 그 브랜드로 나온다 ----
 // 이 PC의 화면과 이 PC의 클로드(MCP)는 같은 키트를 쓴다(오케스트레이터가 주인을 그렇게 가린다).
 export type BrandColor = { name: string; c: number; m: number; y: number; k: number };
+/** 키트에 올린 글꼴 파일 하나. name은 서버에 둔 파일 이름(지울 때 쓴다). */
+export type BrandFont = { family: string; style: string; name: string; bytes: number };
 export type BrandKit = {
   name: string; colors: BrandColor[]; title_font: string; body_font: string;
   logo: { name: string; bytes: number } | null;
+  fonts?: BrandFont[];
 };
-export type BrandDraft = Omit<BrandKit, "logo">;
+export type BrandDraft = Omit<BrandKit, "logo" | "fonts">;
 
 export const getBrand = async () => j<BrandKit | null>(await call("/designcraft/brand"));
 /** 이 PC에 깔린, 한글이 들어 있는 글꼴. 없는 글꼴을 적으면 엔진이 한글 없는 기본 글꼴로 찍는다.
@@ -325,6 +328,14 @@ export async function uploadBrandLogo(file: File): Promise<BrandKit> {
   fd.append("file", file);
   return j<BrandKit>(await call("/designcraft/brand/logo", { method: "POST", body: fd }));
 }
+/** 글꼴 파일(.ttf·.otf·.ttc)을 키트에 올린다. 한글이 그려지는 글꼴만 받는다. */
+export async function uploadBrandFont(file: File): Promise<BrandKit> {
+  const fd = new FormData();
+  fd.append("file", file);
+  return j<BrandKit>(await call("/designcraft/brand/font", { method: "POST", body: fd }));
+}
+export const deleteBrandFont = async (name: string) =>
+  j<BrandKit>(await call(`/designcraft/brand/font/${encodeURIComponent(name)}`, { method: "DELETE" }));
 export const deleteBrand = async () => j<{ deleted: boolean }>(await call("/designcraft/brand", { method: "DELETE" }));
 export async function brandLogoBlob(): Promise<string> {
   const r = await call("/designcraft/brand/logo");

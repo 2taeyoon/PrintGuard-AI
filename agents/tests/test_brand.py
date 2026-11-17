@@ -212,3 +212,55 @@ def test_changed_logo_with_the_same_size_is_copied_again(monkeypatch):
         p2 = c.post("/designcraft/ctx_dc_same/brand", headers=_h("kit-e")).json()["data"]["logo_path"]
         assert p1 == p2 and Path(p2).read_bytes() == b"<svg fill='#0000ff'/>"
         c.delete("/designcraft/brand", headers=_h("kit-e"))
+
+
+# ---------- 키트에 올린 글꼴 파일 ----------
+# 진짜 글꼴 파일은 저장소에 넣지 않는다(라이선스·용량). 파일을 읽는 부분(faces)만 가짜로 바꾸고,
+# 받기·거절·문서 옆 Document Fonts/로 옮기기를 본다.
+def _fake_faces(monkeypatch, table):
+    monkeypatch.setattr(brand, "faces", lambda p: table.get(Path(p).name.replace(".tmp", ""), []))
+
+
+def test_font_without_hangul_or_variable_is_refused(monkeypatch):
+    _fake_faces(monkeypatch, {"Latin.ttf": [{"family": "Latin", "style": "Regular", "hangul": False}],
+                              "Var.ttf": []})
+    with pytest.raises(ValueError, match="한글이 없는"):
+        brand.add_font("kit-f", b"x", "Latin.ttf")
+    with pytest.raises(ValueError, match="가변 글꼴"):
+        brand.add_font("kit-f", b"x", "Var.ttf")
+    with pytest.raises(ValueError, match=r"\.ttf"):
+        brand.add_font("kit-f", b"x", "font.woff2")
+    assert not (brand.load("kit-f") or {}).get("fonts")
+
+
+def test_uploaded_font_can_be_picked_and_goes_beside_the_document(monkeypatch, tmp_path):
+    """올린 글꼴은 고를 수 있고, 키트를 문서에 쓰면 그 문서 **원본 옆** Document Fonts/로 간다.
+    작업 폴더에 두면 엔진이 안 읽는다 — 고치기는 원본(SRC/<src_ref>/)을 열기 때문이다."""
+    from pg_agents.orchestrator import app as orch
+    _fake_faces(monkeypatch, {"Pretendard-Bold.ttf": [{"family": "Pretendard", "style": "Bold", "hangul": True}]})
+    monkeypatch.setattr(orch, "SRC", tmp_path)
+    (tmp_path / "ref1").mkdir()
+    monkeypatch.setitem(orch.DCJOBS, "ctx_dc_font", {"client": "kit-g", "made": True, "filename": "a.idml", "src_ref": "ref1"})
+    monkeypatch.setattr(orch, "_dc_save", lambda ctx: None)
+    with TestClient(app) as c:
+        # 올리기 전에는 고를 수 없다
+        assert c.put("/designcraft/brand", json={**KIT, "title_font": "Pretendard"}, headers=_h("kit-g")).status_code == 400
+        r = c.post("/designcraft/brand/font", files={"file": ("Pretendard-Bold.ttf", b"FONTDATA", "font/ttf")}, headers=_h("kit-g"))
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["fonts"] == [{"family": "Pretendard", "style": "Bold", "name": "Pretendard-Bold.ttf", "bytes": 8}]
+        assert c.put("/designcraft/brand", json={**KIT, "title_font": "Pretendard"}, headers=_h("kit-g")).status_code == 200
+        # 필드를 저장해도 올린 글꼴은 남는다
+        assert c.get("/designcraft/brand", headers=_h("kit-g")).json()["data"]["fonts"][0]["family"] == "Pretendard"
+        got = c.post("/designcraft/ctx_dc_font/brand", headers=_h("kit-g")).json()["data"]
+        assert (tmp_path / "ref1" / "Document Fonts" / "Pretendard-Bold.ttf").read_bytes() == b"FONTDATA"
+        assert got["fonts"] == [{"family": "Pretendard", "style": "Bold"}]
+        # 빼면 그 글꼴을 고른 칸은 기본값(맑은 고딕)으로 돌아간다
+        k = c.delete("/designcraft/brand/font/Pretendard-Bold.ttf", headers=_h("kit-g")).json()["data"]
+        assert k["fonts"] == [] and k["title_font"] == ""
+        c.delete("/designcraft/brand", headers=_h("kit-g"))
+
+
+def test_prompt_tells_which_weights_an_uploaded_font_has():
+    b = brand.prompt_block({**KIT, "title_font": "Pretendard",
+                            "fonts": [{"family": "Pretendard", "style": "Bold", "file": "p.ttf"}]}, None, "Malgun Gothic")
+    assert '"Pretendard"는 올린 글꼴이라 굵기가 Bold뿐' in b

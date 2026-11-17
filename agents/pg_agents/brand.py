@@ -8,8 +8,12 @@
 - 이 PC의 브라우저와 이 PC의 클로드(MCP)는 **같은 사람**이다. 둘은 한 키트를 나눠 쓴다.
 - 바깥에서 들어온 사람은 자기 키트를 따로 갖는다.
 
-글꼴은 **이 PC에 깔린, 한글이 들어 있는 글꼴**만 받는다. 없는 글꼴 이름을 적으면 엔진이 기본
-글꼴로 바꿔 찍는데, 그 기본 글꼴에는 한글이 없어 글자가 통째로 사라진다.
+글꼴은 **이 PC에 깔린, 한글이 들어 있는 글꼴**이나 **키트에 올린 글꼴 파일**만 받는다. 없는 글꼴
+이름을 적으면 엔진이 기본 글꼴로 바꿔 찍는데, 그 기본 글꼴에는 한글이 없어 글자가 통째로 사라진다.
+
+올린 글꼴은 PC에 깔지 않는다. 문서를 만들 때 그 문서 원본 옆의 `Document Fonts/`에 복사해 두면
+엔진이 문서를 열 때 그 자리에서만 읽는다(인디자인 '패키지'와 같은 방식). 깔아 버리면 이 PC의 다른
+일과 다른 사람의 문서까지 그 글꼴을 보게 된다.
 """
 from __future__ import annotations
 
@@ -18,6 +22,7 @@ import json
 import os
 import uuid
 import re
+import shutil
 import struct
 import threading
 from collections import defaultdict
@@ -56,6 +61,7 @@ def load(owner: str) -> dict[str, Any] | None:
     logo = kit.get("logo") or {}
     if logo and not Path(logo.get("path", "")).exists():   # 로고 파일이 지워졌으면 적힌 것도 지운다
         kit["logo"] = None
+    kit["fonts"] = [f for f in kit.get("fonts") or [] if (_font_dir(owner) / f.get("file", "")).is_file()]
     return kit
 
 
@@ -104,7 +110,8 @@ def save(owner: str, kit: dict[str, Any]) -> dict[str, Any]:
     BRAND.mkdir(parents=True, exist_ok=True)
     with _LOCKS[_key(owner)]:
         old = load(owner) or {}
-        kit = {**kit, "logo": old.get("logo")}        # 로고는 따로 올리므로 저장할 때 지키기만 한다
+        # 로고와 글꼴 파일은 따로 올리므로 저장할 때 지키기만 한다
+        kit = {**kit, "logo": old.get("logo"), "fonts": old.get("fonts") or []}
         _write(owner, kit)
     return kit
 
@@ -140,11 +147,89 @@ def delete(owner: str) -> bool:
             if p.exists():
                 p.unlink()
                 gone = True
+        if _font_dir(owner).is_dir():
+            shutil.rmtree(_font_dir(owner), ignore_errors=True)
+            gone = True
     return gone
 
 
+# ---------------------------------------------------------------- 키트에 올린 글꼴 파일
+FONT_EXT = {".ttf", ".otf", ".ttc"}
+MAX_FONTS = 6
+MAX_FONT_BYTES = 40 * 1024 * 1024
+
+
+def _font_dir(owner: str) -> Path:
+    return BRAND / f"{_key(owner)}_fonts"
+
+
+def _safe_name(name: str) -> str:
+    stem = re.sub(r"[^0-9A-Za-z가-힣._-]+", "_", Path(name).stem).strip("._") or "font"
+    return stem[:60] + Path(name).suffix.lower()
+
+
+def add_font(owner: str, data: bytes, original: str) -> dict[str, Any]:
+    """글꼴 파일 하나를 키트에 더한다. **한글이 그려지는 글꼴만** 받는다 — 한글이 없으면 그 글꼴로
+    짠 글이 PDF에 한 자도 찍히지 않는다. 가변 글꼴은 엔진이 한 굵기로만 읽어 받지 않는다."""
+    ext = Path(original).suffix.lower()
+    if ext not in FONT_EXT:
+        raise ValueError(f"글꼴 파일이 아닙니다: {ext or '(확장자 없음)'} — .ttf·.otf·.ttc만 받습니다")
+    if len(data) > MAX_FONT_BYTES:
+        raise ValueError(f"글꼴 파일이 너무 큽니다(최대 {MAX_FONT_BYTES // (1024 * 1024)}MB)")
+    BRAND.mkdir(parents=True, exist_ok=True)
+    d = _font_dir(owner)
+    d.mkdir(exist_ok=True)
+    name = _safe_name(original)
+    tmp = d / (name + ".tmp")
+    tmp.write_bytes(data)
+    try:
+        found = faces(tmp)
+        if not found:
+            raise ValueError("글꼴을 읽지 못했습니다. 가변 글꼴(굵기가 한 파일에 든 것)이면 굵기별 파일(.ttf·.otf)을 올려 주세요")
+        ko = [f for f in found if f["hangul"]]
+        if not ko:
+            raise ValueError(f"한글이 없는 글꼴입니다({found[0]['family']}). 이 글꼴로 짠 한글은 PDF에 찍히지 않습니다")
+        with _LOCKS[_key(owner)]:
+            kit = load(owner) or {"name": "", "colors": [], "title_font": "", "body_font": "", "logo": None}
+            fonts = [f for f in kit.get("fonts") or [] if f.get("file") != name]
+            if len(fonts) >= MAX_FONTS:
+                raise ValueError(f"글꼴 파일은 {MAX_FONTS}개까지 올립니다")
+            os.replace(tmp, d / name)
+            fonts.append({"family": ko[0]["family"], "style": ko[0]["style"], "file": name, "bytes": len(data)})
+            kit["fonts"] = fonts
+            _write(owner, kit)
+    finally:
+        tmp.unlink(missing_ok=True)
+    return kit
+
+
+def remove_font(owner: str, file: str) -> dict[str, Any] | None:
+    with _LOCKS[_key(owner)]:
+        kit = load(owner)
+        if not kit:
+            return None
+        (_font_dir(owner) / Path(file).name).unlink(missing_ok=True)
+        kit["fonts"] = [f for f in kit.get("fonts") or [] if f.get("file") != Path(file).name]
+        # 그 글꼴을 제목·본문으로 골라 두었는데 남은 파일에 그 패밀리가 없으면 기본값으로 되돌린다.
+        left = {f["family"] for f in kit["fonts"]}
+        for slot in ("title_font", "body_font"):
+            if kit.get(slot) and kit[slot] not in left and kit[slot] not in hangul_fonts():
+                kit[slot] = ""
+        _write(owner, kit)
+    return kit
+
+
+def font_files(owner: str, kit: dict[str, Any] | None) -> list[Path]:
+    return [p for f in (kit or {}).get("fonts") or [] if (p := _font_dir(owner) / f["file"]).is_file()]
+
+
+def kit_families(kit: dict[str, Any] | None) -> list[str]:
+    return sorted({f["family"] for f in (kit or {}).get("fonts") or []})
+
+
 def is_empty(kit: dict[str, Any] | None) -> bool:
-    return not kit or not (kit.get("colors") or kit.get("title_font") or kit.get("body_font") or kit.get("logo"))
+    return not kit or not (kit.get("colors") or kit.get("title_font") or kit.get("body_font")
+                           or kit.get("logo") or kit.get("fonts"))
 
 
 def prompt_block(kit: dict[str, Any], logo_path: str | None, ko_font: str) -> str:
@@ -159,8 +244,16 @@ def prompt_block(kit: dict[str, Any], logo_path: str | None, ko_font: str) -> st
     tf, bf = kit.get("title_font") or "", kit.get("body_font") or ""
     if tf or bf:
         lines.append(f"- 글꼴: 제목은 \"{tf or bf or ko_font}\", 본문은 \"{bf or tf or ko_font}\". "
-                     "type.char의 attrs.fontFamily에 이 이름을 그대로 쓴다(이 PC에 깔린, 한글이 들어 있는 글꼴이다). "
+                     "type.char의 attrs.fontFamily에 이 이름을 그대로 쓴다(한글이 들어 있는 글꼴이다). "
                      f"위 명령 쓰는 법의 \"{ko_font}\" 대신 이 글꼴을 쓴다.")
+    # 올린 글꼴은 올린 굵기만 있다. 없는 굵기를 고르면 엔진이 비슷한 것으로 바꿔 찍는다.
+    styles: dict[str, list[str]] = {}
+    for f in kit.get("fonts") or []:
+        styles.setdefault(f["family"], []).append(f.get("style") or "Regular")
+    for fam in (tf, bf):
+        if fam in styles:
+            lines.append(f"- \"{fam}\"는 올린 글꼴이라 굵기가 {', '.join(sorted(set(styles[fam])))}뿐이다. "
+                         "attrs.fontStyle에는 이 중 하나만 쓴다.")
     if logo_path:
         lines.append(f"- 로고: {logo_path} — file.place의 path에 **이 값을 그대로** 써서 넣는다. "
                      "여백 안쪽 상자의 위쪽 왼쪽이나 아래쪽처럼 눈에 띄되 제목을 가리지 않는 자리에, "
@@ -243,6 +336,52 @@ def _has(buf: bytes, t: dict[bytes, tuple[int, int]], cp: int) -> bool:
                 if s <= cp <= e and start_glyph + (cp - s):
                     return True
     return False
+
+
+def _style(buf: bytes, t: dict[bytes, tuple[int, int]]) -> str:
+    """굵기 이름(name 표 17번, 없으면 2번). 영어 이름을 먼저 쓴다 — 엔진이 'Bold'처럼 부른다."""
+    if b"name" not in t:
+        return "Regular"
+    base, _ = t[b"name"]
+    count, sto = struct.unpack_from(">HH", buf, base + 2)
+    cand: dict[int, tuple[int, str]] = {}
+    for i in range(count):
+        pid, _eid, lid, nid, ln, of = struct.unpack_from(">HHHHHH", buf, base + 6 + i * 12)
+        if nid not in (2, 17) or pid != 3:
+            continue
+        s = buf[base + sto + of: base + sto + of + ln].decode("utf-16-be", "ignore").strip()
+        rank = 0 if lid == 0x409 else 1
+        if s and (nid not in cand or rank < cand[nid][0]):
+            cand[nid] = (rank, s)
+    v = cand.get(17) or cand.get(2)
+    return v[1] if v else "Regular"
+
+
+def faces(path: Path) -> list[dict[str, Any]]:
+    """파일 안의 글꼴들 — {family, style, hangul}. 가변 글꼴(fvar)은 뺀다."""
+    try:
+        buf = path.read_bytes()
+    except OSError:
+        return []
+    offs = [0]
+    if buf[:4] == b"ttcf":
+        try:
+            n = struct.unpack_from(">I", buf, 8)[0]
+            offs = list(struct.unpack_from(f">{n}I", buf, 12))
+        except struct.error:
+            return []
+    out = []
+    for o in offs:
+        try:
+            t = _tables(buf, o)
+            if b"fvar" in t:
+                continue
+            fam = _family(buf, t)
+            if fam:
+                out.append({"family": fam, "style": _style(buf, t), "hangul": _has(buf, t, HANGUL)})
+        except (struct.error, IndexError):
+            continue
+    return out
 
 
 def _faces(path: Path) -> list[tuple[str, bool]]:
