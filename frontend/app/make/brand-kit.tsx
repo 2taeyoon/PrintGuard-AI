@@ -9,18 +9,22 @@
 // 색은 **CMYK로만** 받는다. 화면에 보이는 네모는 어림한 색일 뿐이다 — #rrggbb로 받으면 그 값이
 // 그대로 문서에 들어가 인쇄 검사에서 RGB로 걸린다(이 저장소에서 실제로 났던 일이다).
 //
-// 글꼴은 **이 PC에 깔린, 한글이 들어 있는 글꼴** 목록에서만 고른다. 없는 이름을 적으면 엔진이
-// 한글 없는 기본 글꼴로 바꿔 찍고, PDF에서 글자가 통째로 사라진다.
+// 색 칸 왼쪽의 네모를 누르면 색 고르기 창이 뜬다. 고른 화면 색은 CMYK로 **어림 변환**해 숫자 칸에
+// 채운다 — 화면 색과 인쇄 색은 같은 수로 옮겨지지 않으므로, 인쇄 색은 숫자로 확정한다.
+//
+// 글꼴은 **이 PC에 깔린, 한글이 들어 있는 글꼴**이나 **키트에 올린 글꼴 파일**에서만 고른다. 없는
+// 이름을 적으면 엔진이 한글 없는 기본 글꼴로 바꿔 찍고, PDF에서 글자가 통째로 사라진다. 아무것도
+// 고르지 않으면 맑은 고딕이다.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
-  brandFonts, brandLogoBlob, deleteBrand, getBrand, saveBrand, uploadBrandLogo,
+  brandFonts, brandLogoBlob, deleteBrand, deleteBrandFont, getBrand, saveBrand, uploadBrandFont, uploadBrandLogo,
   type BrandColor, type BrandKit,
 } from "@/lib/agentClient";
 
 const MAX_COLORS = 6;
-const EMPTY: BrandKit = { name: "", colors: [], title_font: "", body_font: "", logo: null };
+const EMPTY: BrandKit = { name: "", colors: [], title_font: "", body_font: "", logo: null, fonts: [] };
 const PREVIEWABLE = /\.(png|jpe?g|svg)$/i;
 
 /** 화면용 어림 색. 인쇄 색과 같지 않다 — 그래서 값 칸 옆에만 작게 둔다. */
@@ -29,6 +33,21 @@ const approx = (c: BrandColor) => {
   return `rgb(${ch(c.c)}, ${ch(c.m)}, ${ch(c.y)})`;
 };
 const clamp = (v: string) => Math.max(0, Math.min(100, Math.round(Number(v) || 0)));
+
+/** 색 고르기 창에 넣을 #rrggbb(위 어림 색과 같은 식). */
+const toHex = (c: BrandColor) => {
+  const ch = (v: number) => Math.round(255 * (1 - v / 100) * (1 - c.k / 100)).toString(16).padStart(2, "0");
+  return `#${ch(c.c)}${ch(c.m)}${ch(c.y)}`;
+};
+/** 고른 화면 색 → CMYK 어림값(검정을 K로 먼저 빼는 단순 변환). ICC 변환이 아니라서 인쇄 색과 다를 수 있다. */
+const fromHex = (hex: string): Pick<BrandColor, "c" | "m" | "y" | "k"> => {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  const k = 1 - Math.max(r, g, b);
+  if (k >= 1) return { c: 0, m: 0, y: 0, k: 100 };
+  const p = (v: number) => Math.round(((1 - v - k) / (1 - k)) * 100);
+  return { c: p(r), m: p(g), y: p(b), k: Math.round(k * 100) };
+};
+const kb = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)}MB` : `${Math.round(n / 1024)}KB`);
 
 export default function BrandKitPanel() {
   const [kit, setKit] = useState<BrandKit>(EMPTY);
@@ -99,6 +118,19 @@ export default function BrandKitPanel() {
     setEditing(true);              // 처음 등록하는 중에 로고부터 올려도 칸이 접히지 않게
     setMsg({ ok: true, text: `로고를 등록했습니다 — ${f.name}` });
   });
+  // 글꼴 파일은 올리는 즉시 서버 키트에 들어간다(로고와 같다). 고르는 칸의 다른 값은 그대로 둔다.
+  const addFont = (f: File) => run("글꼴 올리는 중…", async () => {
+    const k = await uploadBrandFont(f);
+    setSaved((s) => ({ ...(s ?? k), fonts: k.fonts })); setKit((cur) => ({ ...cur, fonts: k.fonts }));
+    setEditing(true);
+    const got = k.fonts?.[k.fonts.length - 1];        // 서버는 새로 올린 것을 끝에 붙인다
+    setMsg({ ok: true, text: `글꼴을 올렸습니다 — ${got ? `${got.family} ${got.style}` : f.name}. 위 글꼴 칸에서 고르세요.` });
+  });
+  const dropFont = (name: string) => run("글꼴 빼는 중…", async () => {
+    const k = await deleteBrandFont(name);
+    setSaved(k); setKit((cur) => ({ ...cur, fonts: k.fonts, title_font: k.title_font, body_font: k.body_font }));
+    setMsg({ ok: true, text: "글꼴을 뺐습니다." });
+  });
   const wipe = () => run("지우는 중…", async () => {
     setSure(false);
     await deleteBrand();
@@ -109,7 +141,23 @@ export default function BrandKitPanel() {
   const dirty = JSON.stringify({ ...kit, logo: null }) !== JSON.stringify({ ...(saved ?? EMPTY), logo: null });
   const form = !saved || editing;
   const cancel = () => { setKit(saved ?? EMPTY); setEditing(false); setMsg(null); };
-  const fontOpts = (cur: string) => (cur && !fonts.includes(cur) ? [cur, ...fonts] : fonts);
+  // 고를 수 있는 글꼴 = 키트에 올린 글꼴(앞) + 이 PC에 깔린 한글 글꼴
+  const uploaded = [...new Set((kit.fonts ?? []).map((f) => f.family))];
+  const installed = fonts.filter((f) => !uploaded.includes(f));
+  const fontOpts = (cur: string) => (cur && !installed.includes(cur) && !uploaded.includes(cur) ? [cur, ...installed] : installed);
+  const fontSelect = (slot: "title_font" | "body_font") => (
+    <select value={kit[slot]} onChange={(e) => setKit({ ...kit, [slot]: e.target.value })}>
+      <option value="">기본(맑은 고딕)</option>
+      {uploaded.length > 0 && (
+        <optgroup label="키트에 올린 글꼴">
+          {uploaded.map((f) => <option key={f} value={f}>{f}</option>)}
+        </optgroup>
+      )}
+      <optgroup label="이 PC에 깔린 한글 글꼴">
+        {fontOpts(kit[slot]).map((f) => <option key={f} value={f}>{f}</option>)}
+      </optgroup>
+    </select>
+  );
 
   return (
     <section className="panel bk">
@@ -154,32 +202,45 @@ export default function BrandKitPanel() {
         </label>
         <label className="bk_field">
           <b>제목 글꼴</b>
-          <select value={kit.title_font} onChange={(e) => setKit({ ...kit, title_font: e.target.value })}>
-            <option value="">기본(맑은 고딕)</option>
-            {fontOpts(kit.title_font).map((f) => <option key={f} value={f}>{f}</option>)}
-          </select>
+          {fontSelect("title_font")}
         </label>
         <label className="bk_field">
           <b>본문 글꼴</b>
-          <select value={kit.body_font} onChange={(e) => setKit({ ...kit, body_font: e.target.value })}>
-            <option value="">기본(맑은 고딕)</option>
-            {fontOpts(kit.body_font).map((f) => <option key={f} value={f}>{f}</option>)}
-          </select>
+          {fontSelect("body_font")}
         </label>
       </div>
-      {fonts.length > 0 && (
-        <p className="note">이 PC에 깔린 한글 글꼴 {fonts.length}개 중에서 고릅니다. 한글이 없는 글꼴은 목록에 넣지 않았습니다.</p>
-      )}
+      <div className="bk_fonts">
+        <b>글꼴 파일 올리기 <span className="note">(.ttf · .otf · .ttc — 한글이 들어 있는 글꼴만)</span></b>
+        {(kit.fonts ?? []).length > 0 && (
+          <ul className="bk_font_list">
+            {(kit.fonts ?? []).map((f) => (
+              <li key={f.name}>
+                <b>{f.family}</b> <span className="note">{f.style} · {f.name} · {kb(f.bytes)}</span>
+                <button type="button" className="ghost small" disabled={!!busy} onClick={() => void dropFont(f.name)}>빼기</button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <input type="file" accept=".ttf,.otf,.ttc"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) void addFont(f); e.target.value = ""; }} />
+        <p className="note">
+          올린 글꼴은 이 PC에 깔지 않고, 문서를 만들 때 그 문서 옆 <code>Document Fonts</code> 폴더에만 둡니다.
+          굵기마다 파일이 따로라 굵게 쓸 거면 Bold 파일도 올려 주세요. 가변 글꼴(굵기가 한 파일에 든 것)은 받지 않습니다.
+          아무것도 고르지 않으면 맑은 고딕으로 만듭니다{fonts.length > 0 ? ` · 이 PC의 한글 글꼴 ${fonts.length}개도 고를 수 있습니다` : ""}.
+        </p>
+      </div>
 
       <div className="bk_colors">
-        <b>색 <span className="note">(CMYK · 0~100 · 첫 색이 주된 색)</span></b>
+        <b>색 <span className="note">(CMYK · 0~100 · 첫 색이 주된 색 · 네모를 누르면 색 고르기 창)</span></b>
         {kit.colors.length === 0 && <p className="note">아직 등록한 색이 없습니다.</p>}
         {kit.colors.map((c, i) => (
           // 이름 줄과 CMYK 줄을 나눠 둔다. 넓은 화면에서는 두 묶음이 한 줄로 이어지고(display: contents),
           // 폰에서는 이름·빼기 한 줄, C·M·Y·K 한 줄로 갈린다 — 안 나누면 K만 다음 줄로 떨어졌다.
           <div className="bk_color" key={i}>
             <div className="bk_chead">
-              <span className="bk_swatch" style={{ background: approx(c) }} title="화면용 어림 색입니다" />
+              <input type="color" className="bk_picker" value={toHex(c)} aria-label={`${c.name} 색 고르기`}
+                title="눌러서 화면 색으로 고르기 — CMYK로 어림 변환합니다"
+                onChange={(e) => setColor(i, fromHex(e.target.value))} />
               <input className="bk_cname" value={c.name} maxLength={20} aria-label="색 이름"
                 onChange={(e) => setColor(i, { name: e.target.value })} />
               <button type="button" className="ghost small bk_drop" onClick={() => dropColor(i)}>빼기</button>

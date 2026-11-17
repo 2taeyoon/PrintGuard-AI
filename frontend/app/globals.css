@@ -1060,3 +1060,15 @@ main a:not(.pill):not(.ghost):not(.card):not(.shoplist a):not(.qa_shot a):not(.l
   main a:not(.pill):not(.ghost):not(.card):not(.shoplist a):not(.qa_shot a):not(.leaflet-container a):hover,
   .sitefoot a:hover { text-decoration-thickness: 2px; }
 }
+
+/* 브랜드 키트 — 색 고르기 창(네모)과 글꼴 파일 목록. 모서리는 각지게. */
+.bk_picker { width: 28px; height: 28px; padding: 0; border: 1px solid var(--borderStrong); border-radius: 0;
+  background: none; cursor: pointer; flex: 0 0 auto; }
+.bk_picker::-webkit-color-swatch-wrapper { padding: 0; }
+.bk_picker::-webkit-color-swatch { border: 0; border-radius: 0; }
+.bk_picker::-moz-color-swatch { border: 0; border-radius: 0; }
+.bk_fonts { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+.bk_fonts input[type="file"] { max-width: 420px; }
+.bk_font_list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.bk_font_list li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+@media (max-width: 768px) { .bk_fonts input[type="file"] { max-width: 100%; width: 100%; } }

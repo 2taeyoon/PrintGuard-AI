@@ -826,7 +826,9 @@ def _kit_view(kit: dict[str, Any] | None) -> dict[str, Any] | None:
         return None
     logo = kit.get("logo") or None
     # 파일 경로는 밖에 내보내지 않는다 — 이름과 크기만.
-    return {**kit, "logo": {"name": logo.get("name"), "bytes": logo.get("bytes")} if logo else None}
+    return {**kit, "logo": {"name": logo.get("name"), "bytes": logo.get("bytes")} if logo else None,
+            "fonts": [{"family": f["family"], "style": f.get("style"), "name": f["file"], "bytes": f.get("bytes")}
+                      for f in kit.get("fonts") or []]}
 
 
 @app.get("/designcraft/brand")
@@ -845,7 +847,7 @@ async def dc_brand_put(body: dict[str, Any], request: Request, authorization: st
     owner = _kit_owner(request, authorization, write=True)
     # 목록이 비어도 검사는 한다(빈 목록이면 어떤 글꼴도 못 고른다). None으로 바꾸면 검사를 건너뛰어
     # 한글 없는 글꼴이 키트에 들어가고, PDF에서 글자가 사라진다.
-    fonts = list(await asyncio.to_thread(brand.hangul_fonts))
+    fonts = list(await asyncio.to_thread(brand.hangul_fonts)) + brand.kit_families(brand.load(owner))
     try:
         kit = brand.validate(body, fonts)
     except ValueError as e:
@@ -865,6 +867,25 @@ async def dc_brand_logo(request: Request, file: UploadFile = File(...),
     if len(data) > MAX_ASSET:
         raise HTTPException(413, f"로고가 너무 큽니다(최대 {MAX_ASSET // (1024 * 1024)}MB)")
     kit = await asyncio.to_thread(brand.set_logo, owner, data, ext, file.filename or f"logo{ext}")
+    return {"data": _kit_view(kit), "meta": {}}
+
+
+@app.post("/designcraft/brand/font")
+async def dc_brand_font(request: Request, file: UploadFile = File(...),
+                        authorization: str | None = Auth) -> dict[str, Any]:
+    """글꼴 파일(.ttf·.otf·.ttc)을 키트에 올린다. 한글이 그려지는 글꼴만 받는다."""
+    owner = _kit_owner(request, authorization, write=True)
+    data = await file.read(brand.MAX_FONT_BYTES + 1)
+    try:
+        kit = await asyncio.to_thread(brand.add_font, owner, data, file.filename or "font.ttf")
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+    return {"data": _kit_view(kit), "meta": {}}
+
+
+@app.delete("/designcraft/brand/font/{name}")
+async def dc_brand_font_delete(name: str, request: Request, authorization: str | None = Auth) -> dict[str, Any]:
+    kit = await asyncio.to_thread(brand.remove_font, _kit_owner(request, authorization, write=True), name)
     return {"data": _kit_view(kit), "meta": {}}
 
 
@@ -915,8 +936,20 @@ def _brand_for(ctx: str, j: dict[str, Any], owner: str) -> dict[str, Any] | None
         if not any(a.get("path") == logo_path for a in j.get("assets") or []):
             j.setdefault("assets", []).append({"name": "브랜드 로고", "path": logo_path})
             _dc_save(ctx)
+    # 올린 글꼴은 **문서 원본 옆** `Document Fonts/`에 둔다. 엔진은 문서를 열 때 그 폴더를 먼저 읽는다.
+    # 작업 폴더(DC_OUT/<번호>)에 두면 안 읽힌다 — 고치기는 원본(SRC/<src_ref>/)을 열기 때문이다(실제로 확인).
+    src_ref = str(j.get("src_ref") or "")
+    files = brand.font_files(owner, kit)
+    if files and src_ref and (SRC / src_ref).is_dir():
+        fd = SRC / src_ref / "Document Fonts"
+        fd.mkdir(exist_ok=True)
+        for f in files:
+            dest = fd / f.name
+            if not dest.exists() or not filecmp.cmp(f, dest, shallow=False):
+                shutil.copyfile(f, dest)
     return {"name": kit.get("name") or "", "colors": kit.get("colors") or [],
             "title_font": kit.get("title_font") or "", "body_font": kit.get("body_font") or "",
+            "fonts": [{"family": f["family"], "style": f.get("style")} for f in kit.get("fonts") or []],
             "logo_path": logo_path}
 
 
