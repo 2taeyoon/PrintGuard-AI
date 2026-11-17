@@ -981,6 +981,8 @@ def _brand_for(ctx: str, j: dict[str, Any], owner: str) -> dict[str, Any] | None
                 shutil.copyfile(f, dest)
     return {"name": kit.get("name") or "", "colors": kit.get("colors") or [],
             "title_font": kit.get("title_font") or "", "body_font": kit.get("body_font") or "",
+            # latin_only를 빼면 prompt_block이 영문 전용 글꼴 안내를 못 만들어, 한글이 그 글꼴로 짜여 PDF에서 사라진다.
+            "latin_only": kit.get("latin_only") or [],
             "fonts": [{"family": f["family"], "style": f.get("style")} for f in kit.get("fonts") or []],
             "logo_path": logo_path}
 

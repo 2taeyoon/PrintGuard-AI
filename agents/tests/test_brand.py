@@ -352,3 +352,14 @@ def test_latin_only_font_is_saved_and_kept_off_hangul_text():
     # 한글 글꼴만 고르면 그런 말이 없다
     ko = brand.validate({**KIT, "title_font": "Batang"}, fonts)
     assert ko["latin_only"] == [] and "한글이 없다" not in brand.prompt_block(ko, None, "Malgun Gothic")
+
+
+def test_brand_for_carries_latin_only_to_the_prompt(monkeypatch):
+    """오케스트레이터가 엔진 쪽에 넘기는 키트에 latin_only가 실려야 한다. 빠지면 prompt_block이
+    '한글은 한글 글꼴로' 안내를 못 만들어, 영문 전용 글꼴로 짠 한글이 PDF에서 사라진다."""
+    from pg_agents.orchestrator import app as orch
+    monkeypatch.setattr(orch.brand, "font_files", lambda owner, kit: [])
+    monkeypatch.setattr(orch.brand, "load", lambda owner: {**KIT, "title_font": "BrandSans", "latin_only": ["BrandSans"]})
+    got = orch._brand_for("ctx", {}, "kit-x")
+    assert got["latin_only"] == ["BrandSans"]
+    assert "한글이 없다" in brand.prompt_block(got, None, "Malgun Gothic")
