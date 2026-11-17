@@ -753,6 +753,38 @@ async def dc_source(files: list[UploadFile] = File(...), paths: str = Form("[]")
                      **(r.get("output") or {})}, "meta": {}}
 
 
+# ---------- 클로드·코덱스가 MCP로 일하는 동안 '지금 하는 일' ----------
+# 문서에 무엇을 **넣을 때만** 기록이 남았다(dc_step). 그런데 클로드는 넣기 전에 키트를 읽고,
+# 엔진 명령을 찾아보고, 생각하느라 수십 초에서 몇 분을 쓴다. 그동안 따라 보기 칸은 '조용합니다'로
+# 멈춰 있다가 끝날 때 한꺼번에 떴다 — 실시간이 아니었다. 그래서 MCP 도구가 이 창구들을 부를 때마다
+# 그 사람이 마지막으로 손댄 문서에 사람이 읽는 말 한 줄(dc_activity)을 남긴다.
+# 도구(mcp 토큰)가 부를 때만 남긴다 — 화면도 같은 창구(키트 조회 등)를 부르는데, 그건 사람이 보는 일이다.
+LAST_DOC: dict[str, tuple[str, float]] = {}
+ACTIVITY_FRESH = 30 * 60      # 이보다 오래 손대지 않은 문서에는 남기지 않는다(다른 일로 넘어간 것이다)
+
+
+def _touch(who: str, ctx: str) -> None:
+    LAST_DOC[who] = (ctx, time.time())
+
+
+def _activity(authorization: str | None, text: str, ctx: str = "") -> None:
+    try:
+        c = _claims(authorization)
+    except HTTPException:
+        return
+    if not c or c.kind != "mcp":
+        return
+    if not ctx:
+        last = LAST_DOC.get(c.subject)
+        if not last or time.time() - last[1] > ACTIVITY_FRESH:
+            return
+        ctx = last[0]
+    if DCJOBS.get(ctx, {}).get("client") != c.subject:
+        return
+    _touch(c.subject, ctx)
+    log_event(ctx, "dc_activity", source=NAME, payload={"text": text[:200]})
+
+
 @app.post("/designcraft/create")
 async def dc_create(body: dict[str, Any], authorization: str | None = Auth) -> dict[str, Any]:
     """새 문서를 만든다(빈 판형 또는 샘플 잡지).
@@ -793,13 +825,14 @@ async def dc_create(body: dict[str, Any], authorization: str | None = Auth) -> d
         raise HTTPException(502, "만든 문서를 다시 열지 못했습니다")
     DCJOBS[ctx]["inspect"] = ins.get("output")
     _dc_save(ctx)
+    _touch(who, ctx)
     return {"data": {"context_id": ctx, "filename": made["doc"], "made": True,
                      "width_mm": made.get("width_mm"), "height_mm": made.get("height_mm"),
                      **(ins.get("output") or {})}, "meta": {}}
 
 
 @app.get("/designcraft/commands")
-async def dc_commands() -> dict[str, Any]:
+async def dc_commands(find: str = "", authorization: str | None = Auth) -> dict[str, Any]:
     """엔진이 받는 명령 전부(547개)와 인자 설명.
 
     **한 번 받아서 들고 있는다.** 명령표는 엔진 버전마다 고정이고, 한 번 물을 때마다 MCP 프로세스가
@@ -812,6 +845,8 @@ async def dc_commands() -> dict[str, Any]:
         if r.get("status") != "completed":
             raise HTTPException(502, "명령 목록을 받지 못했습니다. 원본 수정 에이전트가 켜져 있는지 보세요")
         _CMD_CACHE = r.get("output") or {}
+    _activity(authorization, f"쓸 엔진 기능을 찾아봅니다 — ‘{find.strip()[:30]}’" if find.strip()
+              else "쓸 수 있는 엔진 기능을 훑어봅니다")
     return {"data": _CMD_CACHE, "meta": {}}
 
 
@@ -829,10 +864,7 @@ def _kit_owner(request: Request, authorization: str | None, write: bool = False)
     이 PC 앞에서 구글로 로그인한 계정은 공개 사이트로 들어와도 같은 키트를 쓴다(`brand.link_pc_owner`)."""
     c = _writer(authorization) if write else _claims(authorization)
     who = c.subject if c else ""
-    # 터널(cloudflared 같은 것)을 거쳐 온 요청도 주소는 127.0.0.1이다. 그대로 믿으면 바깥 사람이
-    # 이 PC 주인의 키트를 고칠 수 있다. 중계 머리말이 붙어 있으면 바깥으로 본다.
-    proxied = any(h in request.headers for h in ("x-forwarded-for", "cf-connecting-ip", "forwarded", "x-real-ip"))
-    if _at_this_pc(request) and not proxied:
+    if _at_this_pc(request):
         # 구글로 로그인한 사람만 적는다. 익명 토큰은 브라우저 주소마다 달라 적어 봐야 공개 사이트에서 쓸 일이 없다.
         if c and c.kind == "browser" and c.label != "anon":
             brand.link_pc_owner(c.subject)
@@ -857,7 +889,10 @@ def _kit_view(kit: dict[str, Any] | None) -> dict[str, Any] | None:
 
 @app.get("/designcraft/brand")
 async def dc_brand_get(request: Request, authorization: str | None = Auth) -> dict[str, Any]:
-    return {"data": _kit_view(brand.load(_kit_owner(request, authorization))), "meta": {}}
+    kit = _kit_view(brand.load(_kit_owner(request, authorization)))
+    _activity(authorization, f"브랜드 키트를 읽었습니다 — {kit.get('name') or '이름 없음'}" if kit
+              else "브랜드 키트를 찾아봤습니다 — 등록된 키트가 없습니다")
+    return {"data": kit, "meta": {}}
 
 
 @app.get("/designcraft/brand/fonts")
@@ -947,6 +982,8 @@ async def dc_brand_apply(ctx: str, request: Request, authorization: str | None =
     if not j.get("made"):
         raise HTTPException(409, "만든 문서에만 쓸 수 있습니다")
     kit = await asyncio.to_thread(_brand_for, ctx, j, _kit_owner(request, authorization))
+    _activity(authorization, f"브랜드 키트를 이 문서에 가져왔습니다 — {kit.get('name') or '이름 없음'}"
+              + (" · 로고 포함" if kit.get("logo_path") else "") if kit else "브랜드 키트를 찾아봤습니다 — 등록된 키트가 없습니다", ctx)
     return {"data": kit, "meta": {}}
 
 
@@ -1001,6 +1038,7 @@ async def dc_edit(ctx: str, body: dict[str, Any], authorization: str | None = Au
         raise HTTPException(409, "올리신 원본은 이 창구로 고치지 않습니다. 올린 파일은 그대로 두고, "
                                  "검수가 끝난 자리에서 사본을 고쳐 드립니다")
     _too_often_edit(ctx)
+    _touch(j["client"], ctx)
     undo = bool(body.get("undo"))
     cmds = body.get("commands")
     if not undo and (not isinstance(cmds, list) or not cmds):
@@ -1092,7 +1130,14 @@ LOCAL_HOSTS = {"127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"}
 
 
 def _at_this_pc(request: Request) -> bool:
-    return bool(request.client) and (request.client.host or "") in LOCAL_HOSTS
+    """이 PC의 브라우저나 이 PC의 도구가 **직접** 부른 요청인가.
+
+    터널(cloudflared 같은 것)을 거쳐 온 요청도 주소는 127.0.0.1이다. 주소만 믿었더니 공개 사이트로
+    들어온 **아무나** 이 PC에서 클로드가 만드는 문서와 그 작업 기록을 따라 볼 수 있었다(키트 쪽은
+    머리말을 따졌는데 따라 보기 쪽은 안 따졌다). 중계 머리말이 붙어 있으면 바깥으로 본다."""
+    if not request.client or (request.client.host or "") not in LOCAL_HOSTS:
+        return False
+    return not any(h in request.headers for h in ("x-forwarded-for", "cf-connecting-ip", "forwarded", "x-real-ip"))
 
 
 def _visible(who: str, here: bool) -> set[str]:
@@ -1107,7 +1152,7 @@ def _visible(who: str, here: bool) -> set[str]:
 # 채팅처럼 읽힌다 — 걸음만 있으면 어느 문서의 걸음인지 모른 채 줄만 쌓인다.
 # 가져가기(dc_adopted)는 뺀다 — 화면이 문서를 따라갈 때마다 남는 줄이라, 보여 주면
 # '내가 보는 중'이라는 말만 채팅에 쌓인다.
-FEED_KINDS = {"dc_step", "dc_create_opened", "dc_source_opened", "dc_asked"}
+FEED_KINDS = {"dc_step", "dc_create_opened", "dc_source_opened", "dc_asked", "dc_activity"}
 FEED_MAX = 400
 
 
@@ -1124,7 +1169,8 @@ async def dc_feed(request: Request, after: int = 0, authorization: str | None = 
     who = _who(authorization)
     if not who:
         raise HTTPException(401, "로그인이 필요합니다")
-    seen = _visible(who, _at_this_pc(request))
+    # 공개 사이트로 들어왔어도 이 PC 앞에서 구글로 로그인해 이어 둔 계정이면 이 PC 사람이다(키트와 같은 규칙).
+    seen = _visible(who, _at_this_pc(request) or brand.is_pc_owner(who))
     if not seen:
         return {"data": {"rows": [], "docs": {}, "next": after}, "meta": {}}
     rows = [r for r in query(limit=FEED_MAX, contexts=seen)
@@ -1279,7 +1325,10 @@ async def dc_compose(ctx: str, body: dict[str, Any], http: Request,
     if r.get("status") != "completed":
         raise HTTPException(502, (((r.get("output") or {}).get("reason") or (r.get("output") or {}).get("message"))
                                   or "명령을 짜지 못했습니다")[:300])
-    return {"data": r.get("output") or {}, "meta": {"status": r.get("status")}}
+    out = r.get("output") or {}
+    if out.get("available") and out.get("commands"):
+        _activity(authorization, f"넣을 것 {len(out['commands'])}가지를 짰습니다 — 이제 문서에 넣습니다", ctx)
+    return {"data": out, "meta": {"status": r.get("status")}}
 
 
 @app.get("/designcraft/{ctx}/progress")
