@@ -46,6 +46,10 @@ eq("반영·누락·일부만", checkRequests(parseRequests("깨끗히 → 깨�
   [["반영", 1], ["누락", 1], ["확인 필요", 2], ["확인 필요", undefined]]);
 eq("고칠 글이 고친 글 안에 들어 있어도 세지 않는다(Inc → Inc.)",
   checkRequests([{ from: "Inc", to: "Inc." }], ["Acme Inc 2026"], ["Acme Inc. 2026"]).map((r) => r.status), ["반영"]);
+eq("숫자로 시작하는 요청은 깎지 않는다(목록 표시만 지운다)",
+  parseRequests("3mm → 5mm\n12,000원 → 13,000원\n2026 → 2027\n1. 깨끗히 → 깨끗이\n1.5mm → 2mm"),
+  [{ from: "3mm", to: "5mm" }, { from: "12,000원", to: "13,000원" }, { from: "2026", to: "2027" },
+    { from: "깨끗히", to: "깨끗이" }, { from: "1.5mm", to: "2mm" }]);
 
 if (fail) { console.log(`\n${fail}개 실패`); process.exit(1); }
 console.log("\n모두 통과");

@@ -970,3 +970,17 @@ def test_brand_kit_reaches_the_prompt_and_the_font_fallback(monkeypatch):
     assert seen["p"].index("브랜드 키트") < seen["p"].index("<부탁>")
     font = [c for c in r["commands"] if c["command"] == "type.char"][0]["params"]["attrs"]["fontFamily"]
     assert font == "Dotum"
+
+
+
+def test_brand_logo_survives_the_twenty_asset_limit(monkeypatch):
+    """그림이 20개인 문서에서도 키트 로고는 잘려 나가지 않는다 — 맨 앞에 둔다."""
+    got = {}
+    monkeypatch.setattr(dc, "_compose_blocking",
+                        lambda request, doc, client, assets, brand: got.update(assets=assets) or
+                        {"available": True, "commands": [], "says": "", "dropped": []})
+    assets = [{"name": f"사진{i}", "path": f"/d/a{i}.png"} for i in range(20)] + [{"name": "브랜드 로고", "path": "/d/brand_logo.pdf"}]
+    req = AgentRequest(meta=meta(), skill="compose",
+                       input={"request": "명함", "assets": assets, "brand": {"logo_path": "/d/brand_logo.pdf"}})
+    asyncio.run(dc.compose(req))
+    assert len(got["assets"]) == 20 and got["assets"][0]["path"] == "/d/brand_logo.pdf"

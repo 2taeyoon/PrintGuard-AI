@@ -934,8 +934,14 @@ async def compose(req: AgentRequest) -> dict[str, Any]:
         return {"status": "rejected", "outcome": "INVALID_INPUT", "output": {"message": "무엇을 만들지 적어 주세요"}}
     doc = {k: req.input.get(k) for k in ("pages", "width_mm", "height_mm", "facing",
                                         "margin_mm", "bleed_mm")}
-    assets = [a for a in (req.input.get("assets") or []) if isinstance(a, dict)][:20]
     kit = req.input.get("brand") if isinstance(req.input.get("brand"), dict) else None
+    assets = [a for a in (req.input.get("assets") or []) if isinstance(a, dict)]
+    # 브랜드 로고를 맨 앞에 둔다. 뒤에 붙은 채로 20개를 자르면 그림이 많은 문서에서 로고가 빠지고,
+    # 프롬프트는 로고를 넣으라는데 그 경로는 허용 목록에 없어 file.place가 버려진다.
+    logo = (kit or {}).get("logo_path")
+    if logo:
+        assets = [a for a in assets if a.get("path") == logo][:1] + [a for a in assets if a.get("path") != logo]
+    assets = assets[:20]
     r = await asyncio.to_thread(_compose_blocking, request, doc, None, assets, kit)
     n = len(r["commands"])
     return {"status": "completed", "output": r,

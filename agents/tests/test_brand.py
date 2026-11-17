@@ -93,3 +93,99 @@ def test_apply_copies_logo_into_the_document_folder(monkeypatch):
         assert orch.DCJOBS["ctx_dc_kit"]["assets"][0]["path"] == got["logo_path"]   # compose도 이 경로를 안다
         assert c.post("/designcraft/ctx_dc_kit/brand", headers=_h("someone-else")).status_code == 404
         c.delete("/designcraft/brand", headers=_h("kit-c"))
+
+
+def test_decimal_cmyk_is_refused_not_rounded():
+    """12.4를 12로 저장하면 등록한 색과 찍히는 색이 달라진다. 거절하고 이유를 말한다."""
+    with pytest.raises(ValueError, match="정수"):
+        brand.validate({"colors": [{"name": "주색", "c": 12.4, "m": 0, "y": 0, "k": 0}]})
+    with pytest.raises(ValueError, match="0~100"):
+        brand.validate({"colors": [{"name": "주색", "c": True, "m": 0, "y": 0, "k": 0}]})
+    assert brand.validate({"colors": [{"name": "주색", "c": 12.0, "m": 0, "y": 0, "k": 0}]})["colors"][0]["c"] == 12
+
+
+def test_empty_font_list_still_refuses_fonts():
+    """이 PC에서 한글 글꼴을 하나도 못 찾았으면, 어떤 글꼴도 받지 않는다(검사를 건너뛰지 않는다)."""
+    with pytest.raises(ValueError, match="없는"):
+        brand.validate({**KIT, "title_font": "Malgun Gothic"}, fonts=[])
+    assert brand.validate(KIT, fonts=[])["title_font"] == ""          # 비워 두는 것은 된다
+
+
+def test_new_logo_replaces_old_only_after_it_is_written(monkeypatch):
+    owner = "kit-logo"
+    first = brand.set_logo(owner, b"PNG-1", ".png", "a.png")["logo"]["path"]
+    second = brand.set_logo(owner, b"%PDF-2", ".pdf", "b.pdf")["logo"]["path"]
+    assert not Path(first).exists() and Path(second).read_bytes() == b"%PDF-2"   # 확장자가 달라도 옛 것은 정리된다
+    # 쓰다가 실패하면 옛 로고는 그대로 남는다
+    monkeypatch.setattr(Path, "write_bytes", lambda self, data: (_ for _ in ()).throw(OSError("디스크가 찼습니다")))
+    with pytest.raises(OSError):
+        brand.set_logo(owner, b"PNG-3", ".png", "c.png")
+    monkeypatch.undo()
+    kit = brand.load(owner)
+    assert kit["logo"]["name"] == "b.pdf" and Path(kit["logo"]["path"]).read_bytes() == b"%PDF-2"
+    brand.delete(owner)
+
+
+def test_saving_fields_and_logo_together_keeps_both():
+    """두 쪽이 번갈아 저장해도 서로의 값을 지우지 않는다."""
+    import threading
+    owner = "kit-race"
+    errs = []
+
+    def fields(i):
+        try:
+            brand.save(owner, {"name": f"이름{i}", "colors": [], "title_font": "", "body_font": ""})
+        except Exception as e:      # noqa: BLE001
+            errs.append(e)
+
+    def logo(i):
+        try:
+            brand.set_logo(owner, f"L{i}".encode(), ".png", f"l{i}.png")
+        except Exception as e:      # noqa: BLE001
+            errs.append(e)
+    ts = [threading.Thread(target=f, args=(i,)) for i in range(20) for f in (fields, logo)]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    kit = brand.load(owner)
+    assert not errs and kit["name"].startswith("이름") and kit["logo"]["name"].startswith("l")
+    brand.delete(owner)
+
+
+def test_compose_with_a_kit_reaches_the_agent(monkeypatch):
+    """/compose가 키트를 실어 에이전트를 부른다. 예전에는 부탁 글이 HTTP 요청 변수를 덮어써
+    키트 주인을 가리다 넘어졌다(str에 headers가 없다) — compose가 늘 500이었다."""
+    from pg_agents.orchestrator import app as orch
+    monkeypatch.setitem(orch.DCJOBS, "ctx_dc_cmp", {"client": "kit-d", "made": True, "filename": "a.idml",
+                                                     "width_mm": 90, "height_mm": 50})
+    monkeypatch.setattr(orch, "_dc_save", lambda ctx: None)
+    sent = {}
+
+    async def fake_ask(agent, skill, _ctx, body):
+        sent.update(agent=agent, skill=skill, body=body)
+        return {"status": "completed", "output": {"available": True, "commands": [], "says": "짰습니다"}}
+    monkeypatch.setattr(orch, "_ask", fake_ask)
+    monkeypatch.setattr(orch, "log_event", lambda *a, **k: None)
+    with TestClient(app) as c:
+        c.put("/designcraft/brand", json=KIT, headers=_h("kit-d"))
+        c.post("/designcraft/brand/logo", files={"file": ("d.pdf", b"%PDF logo", "application/pdf")}, headers=_h("kit-d"))
+        r = c.post("/designcraft/ctx_dc_cmp/compose", json={"request": "명함 만들어 줘"}, headers=_h("kit-d"))
+        assert r.status_code == 200, r.text
+        assert sent["skill"] == "compose" and sent["body"]["request"] == "명함 만들어 줘"
+        assert sent["body"]["brand"]["colors"] == KIT["colors"]
+        assert sent["body"]["brand"]["logo_path"] == sent["body"]["assets"][-1]["path"]
+        c.delete("/designcraft/brand", headers=_h("kit-d"))
+
+
+def test_changed_logo_with_the_same_size_is_copied_again(monkeypatch):
+    """크기만 같다고 건너뛰면, 색 코드만 바꾼 SVG처럼 바이트 수가 같은 새 로고가 문서에 안 들어간다."""
+    from pg_agents.orchestrator import app as orch
+    monkeypatch.setitem(orch.DCJOBS, "ctx_dc_same", {"client": "kit-e", "made": True, "filename": "a.idml"})
+    monkeypatch.setattr(orch, "_dc_save", lambda ctx: None)
+    with TestClient(app) as c:
+        c.put("/designcraft/brand", json=KIT, headers=_h("kit-e"))
+        c.post("/designcraft/brand/logo", files={"file": ("d.svg", b"<svg fill='#ff0000'/>", "image/svg+xml")}, headers=_h("kit-e"))
+        p1 = c.post("/designcraft/ctx_dc_same/brand", headers=_h("kit-e")).json()["data"]["logo_path"]
+        c.post("/designcraft/brand/logo", files={"file": ("d.svg", b"<svg fill='#0000ff'/>", "image/svg+xml")}, headers=_h("kit-e"))
+        p2 = c.post("/designcraft/ctx_dc_same/brand", headers=_h("kit-e")).json()["data"]["logo_path"]
+        assert p1 == p2 and Path(p2).read_bytes() == b"<svg fill='#0000ff'/>"
+        c.delete("/designcraft/brand", headers=_h("kit-e"))

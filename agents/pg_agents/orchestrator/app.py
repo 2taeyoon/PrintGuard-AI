@@ -14,6 +14,7 @@ PG_FAKE_AGENTS=1이면 부서 에이전트 대신 프로세스 안의 가짜 응
 from __future__ import annotations
 
 import asyncio
+import filecmp
 import hashlib
 import json
 import os
@@ -842,9 +843,11 @@ async def dc_brand_fonts() -> dict[str, Any]:
 @app.put("/designcraft/brand")
 async def dc_brand_put(body: dict[str, Any], request: Request, authorization: str | None = Auth) -> dict[str, Any]:
     owner = _kit_owner(request, authorization, write=True)
+    # 목록이 비어도 검사는 한다(빈 목록이면 어떤 글꼴도 못 고른다). None으로 바꾸면 검사를 건너뛰어
+    # 한글 없는 글꼴이 키트에 들어가고, PDF에서 글자가 사라진다.
     fonts = list(await asyncio.to_thread(brand.hangul_fonts))
     try:
-        kit = brand.validate(body, fonts or None)
+        kit = brand.validate(body, fonts)
     except ValueError as e:
         raise HTTPException(400, str(e)) from None
     return {"data": _kit_view(brand.save(owner, kit)), "meta": {}}
@@ -905,7 +908,8 @@ def _brand_for(ctx: str, j: dict[str, Any], owner: str) -> dict[str, Any] | None
         d = DC_OUT / ctx / "assets"
         d.mkdir(parents=True, exist_ok=True)
         dest = d / f"brand_logo{Path(src).suffix.lower()}"
-        if not dest.exists() or dest.stat().st_size != Path(src).stat().st_size:
+        # 크기만 보고 건너뛰지 않는다 — SVG에서 색 코드만 바꾸면 크기가 같아 옛 로고가 남는다.
+        if not dest.exists() or not filecmp.cmp(src, dest, shallow=False):
             shutil.copyfile(src, dest)
         logo_path = str(dest)
         if not any(a.get("path") == logo_path for a in j.get("assets") or []):
@@ -1171,7 +1175,7 @@ async def dc_adopt(ctx: str, authorization: str | None = Auth) -> dict[str, Any]
 
 
 @app.post("/designcraft/{ctx}/compose")
-async def dc_compose(ctx: str, body: dict[str, Any], request: Request,
+async def dc_compose(ctx: str, body: dict[str, Any], http: Request,
                      authorization: str | None = Auth) -> dict[str, Any]:
     """말로 부탁한 것을 엔진 명령으로 **짜 주기만** 한다. 고치지는 않는다.
 
@@ -1191,7 +1195,9 @@ async def dc_compose(ctx: str, body: dict[str, Any], request: Request,
     log_event(ctx, "dc_asked", source=NAME, payload={"text": request[:500]})
     ins = j.get("inspect") or {}
     # 브랜드 키트가 있으면 색·글꼴·로고를 함께 넘긴다. 로고는 이 문서의 작업 폴더로 복사된다.
-    kit = await asyncio.to_thread(_brand_for, ctx, j, _kit_owner(request, authorization))
+    # HTTP 요청은 `http`로 받는다. `request`라고 두었더니 위에서 부탁 글이 그 이름을 덮어써,
+    # 키트 주인을 가릴 때 str.headers에서 넘어져 compose가 통째로 실패했다(PR #100 리뷰에서 잡힘).
+    kit = await asyncio.to_thread(_brand_for, ctx, j, _kit_owner(http, authorization))
     r = await _ask("designcraft", "compose", ctx, {
         "request": request, "pages": ins.get("pages"),
         "width_mm": j.get("width_mm") or ins.get("width_mm"),

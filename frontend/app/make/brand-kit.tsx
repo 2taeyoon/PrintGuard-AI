@@ -12,7 +12,7 @@
 // 글꼴은 **이 PC에 깔린, 한글이 들어 있는 글꼴** 목록에서만 고른다. 없는 이름을 적으면 엔진이
 // 한글 없는 기본 글꼴로 바꿔 찍고, PDF에서 글자가 통째로 사라진다.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   brandFonts, brandLogoBlob, deleteBrand, getBrand, saveBrand, uploadBrandLogo,
@@ -43,11 +43,29 @@ export default function BrandKitPanel() {
   // 밀어내고, 정작 무엇이 등록돼 있는지는 입력 칸 사이에 묻힌다. 고칠 때만 펼친다.
   const [editing, setEditing] = useState(false);
 
+  // 미리보기 요청에 번호를 붙인다. 올리고 바로 지우는 식으로 연달아 부르면, 먼저 보낸 요청의 답이
+  // 늦게 와서 지운 로고를 다시 띄웠다. 마지막 번호가 아닌 답은 버리고 그 blob 주소도 놓아 준다.
+  const logoSeq = useRef(0);
+  const logoRef = useRef<string | null>(null);
+  const putLogo = useCallback((url: string | null) => {
+    if (logoRef.current) URL.revokeObjectURL(logoRef.current);
+    logoRef.current = url;
+    setLogoUrl(url);
+  }, []);
   const showLogo = useCallback((k: BrandKit | null) => {
-    setLogoUrl((old) => { if (old) URL.revokeObjectURL(old); return null; });
+    const seq = ++logoSeq.current;
+    putLogo(null);
     if (k?.logo && PREVIEWABLE.test(k.logo.name)) {
-      brandLogoBlob().then(setLogoUrl, () => undefined);
+      brandLogoBlob().then((url) => {
+        if (seq === logoSeq.current) putLogo(url);
+        else URL.revokeObjectURL(url);
+      }, () => undefined);
     }
+  }, [putLogo]);
+  // 화면을 떠날 때 남은 blob 주소를 놓아 준다. 늦게 오는 답도 버려지게 번호를 올려 둔다.
+  useEffect(() => () => {
+    logoSeq.current++;
+    if (logoRef.current) URL.revokeObjectURL(logoRef.current);
   }, []);
 
   useEffect(() => {

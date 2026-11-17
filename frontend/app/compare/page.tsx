@@ -31,11 +31,26 @@ async function pixels(page: Doc, scale: number) {
   return { data: c.getContext("2d")!.getImageData(0, 0, c.width, c.height).data, w: c.width, h: c.height };
 }
 
+/** 쪽의 낱말과 자리. 자리는 **화면에 그려지는 좌표**(배율 1)로 돌려준다.
+ *  PDF 좌표 그대로 두면 /Rotate가 90·180·270인 쪽에서 상자가 엉뚱한 곳에 놓인다 — 캔버스는
+ *  돌린 뒤의 크기로 그려지는데 상자는 돌리기 전 좌표라서다. 네 모서리를 뷰포트로 옮겨 감싼다. */
 async function words(page: Doc) {
-  const [x0, y0, , y1] = page.view as number[];
+  const vp = page.getViewport({ scale: 1 });
   const tc = await page.getTextContent();
-  return wordsFromItems(tc.items, [x0, y0], y1 - y0);
+  return wordsFromItems(tc.items, [0, 0], 0).map((w) => {
+    // origin 0·높이 0으로 받으면 box는 [x0, -(y+h), x1, -y] — PDF 좌표로 되돌려 옮긴다
+    const [a, nt, b, nb] = w.box;
+    const p1 = vp.convertToViewportPoint(a, -nt), p2 = vp.convertToViewportPoint(b, -nb);
+    const box: Box = [Math.min(p1[0], p2[0]), Math.min(p1[1], p2[1]), Math.max(p1[0], p2[0]), Math.max(p1[1], p2[1])];
+    return { ...w, box };
+  });
 }
+
+/** 화면에 그려지는 쪽 크기(배율 1, 돌린 뒤). 상자 % 계산과 같은 크기 비교에 쓴다. */
+const shown = (page: Doc): [number, number] => {
+  const vp = page.getViewport({ scale: 1 });
+  return [vp.width, vp.height];
+};
 
 export default function Compare() {
   const [oldF, setOldF] = useState<File | null>(null);
@@ -64,8 +79,7 @@ export default function Compare() {
         const po = i <= o.numPages ? await o.getPage(i) : null;
         const pn = i <= n.numPages ? await n.getPage(i) : null;
         const ref = (pn ?? po)!;
-        const [vx0, vy0, vx1, vy1] = ref.view as number[];
-        sizes.push([vx1 - vx0, vy1 - vy0]);
+        sizes.push(shown(ref));
         if (!po || !pn) {
           const only = po ? "old" : "new";
           const ws = await words(ref);
@@ -77,8 +91,8 @@ export default function Compare() {
         const [A, B] = await Promise.all([words(po), words(pn)]);
         oldTexts.push(A.map((w) => w.s).join(" ")); newTexts.push(B.map((w) => w.s).join(" "));
         const changes = groupChanges(diffWords(A.map((w) => w.s), B.map((w) => w.s)), A, B);
-        const so = po.view as number[], sn = pn.view as number[];
-        const sameSize = Math.abs((so[2] - so[0]) - (sn[2] - sn[0])) < 1 && Math.abs((so[3] - so[1]) - (sn[3] - sn[1])) < 1;
+        const [ow, oh] = shown(po), [nw, nh] = shown(pn);
+        const sameSize = Math.abs(ow - nw) < 1 && Math.abs(oh - nh) < 1;
         let visual: Box[] = [];
         if (sameSize) {
           const [a, b] = await Promise.all([pixels(po, VIS_SCALE), pixels(pn, VIS_SCALE)]);

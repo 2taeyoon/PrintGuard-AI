@@ -18,6 +18,8 @@ import json
 import os
 import re
 import struct
+import threading
+from collections import defaultdict
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -27,6 +29,11 @@ from .config import DATA
 BRAND = DATA / "brand"
 MAX_COLORS = 6
 NAME_RE = re.compile(r"^[0-9A-Za-z가-힣 _\-]{1,20}$")
+
+
+# 한 사람의 키트를 읽고-고치고-쓰는 동안 다른 변경이 끼어들지 않게 한다. 로고 올리기(스레드)와
+# 필드 저장이 겹치면, 늦게 끝난 쪽이 먼저 읽어 둔 옛 값을 다시 써서 방금 저장한 필드가 사라진다.
+_LOCKS: defaultdict[str, threading.Lock] = defaultdict(threading.Lock)
 
 
 def _key(owner: str) -> str:
@@ -69,9 +76,12 @@ def validate(body: dict[str, Any], fonts: list[str] | None = None) -> dict[str, 
         vals = {}
         for k in ("c", "m", "y", "k"):
             v = c.get(k)
-            if not isinstance(v, (int, float)) or not 0 <= v <= 100:
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not 0 <= v <= 100:
                 raise ValueError(f"'{n}'의 {k.upper()} 값은 0~100이어야 합니다")
-            vals[k] = int(round(v))
+            # 소수는 반올림하지 않고 거절한다 — 12.4를 12로 저장하면 등록한 색과 찍히는 색이 달라진다.
+            if v != int(v):
+                raise ValueError(f"'{n}'의 {k.upper()} 값은 정수(0~100)로 적어 주세요: {v}")
+            vals[k] = int(v)
         colors.append({"name": n, **vals})
     out: dict[str, Any] = {"name": name, "colors": colors}
     for slot in ("title_font", "body_font"):
@@ -82,32 +92,47 @@ def validate(body: dict[str, Any], fonts: list[str] | None = None) -> dict[str, 
     return out
 
 
+def _write(owner: str, kit: dict[str, Any]) -> None:
+    """임시 파일에 쓴 뒤 바꿔 끼운다. 쓰다 멈춰도 반쯤 쓴 JSON이 남지 않는다."""
+    tmp = _json(owner).with_suffix(".tmp")
+    tmp.write_text(json.dumps(kit, ensure_ascii=False, indent=1), encoding="utf-8")
+    os.replace(tmp, _json(owner))
+
+
 def save(owner: str, kit: dict[str, Any]) -> dict[str, Any]:
     BRAND.mkdir(parents=True, exist_ok=True)
-    old = load(owner) or {}
-    kit = {**kit, "logo": old.get("logo")}            # 로고는 따로 올리므로 저장할 때 지키기만 한다
-    _json(owner).write_text(json.dumps(kit, ensure_ascii=False, indent=1), encoding="utf-8")
+    with _LOCKS[_key(owner)]:
+        old = load(owner) or {}
+        kit = {**kit, "logo": old.get("logo")}        # 로고는 따로 올리므로 저장할 때 지키기만 한다
+        _write(owner, kit)
     return kit
 
 
 def set_logo(owner: str, data: bytes, ext: str, original: str) -> dict[str, Any]:
+    """새 로고를 **다 쓴 다음에** 옛 로고를 지운다. 먼저 지우면, 쓰다가 실패했을 때(디스크 부족 등)
+    옛 로고까지 잃는다 — 다음 load()가 사라진 파일의 기록도 지워 버리기 때문이다."""
     BRAND.mkdir(parents=True, exist_ok=True)
-    for old in BRAND.glob(f"{_key(owner)}_logo.*"):
-        old.unlink(missing_ok=True)
     dest = BRAND / f"{_key(owner)}_logo{ext}"
-    dest.write_bytes(data)
-    kit = load(owner) or {"name": "", "colors": [], "title_font": "", "body_font": ""}
-    kit["logo"] = {"path": str(dest), "name": original, "bytes": len(data)}
-    _json(owner).write_text(json.dumps(kit, ensure_ascii=False, indent=1), encoding="utf-8")
+    with _LOCKS[_key(owner)]:
+        tmp = dest.with_name(dest.name + ".tmp")
+        tmp.write_bytes(data)
+        os.replace(tmp, dest)
+        for old in BRAND.glob(f"{_key(owner)}_logo.*"):
+            if old != dest and not old.name.endswith(".tmp"):
+                old.unlink(missing_ok=True)
+        kit = load(owner) or {"name": "", "colors": [], "title_font": "", "body_font": ""}
+        kit["logo"] = {"path": str(dest), "name": original, "bytes": len(data)}
+        _write(owner, kit)
     return kit
 
 
 def delete(owner: str) -> bool:
     gone = False
-    for p in [_json(owner), *BRAND.glob(f"{_key(owner)}_logo.*")] if BRAND.exists() else []:
-        if p.exists():
-            p.unlink()
-            gone = True
+    with _LOCKS[_key(owner)]:
+        for p in [_json(owner), *BRAND.glob(f"{_key(owner)}_logo.*")] if BRAND.exists() else []:
+            if p.exists():
+                p.unlink()
+                gone = True
     return gone
 
 
@@ -171,26 +196,44 @@ def _family(buf: bytes, t: dict[bytes, tuple[int, int]]) -> str | None:
     return v[1] if v else None
 
 
+def _glyph4(buf: bytes, sub: int, cp: int) -> int:
+    """format 4에서 cp의 글리프 번호. 범위 안에 있어도 0(없음)일 수 있어 끝까지 계산한다."""
+    seg = struct.unpack_from(">H", buf, sub + 6)[0] // 2
+    ends = struct.unpack_from(f">{seg}H", buf, sub + 14)
+    o_start = sub + 16 + seg * 2
+    starts = struct.unpack_from(f">{seg}H", buf, o_start)
+    deltas = struct.unpack_from(f">{seg}h", buf, o_start + seg * 2)
+    o_range = o_start + seg * 4
+    ranges = struct.unpack_from(f">{seg}H", buf, o_range)
+    for i, (s, e) in enumerate(zip(starts, ends)):
+        if not s <= cp <= e:
+            continue
+        if ranges[i] == 0:
+            return (cp + deltas[i]) & 0xFFFF
+        at = o_range + i * 2 + ranges[i] + (cp - s) * 2
+        g = struct.unpack_from(">H", buf, at)[0]
+        return (g + deltas[i]) & 0xFFFF if g else 0
+    return 0
+
+
 def _has(buf: bytes, t: dict[bytes, tuple[int, int]], cp: int) -> bool:
+    """글꼴이 cp를 **실제로 그리는지**(글리프 번호가 0이 아닌지). 범위에 드는지만 보면,
+    범위 안의 빈 자리를 '있다'로 읽는다 — 그러면 한글 없는 글꼴이 목록에 들어와 글자가 사라진다."""
     if b"cmap" not in t:
         return False
     base, _ = t[b"cmap"]
     n = struct.unpack_from(">H", buf, base + 2)[0]
     for i in range(n):
-        pid, eid, of = struct.unpack_from(">HHI", buf, base + 4 + i * 8)
+        _pid, _eid, of = struct.unpack_from(">HHI", buf, base + 4 + i * 8)
         sub = base + of
         fmt = struct.unpack_from(">H", buf, sub)[0]
-        if fmt == 4:
-            seg = struct.unpack_from(">H", buf, sub + 6)[0] // 2
-            ends = struct.unpack_from(f">{seg}H", buf, sub + 14)
-            starts = struct.unpack_from(f">{seg}H", buf, sub + 16 + seg * 2)
-            if any(s <= cp <= e for s, e in zip(starts, ends)):
-                return True
-        elif fmt == 12:
+        if fmt == 4 and _glyph4(buf, sub, cp):
+            return True
+        if fmt == 12:
             ng = struct.unpack_from(">I", buf, sub + 12)[0]
             for g in range(ng):
-                s, e, _ = struct.unpack_from(">III", buf, sub + 16 + g * 12)
-                if s <= cp <= e:
+                s, e, start_glyph = struct.unpack_from(">III", buf, sub + 16 + g * 12)
+                if s <= cp <= e and start_glyph + (cp - s):
                     return True
     return False
 
@@ -226,7 +269,9 @@ def hangul_fonts() -> tuple[str, ...]:
     for d in FONT_DIRS:
         if not d.is_dir():
             continue
-        for p in d.iterdir():
-            if p.suffix.lower() in (".ttf", ".otf", ".ttc"):
-                fams.update(f for f, ko in _faces(p) if ko)
+        # 하위 폴더까지 본다 — 리눅스는 /usr/share/fonts/truetype/noto/처럼 한 단계 더 들어가 있다.
+        for root, _dirs, files in os.walk(d):
+            for name in files:
+                if name.lower().endswith((".ttf", ".otf", ".ttc")):
+                    fams.update(f for f, ko in _faces(Path(root) / name) if ko)
     return tuple(sorted(fams))

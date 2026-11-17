@@ -161,7 +161,9 @@ export function visualOnly(visual: Box[], changes: Change[]): Box[] {
 export function parseRequests(text: string): { from: string; to: string }[] {
   const out: { from: string; to: string }[] = [];
   for (const raw of text.split(/\r?\n/)) {
-    const line = raw.replace(/^\s*[-•*\d.)]+\s*/, "").trim();
+    // 줄 앞의 목록 표시('- ', '• ', '1. ', '2) ')만 지운다. 숫자·점을 통째로 지웠더니
+    // '3mm → 5mm'가 'mm → 5mm'이 되고 '2026 → 2027'은 요청째 사라졌다.
+    const line = raw.replace(/^\s*(?:[-•*]|\d+[.)])\s+/, "").trim();
     const m = line.match(/^(.+?)\s*(?:→|->|=>|⇒)\s*(.*)$/);
     if (!m) continue;
     const from = unquote(m[1]), to = unquote(m[2]);
