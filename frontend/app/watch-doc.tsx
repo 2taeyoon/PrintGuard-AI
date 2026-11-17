@@ -254,6 +254,16 @@ export default function WatchDoc() {
   const turn = (to: string) => { if (to && to !== pick) { setShot(null); setPage(1); } };
   /** 이 문서에 머문다(목록에서 고르거나, 쌓인 줄의 방 이름을 누르거나). */
   const open = (ctx: string) => { turn(ctx); setChosen(ctx); setPinned(true); };
+  // 문서마다 그 아래 걸음 줄을 펼치고 접는다. 전에는 '보는 중'을 눌러도 아무것도 접히지 않아,
+  // 문서가 몇 개만 쌓여도 지난 문서의 걸음 수백 줄 사이에서 지금 일을 찾아야 했다.
+  // 사람이 누른 값이 있으면 그대로, 없으면 **지금 보는 문서만** 펼친다(새 작업이 오면 그쪽이 펼쳐진다).
+  const [fold, setFold] = useState<Record<string, boolean>>({});
+  const isOpen = (ctx: string) => fold[ctx] ?? ctx === pick;
+  const toggle = (ctx: string) => {
+    if (isOpen(ctx)) { setFold((f) => ({ ...f, [ctx]: false })); return; }
+    open(ctx);
+    setFold((f) => ({ ...f, [ctx]: true }));
+  };
   /** '전체'로 돌아간다 — 이 PC에서 하는 일이 다 흐르고, 새 작업을 따라간다. */
   const follow = () => { turn(live); setChosen(""); setPinned(false); };
 
@@ -402,11 +412,13 @@ export default function WatchDoc() {
                     시각이 없으면 그때 어느 것인지 모른다. */}
                 <time dateTime={m.at}>{clock(m.at)}</time>
                 <span className="grow" />
-                <button type="button" className="pill" onClick={() => open(m.ctx)}>
-                  {m.ctx === pick ? "보는 중" : "이 문서 보기"}
+                {m.ctx === pick && <span className="chip">보는 중</span>}
+                <button type="button" className={`pill${isOpen(m.ctx) ? " on" : ""}`}
+                  aria-expanded={isOpen(m.ctx)} onClick={() => toggle(m.ctx)}>
+                  {isOpen(m.ctx) ? "접기" : "펼치기"}
                 </button>
               </div>
-            ) : (
+            ) : !isOpen(m.ctx) ? null : (
               <div key={`${m.id}-${i}`} className={`msg${m.mine ? " me" : ""}${m.error ? " bad" : ""}`}>
                 <div className="msg_body">
                   <b>{m.what}</b>
