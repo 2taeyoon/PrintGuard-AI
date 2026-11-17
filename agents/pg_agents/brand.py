@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import uuid
 import re
 import struct
 import threading
@@ -109,20 +110,26 @@ def save(owner: str, kit: dict[str, Any]) -> dict[str, Any]:
 
 
 def set_logo(owner: str, data: bytes, ext: str, original: str) -> dict[str, Any]:
-    """새 로고를 **다 쓴 다음에** 옛 로고를 지운다. 먼저 지우면, 쓰다가 실패했을 때(디스크 부족 등)
-    옛 로고까지 잃는다 — 다음 load()가 사라진 파일의 기록도 지워 버리기 때문이다."""
+    """새 로고를 따로 쓰고, **JSON 기록까지 바꾼 뒤에** 옛 로고를 지운다.
+    옛 로고를 먼저 지우거나 같은 이름으로 덮으면, 중간에 실패했을 때(디스크 부족 등) 옛 로고를 잃거나
+    JSON은 옛 이름·크기를 가리키는데 파일은 새것인 채로 남는다. 그래서 올릴 때마다 이름에 꼬리표를 붙인다."""
     BRAND.mkdir(parents=True, exist_ok=True)
-    dest = BRAND / f"{_key(owner)}_logo{ext}"
+    dest = BRAND / f"{_key(owner)}_logo.{uuid.uuid4().hex[:8]}{ext}"
     with _LOCKS[_key(owner)]:
         tmp = dest.with_name(dest.name + ".tmp")
-        tmp.write_bytes(data)
-        os.replace(tmp, dest)
+        try:
+            tmp.write_bytes(data)
+            os.replace(tmp, dest)
+            kit = load(owner) or {"name": "", "colors": [], "title_font": "", "body_font": ""}
+            kit["logo"] = {"path": str(dest), "name": original, "bytes": len(data)}
+            _write(owner, kit)
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            dest.unlink(missing_ok=True)       # 기록이 안 바뀌었으니 새 파일은 고아다. 옛 로고는 건드리지 않는다.
+            raise
         for old in BRAND.glob(f"{_key(owner)}_logo.*"):
             if old != dest and not old.name.endswith(".tmp"):
                 old.unlink(missing_ok=True)
-        kit = load(owner) or {"name": "", "colors": [], "title_font": "", "body_font": ""}
-        kit["logo"] = {"path": str(dest), "name": original, "bytes": len(data)}
-        _write(owner, kit)
     return kit
 
 

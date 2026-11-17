@@ -123,6 +123,14 @@ def test_new_logo_replaces_old_only_after_it_is_written(monkeypatch):
     monkeypatch.undo()
     kit = brand.load(owner)
     assert kit["logo"]["name"] == "b.pdf" and Path(kit["logo"]["path"]).read_bytes() == b"%PDF-2"
+    # JSON 저장이 실패해도 옛 로고와 기록은 그대로고, 새 파일은 남지 않는다
+    monkeypatch.setattr(brand, "_write", lambda o, k: (_ for _ in ()).throw(OSError("JSON 저장 실패")))
+    with pytest.raises(OSError):
+        brand.set_logo(owner, b"PNG-4", ".pdf", "d.pdf")
+    monkeypatch.undo()
+    kit = brand.load(owner)
+    assert kit["logo"]["name"] == "b.pdf" and Path(kit["logo"]["path"]).read_bytes() == b"%PDF-2"
+    assert len(list(brand.BRAND.glob(f"{brand._key(owner)}_logo.*"))) == 1
     brand.delete(owner)
 
 
