@@ -176,7 +176,17 @@ jobs:
             --jq '[.[] | select(.workflow != "클로드 리뷰" and (.bucket == "fail" or .bucket == "pending")) | .name] | join(", ")')
           human=$(gh pr view "$PR" --json labels --jq '[.labels[].name] | index("needs-human") != null')
           head=$(gh pr view "$PR" --json headRefOid --jq .headRefOid)
+          # 충돌은 `mergeable`로 본다. 깃헙이 막 계산하는 중이면 UNKNOWN이 오므로 잠깐 기다려 다시 읽는다.
+          # `mergeStateStatus`는 보지 않는다 — 이 리뷰 작업 자신이 아직 돌고 있어 늘 UNSTABLE로 나온다
+          # (검사가 하나라도 안 끝나면 UNSTABLE이다). 작업을 둘로 나눠도 다음 작업이 또 돌고 있어 같다.
+          for i in 1 2 3 4 5 6; do
+            mergeable=$(gh pr view "$PR" --json mergeable --jq .mergeable)
+            [ "$mergeable" != "UNKNOWN" ] && break
+            sleep 5
+          done
           if [ -n "$failed" ]; then v="검사가 통과하지 않음: $failed"
+          elif [ "$mergeable" = "CONFLICTING" ]; then v="main과 충돌함 — 가지를 main에 맞춘 뒤 다시"
+          elif [ "$mergeable" != "MERGEABLE" ]; then v="충돌 여부를 확인하지 못함($mergeable)"
           elif [ "$human" = "true" ]; then v="needs-human 라벨이 붙어 있음"
           elif [ "$head" != "$START" ]; then v="skip"
           else v="ok"; fi
@@ -189,7 +199,11 @@ jobs:
           short=${START:0:7}
           same=$([ "$head" = "$START" ] && echo "같음" || echo "다름 — 머지하지 않음")
           size=$(gh pr view "$PR" --json changedFiles,additions,deletions --jq '"파일 \(.changedFiles)개, +\(.additions) / -\(.deletions)줄"')
-          conflict=$(gh pr view "$PR" --json mergeable,mergeStateStatus --jq '"\(.mergeable) / \(.mergeStateStatus)"')
+          case "${mergeable:-}" in
+            MERGEABLE)   conflict="충돌 없음 (MERGEABLE)" ;;
+            CONFLICTING) conflict="**충돌 있음** (CONFLICTING) — 머지하지 않음" ;;
+            *)           conflict="확인하지 못함 (${mergeable:-없음}) — 머지하지 않음" ;;
+          esac
           labels=$(gh pr view "$PR" --json labels --jq '[.labels[].name] | if length == 0 then "없음" else join(", ") end')
           # 시험 수는 CI 로그에서 읽는다. 검사 이름만 보고 "통과"라고 하면 몇 개를 돌렸는지 모른다.
           run_id=$(gh run list --workflow ci.yml --commit "$START" --json databaseId,event \
