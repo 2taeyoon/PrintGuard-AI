@@ -817,21 +817,16 @@ def _doc_with_layout_problems(tmp_path, m) -> None:
 
 
 @needs_cli
-def test_a_photo_too_coarse_to_print_is_shrunk_until_it_is_not(tmp_path):
-    """**없는 화소를 만들어 낼 수는 없다.** 그래서 고치는 길은 줄이는 것 하나뿐이고, 줄이면
-    실제로 기준 해상도를 넘는다 — 그걸 확인한다(줄였다고 적어 놓고 안 줄면 거짓말이 된다)."""
+def test_a_photo_too_coarse_to_print_is_not_shrunk(tmp_path):
+    """**저해상도 사진은 기계가 고치지 않는다.** 전에는 기준 ppi가 될 때까지 사진을 줄였다 — 32ppi면
+    가로가 5분의 1이 되어 경고는 사라지지만 지면이 망가진다. 사진은 그대로 두고, 경고도 그대로
+    남아 사람이 사진을 바꾸게 한다. 원본 수정 단계에도 줄이기 길이 없어야 한다."""
+    assert "resolution" not in dc.LAYOUT_KINDS and not hasattr(dc, "_shrink_low_res")
     with Mcp(read_roots=[tmp_path], write_roots=[tmp_path]) as m:
         _doc_with_layout_problems(tmp_path, m)
         before = [i for i in (m.ex("preflight.run", minPpi=150) or {}).get("issues", [])
                   if i["kind"] == "lowResolution"]
-        assert before, "시험할 거리가 없다 — 낮은 해상도 사진이 안 만들어졌다"
-        done, bad = dc._shrink_low_res(m)                # noqa: SLF001
-        after = [i for i in (m.ex("preflight.run", minPpi=150) or {}).get("issues", [])
-                 if i["kind"] == "lowResolution"]
-    assert len(done) == len(before) and not bad, (done, bad)
-    assert not after, after
-    assert "ppi" in done[0]["what"] and "사진을 바꿔야" in done[0]["what"]
-
+    assert before, "시험할 거리가 없다 — 낮은 해상도 사진이 안 만들어졌다"
 
 @needs_cli
 def test_text_outside_the_margin_is_pulled_in_and_a_full_bleed_photo_is_left_alone(tmp_path):
@@ -901,11 +896,12 @@ def test_applying_only_layout_fixes_needs_no_text_fix(tmp_path):
     with Mcp(read_roots=[tmp_path], write_roots=[tmp_path]) as m:
         _doc_with_layout_problems(tmp_path, m)
         m.ex("file.saveAs", path=str(src))
+    # 'resolution'을 달라고 해도 사진은 줄이지 않는다 — 크기는 디자인이고, 고치는 길은 사진 교체뿐이다
     r = dc._apply_blocking(src, ".designcraft", out, [], ["resolution", "margin", "intent"])  # noqa: SLF001
     kinds = [x["kind"] for x in r["layout_applied"]]
-    assert "resolution" in kinds and "margin" in kinds and "intent" in kinds, r["layout_applied"]
+    assert "margin" in kinds and "intent" in kinds and "resolution" not in kinds, r["layout_applied"]
     assert not r["layout_failed"], r["layout_failed"]
-    assert not [i for i in r["preflight_after"] if i["kind"] == "lowResolution"], r["preflight_after"]
+    assert [i for i in r["preflight_after"] if i["kind"] == "lowResolution"], "낮은 해상도는 그대로 남아 알려야 한다"
     assert (out / "fixed.pdf").is_file() and b"OutputIntent" in (out / "fixed.pdf").read_bytes()
 
 

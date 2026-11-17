@@ -84,19 +84,20 @@ def fix_list(j: Job) -> list[dict[str, Any]]:
 
 # 검수가 찾은 것 가운데 **자리와 크기로 고칠 수 있는 것.** 맞춤법만 고쳐 주고 나머지는 전부
 # '사람이 보고 판단할 항목'으로 넘기고 있었다. 그런데 이 셋은 사람이 인디자인에서 하는 일이
-# 정해져 있다 — 사진을 줄이고, 글상자를 여백 안으로 들여놓고, 내보낼 때 PDF/X를 고르는 것.
+# 정해져 있다 — 글상자를 여백 안으로 들여놓고, 내보낼 때 PDF/X를 고르는 것.
+# 저해상도 사진은 넣지 않는다. 사진을 줄여 ppi를 맞추면 지면이 망가진다 — 사진을 바꾸는 것은 사람 몫이다.
 #
 # 번호(어느 사진·어느 글상자)는 넘기지 않는다. 검수는 **PDF**를 보고 매긴 번호이고 고치는 것은
 # **편집 파일**이라, 그 둘을 맞추려 들면 같은 쪽의 다른 것을 건드린다. 여기서는 '무엇을 고칠지'만
 # 넘기고, 어느 것인지는 문서를 연 엔진이 제 눈으로 찾는다.
-LAYOUT_OF = {"resolution": "resolution", "safe": "margin", "clip": "margin", "intent": "intent"}
+LAYOUT_OF = {"safe": "margin", "clip": "margin", "intent": "intent"}
 
 
 def layout_list(j: Job) -> list[str]:
     kinds = {LAYOUT_OF[k] for k in
              (str(i.get("kind") or "") for i in (j.results.get("preflight") or {}).get("issues", []))
              if k in LAYOUT_OF}
-    return [k for k in ("resolution", "margin", "intent") if k in kinds]
+    return [k for k in ("margin", "intent") if k in kinds]
 
 
 def can_fix(j: Job) -> bool:

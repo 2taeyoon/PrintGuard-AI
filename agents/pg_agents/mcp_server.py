@@ -372,9 +372,6 @@ def main() -> None:
             port=int(os.environ.get("PG_MCP_PORT", "8710")))
 
 
-if __name__ == "__main__":
-    main()
-
 # ---------- 인쇄물 만들기(작업 만들기 화면과 같은 길) ----------
 # 화면에서만 만들 수 있으면, 원고를 쓰는 자리에서 쓰려고 할 때마다 사람이 창을 옮겨 다녀야 한다.
 # 클로드·커서에서 **말로 부탁해 만드는** 길을 같은 창구로 연다.
@@ -472,3 +469,12 @@ async def get_brand_kit(context_id: str = "") -> dict[str, Any]:
     if not kit:
         return {"registered": False, "note": "등록된 브랜드 키트가 없습니다. '작업 만들기' 화면에서 등록할 수 있습니다."}
     return {"registered": True, **kit}
+
+
+# **이 두 줄은 반드시 파일 맨 끝에 둔다.** `python -m pg_agents.mcp_server`로 띄우면 여기서 서버가
+# 떠서 멈춘다 — 이 아래에 `@mcp.tool()`이 있으면 그 도구는 등록되기 전이라 클로드·커서에 안 보인다.
+# 실제로 make_document·list_engine_commands·edit_document·compose_document·get_brand_kit 다섯이
+# 이 줄 뒤에 있어서 문서 만들기 도구가 통째로 안 보였다. 시험은 모듈을 불러오기만 해서 몰랐다
+# (불러올 때는 __name__이 달라 이 줄이 돌지 않는다). test_mcp_main_is_last가 지킨다.
+if __name__ == "__main__":
+    main()
