@@ -60,6 +60,12 @@ async function fontFile(f: LocalFont): Promise<File> {
 /** 아무것도 고르지 않았을 때 엔진이 쓰는 글꼴. 키트에는 ""로 남기고 화면에는 이 이름으로 보인다 —
  *  '기본(맑은 고딕)'과 'Malgun Gothic'이 따로 떠서 다른 글꼴처럼 보이던 것을 하나로 묶었다. */
 const DEFAULT_FONT = "Malgun Gothic";
+/** 윈도에 처음부터 들어 있는 한글 글꼴. 서버는 이 PC의 한글 글꼴을 한 목록으로 주는데, 그대로 한 묶음에
+ *  넣었더니 사람이 직접 깐 Pretendard가 바탕·돋움 사이에 섞여 '설치한 글꼴'로 안 보였다. 이 이름들만
+ *  윈도 기본으로 따로 묶고, 나머지는 이 PC에 설치한 글꼴로 본다(설치 폴더로 가르면 '모든 사용자'로 깐
+ *  글꼴이 윈도 폴더에 들어가 기본으로 잘못 묶인다). */
+const WINDOWS_KO = new Set(["Malgun Gothic", "Malgun Gothic Semilight", "Batang", "BatangChe", "Dotum", "DotumChe",
+  "Gulim", "GulimChe", "Gungsuh", "GungsuhChe"]);
 /** 글꼴 하나를 키트에 올릴 때 가져갈 굵기 — 보통과 굵게. 둘 다 없으면 첫 굵기 하나. */
 const pickFaces = (faces: LocalFont[]) => {
   const want = faces.filter((f) => /^(regular|normal|book|roman|bold)$/i.test(f.style));
@@ -213,10 +219,13 @@ export default function BrandKitPanel() {
   const form = !saved || editing;
   const cancel = () => { setKit(saved ?? EMPTY); setEditing(false); setMsg(null); };
   // 고를 수 있는 글꼴 — 겹치지 않게 한 번씩만:
-  //   기본(Malgun Gothic) / 키트에 올린 글꼴 / 에이전트 PC에 깔린 한글 글꼴 / 이 컴퓨터의 다른 글꼴(저장할 때 올림)
+  //   기본(Malgun Gothic) / 키트에 올린 글꼴 / 이 PC에 설치한 한글 글꼴 / 윈도 기본 한글 글꼴 /
+  //   이 컴퓨터의 다른 글꼴(저장할 때 올림)
   const uploaded = [...new Set((kit.fonts ?? []).map((f) => f.family))].filter((f) => f !== DEFAULT_FONT);
-  const installed = fonts.filter((f) => f !== DEFAULT_FONT && !uploaded.includes(f));
-  const known = new Set([DEFAULT_FONT, ...uploaded, ...installed]);
+  const hangul = fonts.filter((f) => f !== DEFAULT_FONT && !uploaded.includes(f));
+  const installed = hangul.filter((f) => !WINDOWS_KO.has(f));
+  const builtin = hangul.filter((f) => WINDOWS_KO.has(f));
+  const known = new Set([DEFAULT_FONT, ...uploaded, ...hangul]);
   const others = local ? [...local.keys()].filter((f) => !known.has(f)).sort((a, b) => a.localeCompare(b, "ko")) : [];
   const fontSelect = (slot: "title_font" | "body_font") => {
     const cur = kit[slot] || DEFAULT_FONT;
@@ -230,12 +239,17 @@ export default function BrandKitPanel() {
           </optgroup>
         )}
         {installed.length > 0 && (
-          <optgroup label="한글 글꼴 — 바로 쓸 수 있음">
+          <optgroup label="이 PC에 설치한 한글 글꼴 — 바로 쓸 수 있음">
             {installed.map((f) => <option key={f} value={f}>{f}</option>)}
           </optgroup>
         )}
+        {builtin.length > 0 && (
+          <optgroup label="윈도 기본 한글 글꼴">
+            {builtin.map((f) => <option key={f} value={f}>{f}</option>)}
+          </optgroup>
+        )}
         {others.length > 0 && (
-          <optgroup label="이 컴퓨터 글꼴 — 저장할 때 올림(한글이 없으면 거절)">
+          <optgroup label="이 컴퓨터의 다른 글꼴 — 저장할 때 올림(한글이 없거나 가변 글꼴이면 거절)">
             {others.map((f) => <option key={f} value={f}>{f}</option>)}
           </optgroup>
         )}

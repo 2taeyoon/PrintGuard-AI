@@ -1078,11 +1078,12 @@ main a:not(.pill):not(.ghost):not(.card):not(.shoplist a):not(.qa_shot a):not(.l
 .bk_local { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .bk_local input { width: 280px; max-width: 100%; }
 
-/* 교정 회차 비교 — 인쇄 검수 화면 안의 접는 칸 */
-.cmp_wrap > summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; list-style: none; }
-.cmp_wrap > summary::-webkit-details-marker { display: none; }
-.cmp_wrap > summary strong { font-size: 1.8rem; }
-.cmp_wrap > summary::after { content: "펼치기"; margin-left: auto; font-size: 1.4rem; color: var(--thema); }
-.cmp_wrap[open] > summary::after { content: "접기"; }
-.cmp_wrap[open] > summary { margin-bottom: 16px; }
+/* 교정 회차 비교 — 인쇄 검수 화면 안. 접지 않는다(접혀 있으면 자동 비교 결과가 안 보인다) */
+.cmp_head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin-bottom: 16px; }
+.cmp_head h2 { font-size: 1.8rem; margin: 0; }
+.cmp_manual { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; grid-column: 1 / -1;
+  padding-top: 12px; border-top: 1px solid var(--borderLight); }
+.cmp_manual .cmp_file { flex: 1 1 240px; min-width: 0; }
+.cmp_manual > .note { flex-basis: 100%; }
+.cmp_file select { width: 100%; max-width: 100%; }
 .cmp_wrap .panel { border: 0; padding: 0; margin: 0 0 16px; background: none; box-shadow: none; }

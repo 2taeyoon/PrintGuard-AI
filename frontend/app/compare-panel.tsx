@@ -1,11 +1,15 @@
 "use client";
 
-// 교정 회차 비교 — 이전본과 수정본 PDF를 올리면 쪽마다 바뀐 글자와 그림을 표시한다.
-// 처음엔 따로 된 탭(/compare)이었다. 교정지를 주고받는 일은 검수의 한 갈래라 탭 하나를 차지할
-// 일이 아니어서, 인쇄 검수 화면 안의 접는 칸으로 옮겼다. /compare 주소는 이 칸으로 보낸다.
+// 교정 회차 비교 — 같은 문서의 이전 회차와 이번 회차에서 쪽마다 바뀐 글자와 그림을 표시한다.
+// 처음엔 따로 된 탭(/compare)이었고, 다음엔 인쇄 검수 화면 안의 접는 칸이었다. 둘 다 이전본·수정본을
+// **손으로 다시 골라 올려야** 했다 — 이미 검수하며 올린 파일을 또 찾게 한 것이다. 지금은 같은 문서를
+// 두 번 이상 검수했으면(lib/rounds.ts가 이름으로 묶는다) 지난 회차와 이번 회차를 서버에서 꺼내
+// 바로 비교한다. 접지도 않는다 — 접혀 있으면 결과가 나와도 안 보인다.
 // 계산은 lib/compare.ts가 하고, 여기서는 파일을 읽어 쪽을 그리고 결과를 겹쳐 보여 준다.
-// **파일은 이 브라우저 안에서만 읽는다.** 서버로 보내지 않는다(에이전트도 부르지 않는다).
+// 비교 자체는 이 브라우저 안에서 한다. 직접 고른 파일은 서버로 보내지 않는다.
 import { useEffect, useRef, useState } from "react";
+import { jobPdf, listJobs, type JobRow } from "@/lib/agentClient";
+import { docKey, roundsOf } from "@/lib/rounds";
 import {
   changedRegions, checkRequests, diffWords, groupChanges, parseRequests, visualOnly, wordsFromItems,
   type Box, type PageDiff, type RequestCheck,
@@ -13,12 +17,14 @@ import {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Doc = any;
-type Result = { pages: PageDiff[]; oldCount: number; newCount: number; checks: RequestCheck[]; sizes: [number, number][] };
+type Result = { pages: PageDiff[]; oldCount: number; newCount: number; checks: RequestCheck[]; sizes: [number, number][];
+  labels: [string, string] };
+type Src = { blob: Blob; label: string };
 
 const SAMPLE = "깨끗히 → 깨끗이\n몇일 → 며칠";
 const VIS_SCALE = 1.2;          // 그림 비교 배율. 높이면 정확해지지만 느려진다
 
-async function loadPdf(f: File): Promise<Doc> {
+async function loadPdf(f: Blob): Promise<Doc> {
   const pdfjs = await import("pdfjs-dist");
   pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
   return pdfjs.getDocument({ data: new Uint8Array(await f.arrayBuffer()) }).promise;
@@ -54,15 +60,18 @@ const shown = (page: Doc): [number, number] => {
   return [vp.width, vp.height];
 };
 
-export default function ComparePanel() {
-  // /compare로 들어오면(#compare) 이 칸을 펼쳐 둔다. 상태가 아니라 요소를 바로 연다 — 효과 안에서 상태를 바꾸지 않는다.
-  const box = useRef<HTMLDetailsElement>(null);
+const when = (t: number) => new Date(t * 1000).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+
+/** `current`: 방금 맡긴 검수 의뢰. 바뀌면 그 문서의 회차를 다시 찾는다(새 회차가 생겼을 수 있다). */
+export default function ComparePanel({ current }: { current?: string }) {
+  // /compare로 들어오면(#compare) 이 칸으로 내려 준다. 상태를 바꾸지 않고 요소만 움직인다.
+  const box = useRef<HTMLElement>(null);
   useEffect(() => {
-    if (window.location.hash === "#compare" && box.current) {
-      box.current.open = true;
-      box.current.scrollIntoView({ block: "start" });
-    }
+    if (window.location.hash === "#compare") box.current?.scrollIntoView({ block: "start" });
   }, []);
+  // 검수 기록. null이면 에이전트에 닿지 못한 것 — 그때는 파일을 직접 고르는 길만 남는다.
+  const [jobs, setJobs] = useState<JobRow[] | null>([]);
+  const [pick, setPick] = useState<[string, string]>(["", ""]);
   const [oldF, setOldF] = useState<File | null>(null);
   const [newF, setNewF] = useState<File | null>(null);
   const [req, setReq] = useState("");
@@ -75,12 +84,11 @@ export default function ComparePanel() {
   const oldCv = useRef<HTMLCanvasElement>(null);
   const newCv = useRef<HTMLCanvasElement>(null);
 
-  async function run() {
-    if (!oldF || !newF) return;
+  async function run(oldSrc: Src, newSrc: Src) {
     setErr(""); setRes(null); setFocus(null);
     try {
       setBusy("파일을 읽는 중…");
-      const [o, n] = await Promise.all([loadPdf(oldF), loadPdf(newF)]);
+      const [o, n] = await Promise.all([loadPdf(oldSrc.blob), loadPdf(newSrc.blob)]);
       docs.current = { old: o, neu: n };
       const total = Math.max(o.numPages, n.numPages);
       const pages: PageDiff[] = [], oldTexts: string[] = [], newTexts: string[] = [], sizes: [number, number][] = [];
@@ -116,7 +124,7 @@ export default function ComparePanel() {
       }
       const checks = checkRequests(parseRequests(req), oldTexts, newTexts);
       const first = pages.find((p) => p.changes.length || p.visual.length || p.only || p.sizeChanged)?.page ?? 1;
-      setRes({ pages, oldCount: o.numPages, newCount: n.numPages, checks, sizes });
+      setRes({ pages, oldCount: o.numPages, newCount: n.numPages, checks, sizes, labels: [oldSrc.label, newSrc.label] });
       setPage(first);
     } catch (e) {
       setErr(`비교하지 못했습니다: ${e instanceof Error ? e.message : String(e)}`);
@@ -124,6 +132,60 @@ export default function ComparePanel() {
       setBusy("");
     }
   }
+
+  const rounds = jobs ? roundsOf(jobs, current) : [];
+  const roundNo = (ctx: string) => rounds.findIndex((r) => r.context_id === ctx) + 1;
+  const labelOf = (ctx: string) => {
+    const j = jobs?.find((x) => x.context_id === ctx);
+    const n = roundNo(ctx);
+    return j ? `${n ? `${n}회차 · ` : ""}${j.filename} · ${when(j.created)}` : ctx;
+  };
+
+  /** 고른 두 검수 기록을 서버에서 받아 비교한다. */
+  async function compareJobs(a: string, b: string, names = labelOf) {
+    if (!a || !b) return;
+    setErr("");
+    try {
+      setBusy("지난 회차 파일을 받는 중…");
+      const [x, y] = await Promise.all([jobPdf(a), jobPdf(b)]);
+      await run({ blob: x, label: names(a) }, { blob: y, label: names(b) });
+    } catch (e) {
+      setBusy("");
+      setErr(`회차 파일을 받지 못했습니다: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  // 검수 기록을 읽고, 같은 문서가 두 회차 이상이면 **묻지 않고** 마지막 두 회차를 맞대 본다.
+  // 상태는 응답이 온 뒤에만 바꾼다(효과 본문에서 바로 바꾸지 않는다).
+  useEffect(() => {
+    let off = false;
+    listJobs()
+      .then((js) => {
+        if (off) return;
+        setJobs(js);
+        const r = roundsOf(js, current);
+        if (r.length < 2) return;
+        const [a, b] = [r[r.length - 2], r[r.length - 1]];
+        setPick([a.context_id, b.context_id]);
+        // 아직 jobs 상태가 이 목록으로 바뀌기 전이라 이름표를 여기서 만든다
+        const names = (ctx: string) => {
+          const i = r.findIndex((x) => x.context_id === ctx);
+          return `${i + 1}회차 · ${r[i].filename} · ${when(r[i].created)}`;
+        };
+        void compareJobs(a.context_id, b.context_id, names);
+      })
+      .catch(() => { if (!off) setJobs(null); });
+    return () => { off = true; };
+    // compareJobs는 그릴 때마다 새로 만들어지지만, 회차를 다시 찾을 때는 의뢰가 바뀔 때뿐이다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current]);
+
+  // 파일을 직접 골랐으면 두 개가 다 찼을 때 바로 비교한다(단추를 한 번 더 누르게 하지 않는다).
+  const chooseFile = (side: "old" | "new", f: File | null) => {
+    const o = side === "old" ? f : oldF, n = side === "new" ? f : newF;
+    if (side === "old") setOldF(f); else setNewF(f);
+    if (o && n) void run({ blob: o, label: o.name }, { blob: n, label: n.name });
+  };
 
   // 고른 쪽을 두 칸에 그린다. 한쪽에만 있는 쪽이면 다른 칸은 비운다.
   useEffect(() => {
@@ -157,30 +219,55 @@ export default function ComparePanel() {
   const tally = (s: string) => res?.checks.filter((c) => c.status === s).length ?? 0;
 
   return (
-    <details className="panel cmp_wrap" id="compare" ref={box}>
-      <summary>
-        <strong>교정 회차 비교</strong>
-        <span className="note">이전본과 수정본 PDF에서 바뀐 글자·그림, 요청한 수정이 들어갔는지를 봅니다. 파일은 이 브라우저 안에서만 읽습니다.</span>
-      </summary>
+    <section className="panel cmp_wrap" id="compare" ref={box}>
+      <div className="cmp_head">
+        <h2>교정 회차 비교</h2>
+        <span className="note">
+          {rounds.length >= 2
+            ? `‘${docKey(rounds[0].filename)}’ 문서를 ${rounds.length}번 검수했습니다. 지난 회차와 이번 회차를 바로 맞대 봤습니다.`
+            : "같은 문서를 두 번 이상 검수하면 지난 회차와 자동으로 비교합니다. 바뀐 글자·그림과 요청한 수정이 들어갔는지를 봅니다."}
+        </span>
+      </div>
 
       <section className="panel cmp_form">
-        <label className="cmp_file">
-          <b>이전본</b>
-          <input type="file" accept="application/pdf,.pdf" onChange={(e) => setOldF(e.target.files?.[0] ?? null)} />
-        </label>
-        <label className="cmp_file">
-          <b>수정본</b>
-          <input type="file" accept="application/pdf,.pdf" onChange={(e) => setNewF(e.target.files?.[0] ?? null)} />
-        </label>
+        {jobs && jobs.length >= 2 && (["이전 회차", "이번 회차"] as const).map((t, side) => (
+          <label key={t} className="cmp_file">
+            <b>{t}</b>
+            <select value={pick[side]} onChange={(e) => setPick(side === 0 ? [e.target.value, pick[1]] : [pick[0], e.target.value])}>
+              <option value="">고르기</option>
+              {rounds.length >= 2 && (
+                <optgroup label="이 문서의 회차">
+                  {rounds.map((r) => <option key={r.context_id} value={r.context_id}>{labelOf(r.context_id)}</option>)}
+                </optgroup>
+              )}
+              <optgroup label="다른 검수 기록">
+                {jobs.filter((j) => rounds.length < 2 || roundNo(j.context_id) === 0).map((j) => (
+                  <option key={j.context_id} value={j.context_id}>{labelOf(j.context_id)}</option>
+                ))}
+              </optgroup>
+            </select>
+          </label>
+        ))}
         <label className="cmp_req">
           <b>요청한 수정 <span className="note">(선택 · 한 줄에 하나, &lsquo;이전 → 이후&rsquo;)</span></b>
-          <textarea rows={4} value={req} placeholder={SAMPLE} onChange={(e) => setReq(e.target.value)} />
+          <textarea rows={3} value={req} placeholder={SAMPLE} onChange={(e) => setReq(e.target.value)} />
         </label>
         <div className="cmp_go">
-          <button type="button" disabled={!oldF || !newF || !!busy} onClick={() => void run()}>
-            {busy || "비교하기"}
-          </button>
-          <span className="note">PDF만 받습니다. 글자 비교는 PDF 안의 글을 읽고, 그림 비교는 두 쪽을 같은 배율로 그려 대조합니다.</span>
+          {jobs && jobs.length >= 2 ? (
+            <button type="button" disabled={!pick[0] || !pick[1] || pick[0] === pick[1] || !!busy}
+              onClick={() => void compareJobs(pick[0], pick[1])}>
+              {busy || (res ? "다시 비교" : "비교하기")}
+            </button>
+          ) : busy && <span className="note">{busy}</span>}
+        </div>
+        <div className="cmp_manual">
+          <span className="note">검수 기록에 없는 파일끼리 보려면 직접 고르세요. 두 개가 다 차면 바로 비교합니다(이 파일들은 서버로 보내지 않습니다).</span>
+          <label className="cmp_file"><b>이전본 PDF</b>
+            <input type="file" accept="application/pdf,.pdf" onChange={(e) => chooseFile("old", e.target.files?.[0] ?? null)} />
+          </label>
+          <label className="cmp_file"><b>수정본 PDF</b>
+            <input type="file" accept="application/pdf,.pdf" onChange={(e) => chooseFile("new", e.target.files?.[0] ?? null)} />
+          </label>
         </div>
         {err && <div className="err">{err}</div>}
       </section>
@@ -236,7 +323,7 @@ export default function ComparePanel() {
             <div className="cmp_view">
               {(["old", "new"] as const).map((side) => (
                 <figure key={side} className="cmp_side">
-                  <figcaption>{side === "old" ? "이전본" : "수정본"}{cur?.only === (side === "old" ? "new" : "old") && " — 이 쪽 없음"}</figcaption>
+                  <figcaption>{side === "old" ? `이전 · ${res.labels[0]}` : `이번 · ${res.labels[1]}`}{cur?.only === (side === "old" ? "new" : "old") && " — 이 쪽 없음"}</figcaption>
                   <div className="sheet">
                     <canvas ref={side === "old" ? oldCv : newCv} style={{ width: "100%", display: "block" }} />
                     {cur?.changes.map((c, i) => (side === "old" ? c.oldBoxes : c.newBoxes).map((b, j) => (
@@ -272,6 +359,6 @@ export default function ComparePanel() {
           </div>
         </>
       )}
-    </details>
+    </section>
   );
 }

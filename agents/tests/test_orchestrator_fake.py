@@ -455,3 +455,16 @@ def test_layout_fixes_are_picked_from_what_the_check_found():
 
     j.results["preflight"] = {"issues": [{"kind": "font", "page": 2}]}
     assert plan.layout_list(j) == [] and plan.can_fix(j) is False
+
+
+def test_i_can_take_back_the_pdf_of_my_earlier_round():
+    """교정 회차 비교는 지난 회차 PDF를 서버에서 다시 받는다(손으로 다시 올리지 않게).
+    받은 바이트는 올린 그대로여야 하고, 남의 의뢰 PDF는 '없는 의뢰'로 막힌다."""
+    body = PDF + b"round-1"
+    with client() as a, client("someone-else") as b:
+        ctx = a.post("/jobs", files={"file": ("명함_1차.pdf", body, "application/pdf")}).json()["data"]["context_id"]
+        r = a.get(f"/jobs/{ctx}/pdf")
+        assert r.status_code == 200 and r.content == body
+        assert r.headers["content-type"] == "application/pdf"
+        assert b.get(f"/jobs/{ctx}/pdf").status_code == 404
+        assert a.get("/jobs/ctx_job_nobody/pdf").status_code == 404
