@@ -468,3 +468,42 @@ def test_i_can_take_back_the_pdf_of_my_earlier_round():
         assert r.headers["content-type"] == "application/pdf"
         assert b.get(f"/jobs/{ctx}/pdf").status_code == 404
         assert a.get("/jobs/ctx_job_nobody/pdf").status_code == 404
+
+
+def test_a_request_through_the_tunnel_does_not_see_this_pcs_work():
+    """공개 사이트는 터널(cloudflared)을 거쳐 127.0.0.1로 들어온다. 주소만 믿었더니 로그인하지 않은
+    아무나 이 PC에서 클로드가 만드는 문서와 작업 기록을 볼 수 있었다. 중계 머리말이 있으면 바깥이다.
+    이 PC 앞에서 구글로 이어 둔 계정이면 공개 사이트로 와도 본다(키트와 같은 규칙)."""
+    from pg_agents import brand
+    ctx = _seed_tool_doc("ctx_dc_feedtunnel")
+    tunnel = {"cf-connecting-ip": "203.0.113.9", "x-forwarded-for": "203.0.113.9"}
+    with TestClient(app, client=("127.0.0.1", 5555),
+                    headers={"Authorization": f"Bearer {mint('browser', subject='stranger-t')}", **tunnel}) as c:
+        assert ctx not in c.get("/designcraft/feed").json()["data"]["docs"]
+    brand.link_pc_owner("owner-t")              # 시험은 임시 데이터 폴더를 쓴다(conftest)
+    with TestClient(app, client=("127.0.0.1", 5555),
+                    headers={"Authorization": f"Bearer {mint('browser', subject='owner-t')}", **tunnel}) as c:
+        assert ctx in c.get("/designcraft/feed").json()["data"]["docs"]
+
+
+def test_what_the_tool_is_doing_shows_up_before_anything_is_put_in(monkeypatch):
+    """클로드는 넣기 전에 키트를 읽고 엔진 기능을 찾아보느라 오래 걸린다. 그동안에도 따라 보기 칸에
+    '지금 하는 일'이 떠야 한다. 화면(브라우저)이 같은 창구를 부를 때는 남기지 않는다."""
+    from pg_agents.auth import tool_subject
+    tool = TestClient(app, client=("127.0.0.1", 5555),
+                      headers={"Authorization": f"Bearer {mint('mcp', subject=tool_subject(), write=True)}"})
+    from pg_agents.orchestrator import app as A
+    # 문서 만들기(/designcraft/create)는 진짜 엔진이 있어야 해서, 도구가 만든 문서를 심어 두고 '마지막으로 손댄 문서'로 적는다
+    ctx = _seed_tool_doc("ctx_dc_activity")
+    A._touch(tool_subject(), ctx)
+    monkeypatch.setattr(A, "_CMD_CACHE", {"commands": []})   # 엔진 명령표는 한 번 받아 들고 있는다 — 시험에는 빈 표를 둔다
+    with tool as t, here() as watch:
+        t.get("/designcraft/commands", params={"find": "표"})
+        t.get("/designcraft/brand")
+        watch.get("/designcraft/brand")                 # 사람이 화면에서 본 것 — 남기지 않는다
+        rows = [r for r in watch.get("/designcraft/feed").json()["data"]["rows"]
+                if r["ctx"] == ctx and r["kind"] == "dc_activity"]
+        texts = [r["payload"]["text"] for r in rows]
+        assert texts[0] == "쓸 엔진 기능을 찾아봅니다 — ‘표’"
+        assert texts[1].startswith("브랜드 키트를")
+        assert len(texts) == 2

@@ -242,7 +242,7 @@ def add_font(owner: str, data: bytes, original: str) -> dict[str, Any]:
                 raise ValueError(f"글꼴 파일은 {MAX_FONTS}개까지 올립니다")
             os.replace(tmp, d / name)
             fonts.append({"family": pick["family"], "style": pick["style"], "file": name, "bytes": len(data),
-                          "hangul": bool(pick["hangul"])})
+                          "hangul": bool(pick["hangul"]), "langs": list(pick.get("langs") or [])})
             kit["fonts"] = fonts
             _write(owner, kit)
     finally:
@@ -277,7 +277,7 @@ def kit_families(kit: dict[str, Any] | None) -> list[str]:
 def font_hangul(kit: dict[str, Any] | None) -> dict[str, bool]:
     """고를 수 있는 글꼴 전부 — {패밀리: 한글 있음}. 이 PC에 깐 글꼴과 키트에 올린 글꼴.
     예전에 올린 글꼴은 `hangul`이 없다 — 그때는 한글 글꼴만 받았으니 있다고 본다."""
-    out = {f: ko for f, ko, _user in installed_fonts()}
+    out = {f: "한글" in langs for f, langs, _user in installed_fonts()}
     for f in (kit or {}).get("fonts") or []:
         out[f["family"]] = out.get(f["family"], False) or bool(f.get("hangul", True))
     return out
@@ -336,6 +336,9 @@ FONT_DIRS = [Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts",
 # 윈도에 처음부터 있는 영문 글꼴(Arial·Calibri…) 100여 개 사이에 직접 깐 글꼴이 묻히지 않게.
 USER_FONT_DIRS = [FONT_DIRS[1], FONT_DIRS[4]]
 HANGUL = 0xAC00
+# 지원 언어를 가리는 대표 글자. 그 글자를 **실제로 그리면**(_has) 그 언어를 지원한다고 본다.
+# 화면이 글꼴 이름 옆에 '(한글·영문·한자)'처럼 붙인다 — 한글/영문으로 묶음을 나누는 대신.
+LANG_PROBES = (("한글", HANGUL), ("영문", 0x0041), ("한자", 0x4E00), ("일본어", 0x3042))
 
 
 def _tables(buf: bytes, off: int) -> dict[bytes, tuple[int, int]]:
@@ -405,6 +408,10 @@ def _has(buf: bytes, t: dict[bytes, tuple[int, int]], cp: int) -> bool:
     return False
 
 
+def _langs(buf: bytes, t: dict[bytes, tuple[int, int]]) -> tuple[str, ...]:
+    return tuple(name for name, cp in LANG_PROBES if _has(buf, t, cp))
+
+
 def _style(buf: bytes, t: dict[bytes, tuple[int, int]]) -> str:
     """굵기 이름(name 표 17번, 없으면 2번). 영어 이름을 먼저 쓴다 — 엔진이 'Bold'처럼 부른다."""
     if b"name" not in t:
@@ -425,7 +432,7 @@ def _style(buf: bytes, t: dict[bytes, tuple[int, int]]) -> str:
 
 
 def faces(path: Path) -> list[dict[str, Any]]:
-    """파일 안의 글꼴들 — {family, style, hangul}. 가변 글꼴(fvar)은 뺀다."""
+    """파일 안의 글꼴들 — {family, style, hangul, langs}. 가변 글꼴(fvar)은 뺀다."""
     try:
         buf = path.read_bytes()
     except OSError:
@@ -445,14 +452,15 @@ def faces(path: Path) -> list[dict[str, Any]]:
                 continue
             fam = _family(buf, t)
             if fam:
-                out.append({"family": fam, "style": _style(buf, t), "hangul": _has(buf, t, HANGUL)})
+                langs = _langs(buf, t)
+                out.append({"family": fam, "style": _style(buf, t), "hangul": "한글" in langs, "langs": list(langs)})
         except (struct.error, IndexError):
             continue
     return out
 
 
-def _faces(path: Path) -> list[tuple[str, bool]]:
-    """(패밀리, 한글 있음) — ttc는 여러 개, 가변 글꼴(fvar)은 뺀다(엔진이 한 굵기로만 읽는다)."""
+def _faces(path: Path) -> list[tuple[str, tuple[str, ...]]]:
+    """(패밀리, 지원 언어) — ttc는 여러 개, 가변 글꼴(fvar)은 뺀다(엔진이 한 굵기로만 읽는다)."""
     try:
         buf = path.read_bytes()
     except OSError:
@@ -473,17 +481,17 @@ def _faces(path: Path) -> list[tuple[str, bool]]:
                 continue
             fam = _family(buf, t)
             if fam:
-                out.append((fam, _has(buf, t, HANGUL)))
+                out.append((fam, _langs(buf, t)))
         except (struct.error, IndexError):
             continue
     return out
 
 
 @lru_cache(maxsize=1)
-def installed_fonts() -> tuple[tuple[str, bool, bool], ...]:
-    """이 PC에 깔린 글꼴 — (패밀리, 한글 있음, 사용자가 깐 것) 패밀리 순. 한 번 읽고 기억한다.
-    가변 글꼴은 엔진이 못 써서 빠진다(_faces). 패밀리의 굵기 중 하나라도 한글이 있으면 '있음'이다."""
-    fams: dict[str, list[bool]] = {}
+def installed_fonts() -> tuple[tuple[str, tuple[str, ...], bool], ...]:
+    """이 PC에 깔린 글꼴 — (패밀리, 지원 언어, 사용자가 깐 것) 패밀리 순. 한 번 읽고 기억한다.
+    가변 글꼴은 엔진이 못 써서 빠진다(_faces). 언어는 패밀리의 굵기들을 합친 것이다."""
+    fams: dict[str, tuple[set[str], list[bool]]] = {}
     for d in FONT_DIRS:
         if not d.is_dir():
             continue
@@ -492,8 +500,9 @@ def installed_fonts() -> tuple[tuple[str, bool, bool], ...]:
         for root, _dirs, files in os.walk(d):
             for name in files:
                 if name.lower().endswith((".ttf", ".otf", ".ttc")):
-                    for f, ko in _faces(Path(root) / name):
-                        v = fams.setdefault(f, [False, False])
-                        v[0] |= ko
-                        v[1] |= user
-    return tuple((f, ko, user) for f, (ko, user) in sorted(fams.items()))
+                    for f, langs in _faces(Path(root) / name):
+                        got, mine = fams.setdefault(f, (set(), [False]))
+                        got.update(langs)
+                        mine[0] |= user
+    order = [n for n, _ in LANG_PROBES]
+    return tuple((f, tuple(n for n in order if n in got), mine[0]) for f, (got, mine) in sorted(fams.items()))

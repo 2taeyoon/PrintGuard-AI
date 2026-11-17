@@ -316,9 +316,9 @@ export async function dcFile(ctx: string, name: string): Promise<Blob> {
 export type BrandColor = { name: string; c: number; m: number; y: number; k: number };
 /** 키트에 올린 글꼴 파일 하나. name은 서버에 둔 파일 이름(지울 때 쓴다). */
 /** hangul이 거짓이면 영문 전용 글꼴 — 엔진에는 영문·숫자로만 된 글에만 쓰라고 일러 준다. */
-export type BrandFont = { family: string; style: string; name: string; bytes: number; hangul?: boolean };
-/** 에이전트 PC에 깔린 글꼴. user는 사람이 직접 깐 글꼴('이 사용자만'으로 설치). */
-export type InstalledFont = { family: string; hangul: boolean; user: boolean };
+export type BrandFont = { family: string; style: string; name: string; bytes: number; hangul?: boolean; langs?: string[] };
+/** 에이전트 PC에 깔린 글꼴. user는 사람이 직접 깐 글꼴('이 사용자만'으로 설치), langs는 지원 언어. */
+export type InstalledFont = { family: string; hangul: boolean; user: boolean; langs: string[] };
 export type BrandKit = {
   name: string; colors: BrandColor[]; title_font: string; body_font: string;
   logo: { name: string; bytes: number } | null;

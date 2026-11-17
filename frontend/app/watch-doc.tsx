@@ -30,6 +30,11 @@ import { FontNotice, IssueRows } from "./dc-shared";
 
 /** 한 걸음이 끝날 때마다 한 줄이 는다. 너무 느리게 물으면 여러 줄이 한꺼번에 쏟아진다. */
 const EVERY = 900;
+/** 에이전트(클로드·코덱스)가 손대는 중이라는 소식. 올린 파일 열기(dc_source_opened)는 사람이 한 일이라 뺀다. */
+const AGENT_KINDS = new Set(["dc_step", "dc_activity", "dc_asked", "dc_create_opened"]);
+/** 마지막 소식 뒤 이만큼 아무 일이 없으면 '작업 중'을 내린다. 클로드가 길게 생각하는 동안에도
+ *  보통 1~2분 안에 다음 도구를 부르므로 3분으로 둔다. */
+const WORKING_MS = 3 * 60 * 1000;
 /** 들고 있을 줄 수. 오래된 것부터 버린다 — 한나절 켜 두면 끝없이 쌓인다. */
 const KEEP = 400;
 
@@ -68,6 +73,10 @@ export default function WatchDoc() {
   const [shot, setShot] = useState<{ name: string; url: string } | null>(null);
   const [page, setPage] = useState(1);
   const [copied, setCopied] = useState(false);
+  // 지금 시각. '몇 초째 하고 있나'와 '한동안 소식이 없으면 끝난 것'을 재려고 물을 때마다 고친다.
+  // 처음 값을 Date.now()로 두면 Next가 미리 그릴 때 읽은 시각이 박힌다고 막는다(실제로 오류가 났다).
+  // 0으로 두고 첫 답이 오면 채운다 — 0인 동안은 '작업 중'을 판단하지 않는다.
+  const [now, setNow] = useState(0);
   const after = useRef(0);
   const end = useRef<HTMLDivElement | null>(null);
   const lastShot = useRef("");
@@ -94,6 +103,7 @@ export default function WatchDoc() {
       watchFeed(after.current)
         .then((f) => {
           if (!alive) return;
+          setNow(Date.now());
           setErr("");
           setDocs((old) => ({ ...old, ...f.docs }));
           if (!f.rows.length) return;
@@ -122,10 +132,33 @@ export default function WatchDoc() {
   const last = [...rows].reverse().find((r) => r.kind === "dc_step");
   const lastStep = last?.payload;
   const busy = !!lastStep && lastStep.phase !== "끝" && lastStep.phase !== "멈춤";
+  // **넣기 전에도 일은 하고 있다.** 클로드·코덱스는 문서를 편 뒤 키트를 읽고 엔진 기능을 찾아보고
+  // 생각하느라 수십 초에서 몇 분을 쓴다. 전에는 넣는 걸음(dc_step)만 보고 '조용합니다'를 띄워서,
+  // 일을 시켜 놓고 보면 아무것도 안 하는 것처럼 보였다. 마지막 소식이 넣기 '끝' 뒤에 왔고
+  // 아직 오래되지 않았으면 '작업 중'이다. 한동안(WORKING_MS) 소식이 없으면 손을 뗀 것으로 본다.
+  const lastNews = [...rows].reverse().find((r) => AGENT_KINDS.has(r.kind));
+  const newsAge = lastNews && now ? now - new Date(lastNews.at).getTime() : Infinity;
+  const working = busy || (!!lastNews && lastNews.kind !== "dc_step" && newsAge < WORKING_MS);
+  const since = (() => {
+    // 이번 일이 시작된 때 — 마지막 '끝' 뒤의 첫 소식
+    let start = "";
+    for (const r of [...rows].reverse()) {
+      if (r.kind === "dc_step" && (r.payload.phase === "끝" || r.payload.phase === "멈춤")) break;
+      if (AGENT_KINDS.has(r.kind)) start = r.at;
+    }
+    return start && now ? Math.max(0, Math.round((now - new Date(start).getTime()) / 1000)) : 0;
+  })();
+  const doing = busy
+    ? `문서에 넣는 중 · ${lastStep?.at ?? 0}/${lastStep?.total ?? 0}`
+    : lastNews?.kind === "dc_activity" ? lastNews.payload.text ?? ""
+      : lastNews?.kind === "dc_asked" ? "부탁을 읽고 넣을 것을 짜는 중"
+        : lastNews?.kind === "dc_create_opened" ? "새 문서를 펴고 무엇을 넣을지 생각하는 중"
+          : "";
   // **저절로 따라가는 것은 에이전트가 손댄 문서뿐이다.** 인쇄 검수에 올린 파일도 이 PC에서 일어난
   // 일이라 위 줄에는 남지만, 그걸 '만든 문서'로 잡으면 **만들지도 않은 파일이 기본값처럼 떠 있다** —
   // 여는 사람은 그걸 앱이 끼워 둔 견본으로 읽는다. 올린 것은 인쇄 검수 화면이 맡는다.
-  const live = last?.ctx ?? "";
+  // 넣기만이 아니라 '지금 하는 일'이 온 문서도 따라간다 — 키트를 읽는 중인 문서를 바로 보여 준다.
+  const live = lastNews?.ctx ?? last?.ctx ?? "";
 
   // 아래 '만든 문서' 칸이 보는 문서. **새 일이 시작되면 저절로 그쪽을 따라간다** — 번호를 지운 자리에
   // 다시 '무엇을 고르세요'를 놓으면 아무것도 나아지지 않는다. 사람이 고르면 그때부터 머문다.
@@ -184,6 +217,11 @@ export default function WatchDoc() {
       if (r.kind === "dc_asked") {
         flush();
         push({ mine: true, what: p.text ?? "", detail: "", command: "", error: "" });
+        continue;
+      }
+      if (r.kind === "dc_activity") {
+        flush();
+        push({ what: p.text ?? "", detail: "", command: "", error: "" });
         continue;
       }
       if (r.kind !== "dc_step") continue;
@@ -316,9 +354,8 @@ export default function WatchDoc() {
       <section className="panel dc_watch">
         <div className="dc_head">
           <strong>에이전트가 하는 일</strong>
-          {busy
-            ? <><span className="chip">하는 중<b>{lastStep?.at ?? 0}/{lastStep?.total ?? 0}</b></span>
-              <span className="spinner" aria-hidden="true" /></>
+          {working
+            ? <span className="chip good">작업 중</span>
             : msgs.length > 0 && <span className="chip">조용합니다</span>}
           <span className="grow" />
           {pinned && live && live !== pick && (
@@ -327,9 +364,18 @@ export default function WatchDoc() {
         </div>
 
         <p className="note">
-          클로드·커서에서 시키시면 <b>여기에 바로</b> 뜹니다. 넣을 것도 누를 것도 없습니다 —
+          클로드·코덱스·커서에서 시키시면 <b>여기에 바로</b> 뜹니다. 넣을 것도 누를 것도 없습니다 —
           이 PC에서 하는 일이라 그대로 흘러나옵니다.
         </p>
+
+        {/* 지금 하고 있는 일. 걸음이 쌓이기 전(키트 읽기·기능 찾기·생각하기)에도 여기서 움직인다. */}
+        {working && (
+          <div className="dc_now" role="status" aria-live="polite">
+            <span className="spinner" aria-hidden="true" />
+            <b>에이전트가 작업하고 있습니다</b>
+            <span className="note">{doing}{since > 0 ? ` · ${since}초째` : ""}</span>
+          </div>
+        )}
 
         {err && !msgs.length && <p className="warn">{err}</p>}
 
@@ -366,7 +412,6 @@ export default function WatchDoc() {
                   <b>{m.what}</b>
                   {m.detail && <span className="pl_detail">{m.detail}</span>}
                   {m.error && <span className="pl_detail">{m.error}</span>}
-                  {m.command && <span className="pl_cmds">{m.command}</span>}
                 </div>
                 <time dateTime={m.at}>{clock(m.at)}</time>
               </div>

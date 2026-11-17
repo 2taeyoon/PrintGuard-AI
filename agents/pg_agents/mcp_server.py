@@ -412,7 +412,8 @@ async def list_engine_commands(find: str = "", limit: int = 40) -> dict[str, Any
 
     각 명령의 인자 설명은 **엔진이 적어 준 글 그대로**다. 이 설명을 보고 edit_document에 넘길 params를 만든다.
     """
-    rows = (await _orch("GET", "/designcraft/commands")).get("commands") or []
+    # find를 같이 보낸다 — 작업 만들기 화면이 '무엇을 찾아보는 중'인지 보여 준다(오케스트레이터가 걸러 쓰지는 않는다)
+    rows = (await _orch("GET", "/designcraft/commands", params={"find": find})).get("commands") or []
     q = find.strip().lower()
     if q:
         rows = [c for c in rows if q in f"{c['id']} {c['label']} {' '.join(c['menu'])}".lower()]

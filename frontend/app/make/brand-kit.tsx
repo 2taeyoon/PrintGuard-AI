@@ -14,12 +14,13 @@
 //
 // 글꼴은 **이 PC에 깔린 글꼴**이나 **키트에 올린 글꼴 파일**에서만 고른다. 없는 이름을 적으면 엔진이
 // 한글 없는 기본 글꼴로 바꿔 찍고, PDF에서 글자가 통째로 사라진다. 아무것도 고르지 않으면 맑은 고딕이다.
-// 영문 전용 글꼴도 고를 수 있다(영문 로고타입·영문 제목). '영문 전용'으로 표시하고, 엔진에는 그 글꼴을
+// 영문 전용 글꼴도 고를 수 있다(영문 로고타입·영문 제목). 이름 옆에 지원 언어를 붙이고, 엔진에는 그 글꼴을
 // 영문·숫자로만 된 글에만 쓰고 한글이 든 상자는 한글 글꼴로 짜라고 일러 준다(agents brand.prompt_block).
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { InstalledFont } from "@/lib/agentClient";
 import { WINDOWS_FONTS } from "@/lib/windows-fonts";
+import type { BrandFont } from "@/lib/agentClient";
 
 import {
   brandFonts, brandLogoBlob, deleteBrand, deleteBrandFont, getBrand, saveBrand, uploadBrandFont, uploadBrandLogo,
@@ -68,6 +69,9 @@ const pickFaces = (faces: LocalFont[]) => {
   const want = faces.filter((f) => /^(regular|normal|book|roman|bold)$/i.test(f.style));
   return want.length ? want : faces.slice(0, 1);
 };
+/** 글꼴 이름 옆에 붙일 지원 언어. 예전에 올린 글꼴은 언어 기록이 없다 — 그때는 한글 글꼴만 받았다. */
+const langsOf = (f: { langs?: string[]; hangul?: boolean }) =>
+  f.langs?.length ? f.langs.join("·") : f.hangul === false ? "영문" : f.langs ? "기호" : "한글";
 const kb = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)}MB` : `${Math.round(n / 1024)}KB`);
 
 export default function BrandKitPanel() {
@@ -217,33 +221,40 @@ export default function BrandKitPanel() {
   const form = !saved || editing;
   const cancel = () => { setKit(saved ?? EMPTY); setEditing(false); setMsg(null); };
   // 고를 수 있는 글꼴 — 겹치지 않게 한 번씩만:
-  //   기본(Malgun Gothic) / 키트에 올린 글꼴 / 이 PC에 설치한 글꼴 / 윈도 기본 한글 글꼴 / 윈도 기본 영문 글꼴 /
-  //   이 컴퓨터의 다른 글꼴(저장할 때 올림). 영문 전용 글꼴은 이름 옆에 '영문 전용'을 붙인다.
+  //   기본(Malgun Gothic) / 키트에 올린 글꼴 / 이 PC에 설치한 글꼴 / 윈도우 기본 글꼴 / 내 컴퓨터에만 있는 글꼴.
+  // 한글·영문으로 묶음을 나누지 않는다 — 이름 옆에 지원 언어를 붙인다('Batang (한글·영문·한자)', 'Arial (영문)').
+  // 한글이 없는 글꼴을 골라도 문서는 망가지지 않는다: 엔진이 그 글꼴을 영문·숫자에만 쓴다(brand.prompt_block).
   const uploaded = [...new Set((kit.fonts ?? []).map((f) => f.family))].filter((f) => f !== DEFAULT_FONT);
   const pcFonts = fonts.filter((f) => f.family !== DEFAULT_FONT && !uploaded.includes(f.family));
-  const latin = new Set([...pcFonts.filter((f) => !f.hangul).map((f) => f.family),
-    ...(kit.fonts ?? []).filter((f) => f.hangul === false && !(kit.fonts ?? []).some((g) => g.family === f.family && g.hangul !== false)).map((f) => f.family)]);
-  // 사람이 직접 깐 글꼴 — 사용자 폴더에 깔렸거나(user) 윈도 기본 글꼴 이름이 아닌 것(lib/windows-fonts.ts)
+  // 한 패밀리를 굵기별로 여러 번 올렸으면 언어를 합쳐 본다
+  const kitLangs = (fam: string) => {
+    const fs: BrandFont[] = (kit.fonts ?? []).filter((f) => f.family === fam);
+    const set = [...new Set(fs.flatMap((f) => langsOf(f).split("·")))];
+    return set.join("·");
+  };
+  // 사람이 직접 깐 글꼴 — 사용자 폴더에 깔렸거나(user) 윈도우 기본 글꼴 이름이 아닌 것(lib/windows-fonts.ts)
   const mine = (f: InstalledFont) => f.user || !WINDOWS_FONTS.has(f.family);
-  const installed = pcFonts.filter(mine).map((f) => f.family);
-  const builtinKo = pcFonts.filter((f) => !mine(f) && f.hangul).map((f) => f.family);
-  const builtinEn = pcFonts.filter((f) => !mine(f) && !f.hangul).map((f) => f.family);
+  const installed = pcFonts.filter(mine);
+  const builtin = pcFonts.filter((f) => !mine(f));
   const known = new Set([DEFAULT_FONT, ...uploaded, ...pcFonts.map((f) => f.family)]);
   const others = local ? [...local.keys()].filter((f) => !known.has(f)).sort((a, b) => a.localeCompare(b, "ko")) : [];
-  // 묶음 이름이 이미 '영문'이라고 말하는 윈도 기본 영문 글꼴에는 붙이지 않는다(70개에 같은 말이 붙는다)
-  const opt = (f: string) => <option key={f} value={f}>{latin.has(f) ? `${f} · 영문 전용` : f}</option>;
+  const opt = (f: InstalledFont) => <option key={f.family} value={f.family}>{f.family} ({langsOf(f)})</option>;
+  const defaultLangs = langsOf(fonts.find((f) => f.family === DEFAULT_FONT) ?? { langs: ["한글", "영문"] });
   const fontSelect = (slot: "title_font" | "body_font") => {
     const cur = kit[slot] || DEFAULT_FONT;
     return (
       <select value={cur} onChange={(e) => setKit({ ...kit, [slot]: e.target.value === DEFAULT_FONT ? "" : e.target.value })}>
-        <option value={DEFAULT_FONT}>{DEFAULT_FONT} (기본)</option>
+        <option value={DEFAULT_FONT}>{DEFAULT_FONT} (기본 · {defaultLangs})</option>
         {!known.has(cur) && !others.includes(cur) && <option value={cur}>{cur}</option>}
-        {uploaded.length > 0 && <optgroup label="키트에 올린 글꼴">{uploaded.map(opt)}</optgroup>}
-        {installed.length > 0 && <optgroup label="이 PC에 설치한 글꼴 — 바로 쓸 수 있음">{installed.map(opt)}</optgroup>}
-        {builtinKo.length > 0 && <optgroup label="윈도 기본 한글 글꼴">{builtinKo.map(opt)}</optgroup>}
-        {builtinEn.length > 0 && <optgroup label="윈도 기본 영문 글꼴 — 한글 없음, 영문·숫자에만 쓰임">{builtinEn.map((f) => <option key={f} value={f}>{f}</option>)}</optgroup>}
+        {uploaded.length > 0 && (
+          <optgroup label="키트에 올린 글꼴">
+            {uploaded.map((f) => <option key={f} value={f}>{f} ({kitLangs(f)})</option>)}
+          </optgroup>
+        )}
+        {installed.length > 0 && <optgroup label="이 PC에 설치한 글꼴">{installed.map(opt)}</optgroup>}
+        {builtin.length > 0 && <optgroup label="윈도우 기본 글꼴">{builtin.map(opt)}</optgroup>}
         {others.length > 0 && (
-          <optgroup label="이 컴퓨터의 다른 글꼴 — 저장할 때 올림(가변 글꼴이면 거절)">
+          <optgroup label="내 컴퓨터에만 있는 글꼴 — 저장할 때 키트로 올림(가변 글꼴이면 거절)">
             {others.map((f) => <option key={f} value={f}>{f}</option>)}
           </optgroup>
         )}
@@ -307,8 +318,8 @@ export default function BrandKitPanel() {
           <ul className="bk_font_list">
             {(kit.fonts ?? []).map((f) => (
               <li key={f.name}>
-                <b>{f.family}</b>{f.hangul === false && <span className="chip">영문 전용</span>}{" "}
-                <span className="note">{f.style} · {f.name} · {kb(f.bytes)}</span>
+                <b>{f.family}</b>{" "}
+                <span className="note">{f.style} · {langsOf(f)} · {f.name} · {kb(f.bytes)}</span>
                 <button type="button" className="ghost small" disabled={!!busy} onClick={() => void dropFont(f.name)}>빼기</button>
               </li>
             ))}
@@ -335,7 +346,7 @@ export default function BrandKitPanel() {
         <p className="note">
           올린 글꼴은 이 PC에 깔지 않고, 문서를 만들 때 그 문서 옆 <code>Document Fonts</code> 폴더에만 둡니다.
           굵기마다 파일이 따로라 굵게 쓸 거면 Bold 파일도 올려 주세요. 가변 글꼴(굵기가 한 파일에 든 것)은 받지 않습니다.
-          영문 전용 글꼴은 영문·숫자로 된 글(영문 제목·전화번호·이메일 등)에만 쓰고, 한글은 다른 글꼴로 짭니다.
+          글꼴 이름 옆 괄호는 그 글꼴이 그리는 글자입니다. 한글이 없는 글꼴은 영문·숫자로 된 글(영문 제목·전화번호·이메일 등)에만 쓰고, 한글은 다른 글꼴로 짭니다.
           아무것도 고르지 않으면 맑은 고딕으로 만듭니다.
         </p>
       </div>
