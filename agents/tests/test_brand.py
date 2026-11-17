@@ -253,7 +253,7 @@ def test_uploaded_font_can_be_picked_and_goes_beside_the_document(monkeypatch, t
         r = c.post("/designcraft/brand/font", files={"file": ("KitOnlyFont-Bold.ttf", b"FONTDATA", "font/ttf")}, headers=_h("kit-g"))
         assert r.status_code == 200, r.text
         assert r.json()["data"]["fonts"] == [{"family": "KitOnlyFont", "style": "Bold", "name": "KitOnlyFont-Bold.ttf", "bytes": 8,
-                                              "hangul": True}]
+                                              "hangul": True, "langs": []}]
         assert c.put("/designcraft/brand", json={**KIT, "title_font": "KitOnlyFont"}, headers=_h("kit-g")).status_code == 200
         # 필드를 저장해도 올린 글꼴은 남는다
         assert c.get("/designcraft/brand", headers=_h("kit-g")).json()["data"]["fonts"][0]["family"] == "KitOnlyFont"
@@ -302,7 +302,7 @@ def test_font_list_can_be_read_again_after_installing_a_font(monkeypatch, tmp_pa
     """글꼴 목록은 한 번 읽고 기억한다. 에이전트를 켠 뒤에 깐 글꼴(Pretendard)이 새로고침해도 안 보였다.
     refresh=1이면 다시 읽어 새 글꼴이 들어온다."""
     monkeypatch.setattr(brand, "FONT_DIRS", [tmp_path])
-    monkeypatch.setattr(brand, "_faces", lambda p: [(p.stem, True)])
+    monkeypatch.setattr(brand, "_faces", lambda p: [(p.stem, ("한글", "영문"))])
     brand.installed_fonts.cache_clear()
     names = lambda r: [f["family"] for f in r.json()["data"]]  # noqa: E731
     (tmp_path / "Old.ttf").write_bytes(b"x")
@@ -321,8 +321,10 @@ def test_font_list_marks_latin_only_and_user_installed(monkeypatch, tmp_path):
     sysd.mkdir(); userd.mkdir()
     monkeypatch.setattr(brand, "FONT_DIRS", [sysd, userd])
     monkeypatch.setattr(brand, "USER_FONT_DIRS", [userd])
-    table = {"Arial.ttf": [("Arial", False)], "Batang.ttc": [("Batang", True)], "Pretendard.otf": [("Pretendard", True)],
-             "Brand-Regular.otf": [("BrandSans", False)], "Brand-Bold.otf": [("BrandSans", False)]}
+    table = {"Arial.ttf": [("Arial", ("영문",))], "Batang.ttc": [("Batang", ("한글", "영문", "한자"))],
+             "Pretendard.otf": [("Pretendard", ("한글", "영문"))],
+             # 굵기마다 지원 글자가 다르면 합친다(Bold에만 한자가 있는 경우)
+             "Brand-Regular.otf": [("BrandSans", ("영문",))], "Brand-Bold.otf": [("BrandSans", ("한자", "영문"))]}
     monkeypatch.setattr(brand, "_faces", lambda p: table[p.name])
     for n in ("Arial.ttf", "Batang.ttc"):
         (sysd / n).write_bytes(b"x")
@@ -332,10 +334,10 @@ def test_font_list_marks_latin_only_and_user_installed(monkeypatch, tmp_path):
     with TestClient(app) as c:
         rows = c.get("/designcraft/brand/fonts?refresh=1").json()["data"]
     brand.installed_fonts.cache_clear()
-    assert rows == [{"family": "Arial", "hangul": False, "user": False},
-                    {"family": "Batang", "hangul": True, "user": False},
-                    {"family": "BrandSans", "hangul": False, "user": True},
-                    {"family": "Pretendard", "hangul": True, "user": True}]
+    assert rows == [{"family": "Arial", "hangul": False, "user": False, "langs": ["영문"]},
+                    {"family": "Batang", "hangul": True, "user": False, "langs": ["한글", "영문", "한자"]},
+                    {"family": "BrandSans", "hangul": False, "user": True, "langs": ["영문", "한자"]},
+                    {"family": "Pretendard", "hangul": True, "user": True, "langs": ["한글", "영문"]}]
 
 
 def test_latin_only_font_is_saved_and_kept_off_hangul_text():

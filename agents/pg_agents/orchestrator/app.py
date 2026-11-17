@@ -851,7 +851,7 @@ def _kit_view(kit: dict[str, Any] | None) -> dict[str, Any] | None:
     # 파일 경로는 밖에 내보내지 않는다 — 이름과 크기만.
     return {**kit, "logo": {"name": logo.get("name"), "bytes": logo.get("bytes")} if logo else None,
             "fonts": [{"family": f["family"], "style": f.get("style"), "name": f["file"], "bytes": f.get("bytes"),
-                       "hangul": bool(f.get("hangul", True))}
+                       "hangul": bool(f.get("hangul", True)), "langs": f.get("langs") or []}
                       for f in kit.get("fonts") or []]}
 
 
@@ -862,15 +862,16 @@ async def dc_brand_get(request: Request, authorization: str | None = Auth) -> di
 
 @app.get("/designcraft/brand/fonts")
 async def dc_brand_fonts(refresh: bool = False) -> dict[str, Any]:
-    """이 PC에 깔린 글꼴 — {family, hangul, user}. 키트의 글꼴은 이 목록(과 올린 글꼴)에서만 고른다.
-    hangul이 거짓이면 영문 전용, user가 참이면 사람이 직접 깐 글꼴이다.
+    """이 PC에 깔린 글꼴 — {family, hangul, user, langs}. 키트의 글꼴은 이 목록(과 올린 글꼴)에서만 고른다.
+    hangul이 거짓이면 한글이 없는 글꼴, user가 참이면 사람이 직접 깐 글꼴, langs는 지원 언어(한글·영문·한자·일본어).
 
     목록은 한 번 읽고 기억한다(글꼴 폴더를 다 읽는 데 몇 초 걸린다). 그래서 에이전트를 켠 뒤에 깐
     글꼴은 보이지 않았다 — Pretendard를 깔고 새로고침해도 안 떴다. `refresh=1`이면 다시 읽는다."""
     if refresh:
         brand.installed_fonts.cache_clear()
     rows = await asyncio.to_thread(brand.installed_fonts)
-    return {"data": [{"family": f, "hangul": ko, "user": user} for f, ko, user in rows], "meta": {}}
+    return {"data": [{"family": f, "hangul": "한글" in langs, "user": user, "langs": list(langs)}
+                     for f, langs, user in rows], "meta": {}}
 
 
 @app.put("/designcraft/brand")
