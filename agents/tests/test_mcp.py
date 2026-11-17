@@ -203,3 +203,18 @@ async def test_orchestrator_off_tells_how_to_start(monkeypatch):
     monkeypatch.setattr(m.httpx, "AsyncClient", lambda **kw: Boom())
     with pytest.raises(m.ToolError, match="run_agents.py"):
         await m.get_job("ctx_job_mcp1")
+
+
+def test_mcp_main_is_last():
+    """`python -m pg_agents.mcp_server`로 띄우면 `if __name__ == "__main__": main()`에서 서버가 떠서 멈춘다.
+    그 아래에 정의한 도구는 등록되기 전이라 클로드·커서에 안 보인다 — 문서 만들기 도구 다섯이 실제로
+    그렇게 사라졌었다. 모듈을 불러오기만 하는 다른 시험은 이걸 못 잡으므로 파일 차례를 직접 본다."""
+    import ast
+    from pathlib import Path
+
+    tree = ast.parse(Path(m.__file__).read_text(encoding="utf-8"))
+    last = tree.body[-1]
+    assert isinstance(last, ast.If) and "__main__" in ast.unparse(last.test), "main() 호출이 파일 맨 끝이 아니다"
+    # 그 앞에 도구가 전부 있다 — 위의 목록 시험(READ_TOOLS·WRITE_TOOLS)과 같은 이름들이다
+    defined = {n.name for n in tree.body if isinstance(n, ast.AsyncFunctionDef | ast.FunctionDef)}
+    assert READ_TOOLS | WRITE_TOOLS <= defined

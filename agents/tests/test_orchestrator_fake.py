@@ -449,9 +449,13 @@ def test_layout_fixes_are_picked_from_what_the_check_found():
         {"kind": "resolution", "page": 3}, {"kind": "safe", "page": 6}, {"kind": "clip", "page": 6},
         {"kind": "intent", "page": 1}, {"kind": "font", "page": 2},     # font는 자리·크기로 못 고친다
     ]}
-    assert plan.layout_list(j) == ["resolution", "margin", "intent"]    # 차례도 고정이다
+    # 저해상도 사진은 고칠 일로 넘기지 않는다 — 줄여서 ppi를 맞추면 지면이 망가진다(사진 교체는 사람 몫)
+    assert plan.layout_list(j) == ["margin", "intent"]    # 차례도 고정이다
     assert plan.can_fix(j) is True and plan.fix_list(j) == []
-    assert plan._fix(j)["layout"] == ["resolution", "margin", "intent"]  # noqa: SLF001
+    assert plan._fix(j)["layout"] == ["margin", "intent"]  # noqa: SLF001
+
+    j.results["preflight"] = {"issues": [{"kind": "resolution", "page": 3}]}
+    assert plan.layout_list(j) == [] and plan.can_fix(j) is False   # 사진만 낮으면 원본 수정 단계도 서지 않는다
 
     j.results["preflight"] = {"issues": [{"kind": "font", "page": 2}]}
     assert plan.layout_list(j) == [] and plan.can_fix(j) is False

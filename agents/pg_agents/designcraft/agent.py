@@ -93,8 +93,7 @@ CARD = AgentCard.model_validate({
          "allowed_requesters": ["orchestrator"],
          "input_schema": {"src_ref": "sha256", "filename": "string", "confirm": "yes | no (없으면 사용자에게 묻는다)",
                           "fixes": "[{page?: number(1부터), original: string, suggestion: string, key?: string}]",
-                          "layout": "string[] 자리·크기로 고칠 것 — resolution(사진을 기준 ppi로 줄이기) | "
-                                    "margin(여백 밖 글상자 들여놓기) | intent(PDF/X-4로 내보내 출력 의도 넣기)"},
+                          "layout": "string[] 자리로 고칠 것 — margin(여백 밖 글상자 들여놓기) | intent(PDF/X-4로 내보내 출력 의도 넣기)"},
          "output_schema": {"applied": "[]", "failed": "[]", "pdf_ref": "sha256", "source_out": "고친 편집 파일 이름",
                            "layout_applied": "[{kind, page, item, what}] 자리·크기로 고친 것",
                            "layout_failed": "[{kind, page, item, reason}] 고치지 못한 것과 그 이유",
@@ -403,59 +402,18 @@ def _shot(m: Mcp, page: int, path: Path) -> bool:
 
 
 # ---------- 자리와 크기로 고치는 것 ----------
-# **맞춤법만 고쳐 주던 자리다.** 그런데 '사진이 32ppi다', '글이 재단선에 붙었다', '출력 의도가
-# 없다'도 인디자인을 열어 사람이 하는 일은 **정해져 있다** — 사진을 줄이고, 글상자를 여백 안으로
-# 들여놓고, 내보낼 때 PDF/X를 고르는 것. 정해진 일이면 기계가 한다.
+# **맞춤법만 고쳐 주던 자리다.** 그런데 '글이 재단선에 붙었다', '출력 의도가 없다'는 인디자인을
+# 열어 사람이 하는 일이 **정해져 있다** — 글상자를 여백 안으로 들여놓고, 내보낼 때 PDF/X를 고르는
+# 것. 정해진 일이면 기계가 한다. 무엇을 어떻게 바꿨는지는 한 줄씩 적어 돌려준다 — 자리가 바뀌는
+# 일이라, 무엇이 움직였는지 모르면 고쳐 준 것이 아니라 망가뜨린 것으로 읽힌다.
 #
-# 대신 두 가지를 지킨다.
-# 1. **무엇을 어떻게 바꿨는지 한 줄씩 적어** 돌려준다. 자리와 크기는 눈에 띄는 변화라,
-#    무엇이 움직였는지 모르면 고쳐 준 것이 아니라 망가뜨린 것으로 읽힌다.
-# 2. 사진은 **줄이기만** 한다. 없는 화소를 만들어 낼 수는 없다 — 크게 쓰고 싶으면 사진을
-#    바꾸는 수밖에 없고, 그건 사람이 정할 일이다.
+# **저해상도 사진은 고치지 않는다.** 전에는 사진을 '기준 ppi가 되는 크기로 줄여' 고쳤다고 했다.
+# 32ppi 사진이면 가로가 5분의 1로 줄어든다 — 해상도 경고는 사라지지만 지면이 망가진다. 사진
+# 크기는 디자인이고, 진짜 해결은 해상도가 높은 원본으로 바꾸는 것이다. 그건 사람이 할 일이라
+# '사람이 고칠 것'으로 남긴다.
 MIN_PPI = max(72, int(os.environ.get("PG_DESIGNCRAFT_MIN_PPI", "150")))
 # 여백을 벗어난 글상자를 들여놓을 때, 이보다 작게 어긋난 것은 그냥 둔다(0.5pt ≈ 0.18mm).
 MARGIN_SLACK = 0.5
-_PPI_SAYS = re.compile(r"effective (\d+(?:\.\d+)?) ppi")
-
-
-def _shrink_low_res(m: Mcp) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """해상도가 모자란 사진을 **기준 ppi가 되는 크기로 줄인다.**
-
-    고르는 자리는 엔진의 검사 결과다 — 그 줄이 사진의 `item` 번호와 지금 ppi를 같이 들고 있어,
-    어느 사진인지 짐작으로 맞출 일이 없다(쪽과 네모로 더듬어 찾으면 같은 쪽의 다른 사진을 줄인다).
-    """
-    done: list[dict[str, Any]] = []
-    bad: list[dict[str, Any]] = []
-    pf = m.ex("preflight.run", minPpi=MIN_PPI) or {}
-    low = [i for i in pf.get("issues", []) if i.get("kind") == "lowResolution"]
-    if not low:
-        return done, bad
-    doc = m.tool("inspect_document")
-    box = {it["id"]: it["bounds"] for sp in doc.get("spreads", []) for it in sp.get("items", [])}
-    for i in low:
-        iid = i.get("item")
-        page = (i["page"] + 1) if isinstance(i.get("page"), int) else None
-        said = _PPI_SAYS.search(str(i.get("message") or ""))
-        note = {"kind": "resolution", "page": page, "item": iid}
-        if iid not in box or not said:
-            bad.append({**note, "reason": "어느 사진인지 가릴 수 없습니다"})
-            continue
-        ppi = float(said[1])
-        if ppi <= 0:
-            bad.append({**note, "reason": "해상도를 읽지 못했습니다"})
-            continue
-        x0, y0, x1, y1 = box[iid]
-        k = ppi / MIN_PPI          # 줄이는 비율. 넓이가 반이 되면 ppi는 두 배가 된다
-        to = [x0, y0, x0 + (x1 - x0) * k, y0 + (y1 - y0) * k]
-        try:
-            m.ex("transform.resize", **{"from": box[iid], "to": to, "ids": [iid], "content": True})
-        except McpError as e:
-            bad.append({**note, "reason": f"줄이지 못했습니다: {e}"[:200]})
-            continue
-        done.append({**note, "what": f"사진을 {MIN_PPI}ppi가 되도록 줄였습니다"
-                                     f"({ppi:.0f}ppi → {MIN_PPI}ppi, 가로 {(x1 - x0) / MM:.0f}mm → "
-                                     f"{(x1 - x0) * k / MM:.0f}mm). 크게 쓰시려면 사진을 바꿔야 합니다"})
-    return done, bad
 
 
 def _pull_inside_margin(m: Mcp) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -528,7 +486,7 @@ def _export_pdf(m: Mcp, path: Path, standard: str) -> tuple[list[dict[str, Any]]
 # 바깥에서 고르라고 열어 두지 않는다. 인쇄소가 받는 꼴이 X-4이고, 그보다 옛 규격(X-1a)은
 # 투명을 눌러 없애므로 '고쳐 준다면서 모양을 바꾸는' 일이 된다.
 PDF_STANDARD = os.environ.get("PG_DESIGNCRAFT_PDF_STANDARD", "x4")
-LAYOUT_KINDS = ("resolution", "margin", "intent")
+LAYOUT_KINDS = ("margin", "intent")
 
 
 def _apply_blocking(src: Path, ext: str, out: Path, fixes: list[dict[str, Any]],
@@ -580,14 +538,10 @@ def _apply_blocking(src: Path, ext: str, out: Path, fixes: list[dict[str, Any]],
 
         # ── 글자 다음에 자리와 크기 ──
         # 글자를 먼저 고친다. 글이 줄거나 늘면 넘침이 달라지고, 그 뒤에 글상자를 옮겨야
-        # 옮긴 자리가 최종 모습이다. 사진 줄이기는 글과 상관이 없어 순서를 타지 않는다.
+        # 옮긴 자리가 최종 모습이다.
         want = [k for k in LAYOUT_KINDS if k in set(layout or [])]
         lay_done: list[dict[str, Any]] = []
         lay_bad: list[dict[str, Any]] = []
-        if "resolution" in want:
-            a, b = _shrink_low_res(m)
-            lay_done += a
-            lay_bad += b
         if "margin" in want:
             a, b = _pull_inside_margin(m)
             lay_done += a
@@ -618,7 +572,6 @@ def _apply_blocking(src: Path, ext: str, out: Path, fixes: list[dict[str, Any]],
 
 
 LAYOUT_KO = {
-    "resolution": f"해상도가 모자란 사진을 {MIN_PPI}ppi가 되는 크기로 줄이기",
     "margin": "여백을 벗어난 글상자를 여백 안으로 들여놓기",
     "intent": "PDF를 PDF/X-4로 내보내 출력 의도 넣기",
 }
