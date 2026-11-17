@@ -12,11 +12,14 @@
 // 색 칸 왼쪽의 네모를 누르면 색 고르기 창이 뜬다. 고른 화면 색은 CMYK로 **어림 변환**해 숫자 칸에
 // 채운다 — 화면 색과 인쇄 색은 같은 수로 옮겨지지 않으므로, 인쇄 색은 숫자로 확정한다.
 //
-// 글꼴은 **이 PC에 깔린, 한글이 들어 있는 글꼴**이나 **키트에 올린 글꼴 파일**에서만 고른다. 없는
-// 이름을 적으면 엔진이 한글 없는 기본 글꼴로 바꿔 찍고, PDF에서 글자가 통째로 사라진다. 아무것도
-// 고르지 않으면 맑은 고딕이다.
+// 글꼴은 **이 PC에 깔린 글꼴**이나 **키트에 올린 글꼴 파일**에서만 고른다. 없는 이름을 적으면 엔진이
+// 한글 없는 기본 글꼴로 바꿔 찍고, PDF에서 글자가 통째로 사라진다. 아무것도 고르지 않으면 맑은 고딕이다.
+// 영문 전용 글꼴도 고를 수 있다(영문 로고타입·영문 제목). '영문 전용'으로 표시하고, 엔진에는 그 글꼴을
+// 영문·숫자로만 된 글에만 쓰고 한글이 든 상자는 한글 글꼴로 짜라고 일러 준다(agents brand.prompt_block).
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { InstalledFont } from "@/lib/agentClient";
+import { WINDOWS_FONTS } from "@/lib/windows-fonts";
 
 import {
   brandFonts, brandLogoBlob, deleteBrand, deleteBrandFont, getBrand, saveBrand, uploadBrandFont, uploadBrandLogo,
@@ -60,12 +63,6 @@ async function fontFile(f: LocalFont): Promise<File> {
 /** 아무것도 고르지 않았을 때 엔진이 쓰는 글꼴. 키트에는 ""로 남기고 화면에는 이 이름으로 보인다 —
  *  '기본(맑은 고딕)'과 'Malgun Gothic'이 따로 떠서 다른 글꼴처럼 보이던 것을 하나로 묶었다. */
 const DEFAULT_FONT = "Malgun Gothic";
-/** 윈도에 처음부터 들어 있는 한글 글꼴. 서버는 이 PC의 한글 글꼴을 한 목록으로 주는데, 그대로 한 묶음에
- *  넣었더니 사람이 직접 깐 Pretendard가 바탕·돋움 사이에 섞여 '설치한 글꼴'로 안 보였다. 이 이름들만
- *  윈도 기본으로 따로 묶고, 나머지는 이 PC에 설치한 글꼴로 본다(설치 폴더로 가르면 '모든 사용자'로 깐
- *  글꼴이 윈도 폴더에 들어가 기본으로 잘못 묶인다). */
-const WINDOWS_KO = new Set(["Malgun Gothic", "Malgun Gothic Semilight", "Batang", "BatangChe", "Dotum", "DotumChe",
-  "Gulim", "GulimChe", "Gungsuh", "GungsuhChe"]);
 /** 글꼴 하나를 키트에 올릴 때 가져갈 굵기 — 보통과 굵게. 둘 다 없으면 첫 굵기 하나. */
 const pickFaces = (faces: LocalFont[]) => {
   const want = faces.filter((f) => /^(regular|normal|book|roman|bold)$/i.test(f.style));
@@ -76,7 +73,7 @@ const kb = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)}MB`
 export default function BrandKitPanel() {
   const [kit, setKit] = useState<BrandKit>(EMPTY);
   const [saved, setSaved] = useState<BrandKit | null>(null);
-  const [fonts, setFonts] = useState<string[]>([]);
+  const [fonts, setFonts] = useState<InstalledFont[]>([]);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>("불러오는 중…");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -112,7 +109,7 @@ export default function BrandKitPanel() {
   }, []);
 
   useEffect(() => {
-    Promise.all([getBrand(), brandFonts().catch(() => [] as string[])])
+    Promise.all([getBrand(), brandFonts().catch(() => [] as InstalledFont[])])
       .then(([k, f]) => { setFonts(f); setSaved(k); setKit(k ?? EMPTY); showLogo(k); },
         (e: unknown) => setMsg({ ok: false, text: `키트를 불러오지 못했습니다 — ${e instanceof Error ? e.message : String(e)}` }))
       .finally(() => setBusy(null));
@@ -137,7 +134,7 @@ export default function BrandKitPanel() {
     let draft = { ...kit };
     for (const slot of ["title_font", "body_font"] as const) {
       const fam = draft[slot];
-      if (!fam || !local?.has(fam) || fonts.includes(fam) || (draft.fonts ?? []).some((f) => f.family === fam)) continue;
+      if (!fam || !local?.has(fam) || fonts.some((f) => f.family === fam) || (draft.fonts ?? []).some((f) => f.family === fam)) continue;
       let got = fam;
       for (const face of pickFaces(local.get(fam)!)) {
         setBusy(`${face.fullName} 올리는 중…`);
@@ -164,7 +161,8 @@ export default function BrandKitPanel() {
     setSaved((s) => ({ ...(s ?? k), fonts: k.fonts })); setKit((cur) => ({ ...cur, fonts: k.fonts }));
     setEditing(true);
     const got = k.fonts?.[k.fonts.length - 1];        // 서버는 새로 올린 것을 끝에 붙인다
-    setMsg({ ok: true, text: `글꼴을 올렸습니다 — ${got ? `${got.family} ${got.style}` : f.name}. 위 글꼴 칸에서 고르세요.` });
+    setMsg({ ok: true, text: `글꼴을 올렸습니다 — ${got ? `${got.family} ${got.style}` : f.name}. 위 글꼴 칸에서 고르세요.`
+      + (got && got.hangul === false ? " 한글이 없는 영문 전용 글꼴이라 영문·숫자로 된 글에만 쓰고, 한글은 다른 글꼴로 짭니다." : "") });
   });
   // 내 컴퓨터 글꼴(Local Font Access, 크롬·엣지). 한 번 허용하면 화면을 열 때마다 **저절로** 읽어
   // 제목·본문 select에 넣는다 — 목록을 따로 저장하지 않아도 새로고침 뒤에 그대로 있다. 보고 있는 사람의
@@ -195,7 +193,7 @@ export default function BrandKitPanel() {
     const f = await brandFonts(true);
     setFonts(f);
     const n = localState === "granted" ? await readLocal() : 0;
-    setMsg({ ok: true, text: `글꼴 목록을 새로 불러왔습니다 — 한글 글꼴 ${f.length}개${n ? ` · 이 컴퓨터 글꼴 ${n}종` : ""}. `
+    setMsg({ ok: true, text: `글꼴 목록을 새로 불러왔습니다 — 이 PC 글꼴 ${f.length}개${n ? ` · 이 컴퓨터 글꼴 ${n}종` : ""}. `
       + "방금 깐 글꼴이 안 보이면 크롬을 껐다 켜 주세요(크롬은 켤 때 글꼴 목록을 읽습니다)." });
   });
   const loadLocal = () => run("이 컴퓨터 글꼴 읽는 중…", async () => {
@@ -219,37 +217,33 @@ export default function BrandKitPanel() {
   const form = !saved || editing;
   const cancel = () => { setKit(saved ?? EMPTY); setEditing(false); setMsg(null); };
   // 고를 수 있는 글꼴 — 겹치지 않게 한 번씩만:
-  //   기본(Malgun Gothic) / 키트에 올린 글꼴 / 이 PC에 설치한 한글 글꼴 / 윈도 기본 한글 글꼴 /
-  //   이 컴퓨터의 다른 글꼴(저장할 때 올림)
+  //   기본(Malgun Gothic) / 키트에 올린 글꼴 / 이 PC에 설치한 글꼴 / 윈도 기본 한글 글꼴 / 윈도 기본 영문 글꼴 /
+  //   이 컴퓨터의 다른 글꼴(저장할 때 올림). 영문 전용 글꼴은 이름 옆에 '영문 전용'을 붙인다.
   const uploaded = [...new Set((kit.fonts ?? []).map((f) => f.family))].filter((f) => f !== DEFAULT_FONT);
-  const hangul = fonts.filter((f) => f !== DEFAULT_FONT && !uploaded.includes(f));
-  const installed = hangul.filter((f) => !WINDOWS_KO.has(f));
-  const builtin = hangul.filter((f) => WINDOWS_KO.has(f));
-  const known = new Set([DEFAULT_FONT, ...uploaded, ...hangul]);
+  const pcFonts = fonts.filter((f) => f.family !== DEFAULT_FONT && !uploaded.includes(f.family));
+  const latin = new Set([...pcFonts.filter((f) => !f.hangul).map((f) => f.family),
+    ...(kit.fonts ?? []).filter((f) => f.hangul === false && !(kit.fonts ?? []).some((g) => g.family === f.family && g.hangul !== false)).map((f) => f.family)]);
+  // 사람이 직접 깐 글꼴 — 사용자 폴더에 깔렸거나(user) 윈도 기본 글꼴 이름이 아닌 것(lib/windows-fonts.ts)
+  const mine = (f: InstalledFont) => f.user || !WINDOWS_FONTS.has(f.family);
+  const installed = pcFonts.filter(mine).map((f) => f.family);
+  const builtinKo = pcFonts.filter((f) => !mine(f) && f.hangul).map((f) => f.family);
+  const builtinEn = pcFonts.filter((f) => !mine(f) && !f.hangul).map((f) => f.family);
+  const known = new Set([DEFAULT_FONT, ...uploaded, ...pcFonts.map((f) => f.family)]);
   const others = local ? [...local.keys()].filter((f) => !known.has(f)).sort((a, b) => a.localeCompare(b, "ko")) : [];
+  // 묶음 이름이 이미 '영문'이라고 말하는 윈도 기본 영문 글꼴에는 붙이지 않는다(70개에 같은 말이 붙는다)
+  const opt = (f: string) => <option key={f} value={f}>{latin.has(f) ? `${f} · 영문 전용` : f}</option>;
   const fontSelect = (slot: "title_font" | "body_font") => {
     const cur = kit[slot] || DEFAULT_FONT;
     return (
       <select value={cur} onChange={(e) => setKit({ ...kit, [slot]: e.target.value === DEFAULT_FONT ? "" : e.target.value })}>
         <option value={DEFAULT_FONT}>{DEFAULT_FONT} (기본)</option>
         {!known.has(cur) && !others.includes(cur) && <option value={cur}>{cur}</option>}
-        {uploaded.length > 0 && (
-          <optgroup label="키트에 올린 글꼴">
-            {uploaded.map((f) => <option key={f} value={f}>{f}</option>)}
-          </optgroup>
-        )}
-        {installed.length > 0 && (
-          <optgroup label="이 PC에 설치한 한글 글꼴 — 바로 쓸 수 있음">
-            {installed.map((f) => <option key={f} value={f}>{f}</option>)}
-          </optgroup>
-        )}
-        {builtin.length > 0 && (
-          <optgroup label="윈도 기본 한글 글꼴">
-            {builtin.map((f) => <option key={f} value={f}>{f}</option>)}
-          </optgroup>
-        )}
+        {uploaded.length > 0 && <optgroup label="키트에 올린 글꼴">{uploaded.map(opt)}</optgroup>}
+        {installed.length > 0 && <optgroup label="이 PC에 설치한 글꼴 — 바로 쓸 수 있음">{installed.map(opt)}</optgroup>}
+        {builtinKo.length > 0 && <optgroup label="윈도 기본 한글 글꼴">{builtinKo.map(opt)}</optgroup>}
+        {builtinEn.length > 0 && <optgroup label="윈도 기본 영문 글꼴 — 한글 없음, 영문·숫자에만 쓰임">{builtinEn.map((f) => <option key={f} value={f}>{f}</option>)}</optgroup>}
         {others.length > 0 && (
-          <optgroup label="이 컴퓨터의 다른 글꼴 — 저장할 때 올림(한글이 없거나 가변 글꼴이면 거절)">
+          <optgroup label="이 컴퓨터의 다른 글꼴 — 저장할 때 올림(가변 글꼴이면 거절)">
             {others.map((f) => <option key={f} value={f}>{f}</option>)}
           </optgroup>
         )}
@@ -308,12 +302,13 @@ export default function BrandKitPanel() {
         </label>
       </div>
       <div className="bk_fonts">
-        <b>글꼴 파일 올리기 <span className="note">(.ttf · .otf · .ttc — 한글이 들어 있는 글꼴만)</span></b>
+        <b>글꼴 파일 올리기 <span className="note">(.ttf · .otf · .ttc — 한글·영문 글꼴 모두)</span></b>
         {(kit.fonts ?? []).length > 0 && (
           <ul className="bk_font_list">
             {(kit.fonts ?? []).map((f) => (
               <li key={f.name}>
-                <b>{f.family}</b> <span className="note">{f.style} · {f.name} · {kb(f.bytes)}</span>
+                <b>{f.family}</b>{f.hangul === false && <span className="chip">영문 전용</span>}{" "}
+                <span className="note">{f.style} · {f.name} · {kb(f.bytes)}</span>
                 <button type="button" className="ghost small" disabled={!!busy} onClick={() => void dropFont(f.name)}>빼기</button>
               </li>
             ))}
@@ -340,7 +335,8 @@ export default function BrandKitPanel() {
         <p className="note">
           올린 글꼴은 이 PC에 깔지 않고, 문서를 만들 때 그 문서 옆 <code>Document Fonts</code> 폴더에만 둡니다.
           굵기마다 파일이 따로라 굵게 쓸 거면 Bold 파일도 올려 주세요. 가변 글꼴(굵기가 한 파일에 든 것)은 받지 않습니다.
-          아무것도 고르지 않으면 맑은 고딕으로 만듭니다{fonts.length > 0 ? ` · 이 PC의 한글 글꼴 ${fonts.length}개도 고를 수 있습니다` : ""}.
+          영문 전용 글꼴은 영문·숫자로 된 글(영문 제목·전화번호·이메일 등)에만 쓰고, 한글은 다른 글꼴로 짭니다.
+          아무것도 고르지 않으면 맑은 고딕으로 만듭니다.
         </p>
       </div>
 

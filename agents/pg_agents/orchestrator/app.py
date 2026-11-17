@@ -850,7 +850,8 @@ def _kit_view(kit: dict[str, Any] | None) -> dict[str, Any] | None:
     logo = kit.get("logo") or None
     # 파일 경로는 밖에 내보내지 않는다 — 이름과 크기만.
     return {**kit, "logo": {"name": logo.get("name"), "bytes": logo.get("bytes")} if logo else None,
-            "fonts": [{"family": f["family"], "style": f.get("style"), "name": f["file"], "bytes": f.get("bytes")}
+            "fonts": [{"family": f["family"], "style": f.get("style"), "name": f["file"], "bytes": f.get("bytes"),
+                       "hangul": bool(f.get("hangul", True))}
                       for f in kit.get("fonts") or []]}
 
 
@@ -861,21 +862,24 @@ async def dc_brand_get(request: Request, authorization: str | None = Auth) -> di
 
 @app.get("/designcraft/brand/fonts")
 async def dc_brand_fonts(refresh: bool = False) -> dict[str, Any]:
-    """이 PC에 깔린, 한글이 들어 있는 글꼴. 키트의 글꼴은 이 목록에서만 고른다.
+    """이 PC에 깔린 글꼴 — {family, hangul, user}. 키트의 글꼴은 이 목록(과 올린 글꼴)에서만 고른다.
+    hangul이 거짓이면 영문 전용, user가 참이면 사람이 직접 깐 글꼴이다.
 
     목록은 한 번 읽고 기억한다(글꼴 폴더를 다 읽는 데 몇 초 걸린다). 그래서 에이전트를 켠 뒤에 깐
     글꼴은 보이지 않았다 — Pretendard를 깔고 새로고침해도 안 떴다. `refresh=1`이면 다시 읽는다."""
     if refresh:
-        brand.hangul_fonts.cache_clear()
-    return {"data": list(await asyncio.to_thread(brand.hangul_fonts)), "meta": {}}
+        brand.installed_fonts.cache_clear()
+    rows = await asyncio.to_thread(brand.installed_fonts)
+    return {"data": [{"family": f, "hangul": ko, "user": user} for f, ko, user in rows], "meta": {}}
 
 
 @app.put("/designcraft/brand")
 async def dc_brand_put(body: dict[str, Any], request: Request, authorization: str | None = Auth) -> dict[str, Any]:
     owner = _kit_owner(request, authorization, write=True)
     # 목록이 비어도 검사는 한다(빈 목록이면 어떤 글꼴도 못 고른다). None으로 바꾸면 검사를 건너뛰어
-    # 한글 없는 글꼴이 키트에 들어가고, PDF에서 글자가 사라진다.
-    fonts = list(await asyncio.to_thread(brand.hangul_fonts)) + brand.kit_families(brand.load(owner))
+    # 없는 글꼴이 키트에 들어가고, 엔진이 한글 없는 기본 글꼴로 바꿔 찍어 PDF에서 글자가 사라진다.
+    # {패밀리: 한글 있음}으로 넘겨 영문 전용 글꼴을 고르면 그 사실을 키트에 적게 한다.
+    fonts = await asyncio.to_thread(brand.font_hangul, brand.load(owner))
     try:
         kit = brand.validate(body, fonts)
     except ValueError as e:
@@ -977,6 +981,8 @@ def _brand_for(ctx: str, j: dict[str, Any], owner: str) -> dict[str, Any] | None
                 shutil.copyfile(f, dest)
     return {"name": kit.get("name") or "", "colors": kit.get("colors") or [],
             "title_font": kit.get("title_font") or "", "body_font": kit.get("body_font") or "",
+            # latin_only를 빼면 prompt_block이 영문 전용 글꼴 안내를 못 만들어, 한글이 그 글꼴로 짜여 PDF에서 사라진다.
+            "latin_only": kit.get("latin_only") or [],
             "fonts": [{"family": f["family"], "style": f.get("style")} for f in kit.get("fonts") or []],
             "logo_path": logo_path}
 

@@ -8,8 +8,13 @@
 - 이 PC의 브라우저와 이 PC의 클로드(MCP)는 **같은 사람**이다. 둘은 한 키트를 나눠 쓴다.
 - 바깥에서 들어온 사람은 자기 키트를 따로 갖는다.
 
-글꼴은 **이 PC에 깔린, 한글이 들어 있는 글꼴**이나 **키트에 올린 글꼴 파일**만 받는다. 없는 글꼴
-이름을 적으면 엔진이 기본 글꼴로 바꿔 찍는데, 그 기본 글꼴에는 한글이 없어 글자가 통째로 사라진다.
+글꼴은 **이 PC에 깔린 글꼴**이나 **키트에 올린 글꼴 파일**만 받는다. 없는 글꼴 이름을 적으면 엔진이
+기본 글꼴로 바꿔 찍는데, 그 기본 글꼴에는 한글이 없어 글자가 통째로 사라진다.
+
+영문 전용 글꼴(한글이 없는 글꼴)도 받는다. 처음엔 한글 글꼴만 받았다 — 한글을 한글 없는 글꼴로 짜면
+PDF에 한 자도 안 찍혀서다. 그런데 영문 로고타입·영문 제목처럼 영문 글꼴이 브랜드인 경우가 흔하다.
+그래서 받되, 저장할 때 그 글꼴이 영문 전용임을 적어 두고(`latin_only`), 엔진 명령을 짜는 쪽에
+"이 글꼴은 영문·숫자로만 된 글에만, 한글이 든 상자는 한글 글꼴로" 짜라고 일러 준다(prompt_block).
 
 올린 글꼴은 PC에 깔지 않는다. 문서를 만들 때 그 문서 원본 옆의 `Document Fonts/`에 복사해 두면
 엔진이 문서를 열 때 그 자리에서만 읽는다(인디자인 '패키지'와 같은 방식). 깔아 버리면 이 PC의 다른
@@ -102,9 +107,11 @@ def load(owner: str) -> dict[str, Any] | None:
     return kit
 
 
-def validate(body: dict[str, Any], fonts: list[str] | None = None) -> dict[str, Any]:
+def validate(body: dict[str, Any], fonts: list[str] | dict[str, bool] | None = None) -> dict[str, Any]:
     """화면에서 온 값을 고른다. 틀린 값은 고쳐 넣지 않고 **이유와 함께 거절한다** —
-    조용히 고치면 사람이 등록한 색과 실제 찍히는 색이 달라진다."""
+    조용히 고치면 사람이 등록한 색과 실제 찍히는 색이 달라진다.
+
+    `fonts`가 {패밀리: 한글 있음}이면 고른 글꼴 중 영문 전용을 `latin_only`에 적어 둔다."""
     name = str(body.get("name") or "").strip()[:40]
     colors_in = body.get("colors") or []
     if not isinstance(colors_in, list) or len(colors_in) > MAX_COLORS:
@@ -131,8 +138,10 @@ def validate(body: dict[str, Any], fonts: list[str] | None = None) -> dict[str, 
     for slot in ("title_font", "body_font"):
         f = str(body.get(slot) or "").strip()[:60]
         if f and fonts is not None and f not in fonts:
-            raise ValueError(f"이 PC에 없는(또는 한글이 없는) 글꼴입니다: '{f}'")
+            raise ValueError(f"이 PC에 없는 글꼴입니다: '{f}'")
         out[slot] = f
+    if isinstance(fonts, dict):
+        out["latin_only"] = sorted({f for f in (out["title_font"], out["body_font"]) if f and not fonts.get(f, True)})
     return out
 
 
@@ -206,8 +215,9 @@ def _safe_name(name: str) -> str:
 
 
 def add_font(owner: str, data: bytes, original: str) -> dict[str, Any]:
-    """글꼴 파일 하나를 키트에 더한다. **한글이 그려지는 글꼴만** 받는다 — 한글이 없으면 그 글꼴로
-    짠 글이 PDF에 한 자도 찍히지 않는다. 가변 글꼴은 엔진이 한 굵기로만 읽어 받지 않는다."""
+    """글꼴 파일 하나를 키트에 더한다. 영문 전용 글꼴도 받는다 — 한글이 있는지(`hangul`)를 같이 적어 두고,
+    엔진에는 영문 전용 글꼴을 한글에 쓰지 말라고 일러 준다(prompt_block). 가변 글꼴은 엔진이 한 굵기로만
+    읽어 받지 않는다."""
     ext = Path(original).suffix.lower()
     if ext not in FONT_EXT:
         raise ValueError(f"글꼴 파일이 아닙니다: {ext or '(확장자 없음)'} — .ttf·.otf·.ttc만 받습니다")
@@ -223,16 +233,16 @@ def add_font(owner: str, data: bytes, original: str) -> dict[str, Any]:
         found = faces(tmp)
         if not found:
             raise ValueError("글꼴을 읽지 못했습니다. 가변 글꼴(굵기가 한 파일에 든 것)이면 굵기별 파일(.ttf·.otf)을 올려 주세요")
-        ko = [f for f in found if f["hangul"]]
-        if not ko:
-            raise ValueError(f"한글이 없는 글꼴입니다({found[0]['family']}). 이 글꼴로 짠 한글은 PDF에 찍히지 않습니다")
+        # ttc 안에 한글 있는 것과 없는 것이 섞여 있으면 한글 있는 쪽을 대표로 삼는다
+        pick = next((f for f in found if f["hangul"]), found[0])
         with _LOCKS[_key(owner)]:
             kit = load(owner) or {"name": "", "colors": [], "title_font": "", "body_font": "", "logo": None}
             fonts = [f for f in kit.get("fonts") or [] if f.get("file") != name]
             if len(fonts) >= MAX_FONTS:
                 raise ValueError(f"글꼴 파일은 {MAX_FONTS}개까지 올립니다")
             os.replace(tmp, d / name)
-            fonts.append({"family": ko[0]["family"], "style": ko[0]["style"], "file": name, "bytes": len(data)})
+            fonts.append({"family": pick["family"], "style": pick["style"], "file": name, "bytes": len(data),
+                          "hangul": bool(pick["hangul"])})
             kit["fonts"] = fonts
             _write(owner, kit)
     finally:
@@ -250,7 +260,7 @@ def remove_font(owner: str, file: str) -> dict[str, Any] | None:
         # 그 글꼴을 제목·본문으로 골라 두었는데 남은 파일에 그 패밀리가 없으면 기본값으로 되돌린다.
         left = {f["family"] for f in kit["fonts"]}
         for slot in ("title_font", "body_font"):
-            if kit.get(slot) and kit[slot] not in left and kit[slot] not in hangul_fonts():
+            if kit.get(slot) and kit[slot] not in left and kit[slot] not in font_hangul(None):
                 kit[slot] = ""
         _write(owner, kit)
     return kit
@@ -262,6 +272,15 @@ def font_files(owner: str, kit: dict[str, Any] | None) -> list[Path]:
 
 def kit_families(kit: dict[str, Any] | None) -> list[str]:
     return sorted({f["family"] for f in (kit or {}).get("fonts") or []})
+
+
+def font_hangul(kit: dict[str, Any] | None) -> dict[str, bool]:
+    """고를 수 있는 글꼴 전부 — {패밀리: 한글 있음}. 이 PC에 깐 글꼴과 키트에 올린 글꼴.
+    예전에 올린 글꼴은 `hangul`이 없다 — 그때는 한글 글꼴만 받았으니 있다고 본다."""
+    out = {f: ko for f, ko, _user in installed_fonts()}
+    for f in (kit or {}).get("fonts") or []:
+        out[f["family"]] = out.get(f["family"], False) or bool(f.get("hangul", True))
+    return out
 
 
 def is_empty(kit: dict[str, Any] | None) -> bool:
@@ -279,10 +298,18 @@ def prompt_block(kit: dict[str, Any], logo_path: str | None, ko_font: str) -> st
         lines.append(f"- 색: {cs}. swatch.create로 **이 이름과 이 값 그대로** 만든다. 첫 색이 주된 색이다. "
                      "제목·띠·강조에 쓰고, 본문 글자는 어두운 색 하나로 둔다.")
     tf, bf = kit.get("title_font") or "", kit.get("body_font") or ""
+    latin = set(kit.get("latin_only") or [])
     if tf or bf:
         lines.append(f"- 글꼴: 제목은 \"{tf or bf or ko_font}\", 본문은 \"{bf or tf or ko_font}\". "
-                     "type.char의 attrs.fontFamily에 이 이름을 그대로 쓴다(한글이 들어 있는 글꼴이다). "
+                     "type.char의 attrs.fontFamily에 이 이름을 그대로 쓴다. "
                      f"위 명령 쓰는 법의 \"{ko_font}\" 대신 이 글꼴을 쓴다.")
+    # 영문 전용 글꼴을 한글 상자에 쓰면 그 상자의 한글이 PDF에 한 자도 안 찍힌다(엔진은 빠진 글자를
+    # 다른 글꼴로 메워 주지 않는다). 한글이 든 상자에 쓸 글꼴을 하나 정해 함께 알려 준다.
+    ko = next((f for f in (bf, tf) if f and f not in latin), ko_font)
+    for fam in dict.fromkeys(f for f in (tf, bf) if f in latin):
+        lines.append(f"- \"{fam}\"에는 **한글이 없다**(영문 전용). 영문·숫자로만 된 글(영문 제목·이름, 전화번호, "
+                     f"이메일, 주소의 영문, URL)에만 이 글꼴을 쓰고, 한글이 한 글자라도 든 글 상자는 \"{ko}\"로 짠다. "
+                     "한글을 이 글꼴로 짜면 PDF에 한 자도 찍히지 않는다.")
     # 올린 글꼴은 올린 굵기만 있다. 없는 굵기를 고르면 엔진이 비슷한 것으로 바꿔 찍는다.
     styles: dict[str, list[str]] = {}
     for f in kit.get("fonts") or []:
@@ -298,13 +325,16 @@ def prompt_block(kit: dict[str, Any], logo_path: str | None, ko_font: str) -> st
     return "\n".join(lines) + "\n\n"
 
 
-# ---------------------------------------------------------------- 이 PC의 한글 글꼴
+# ---------------------------------------------------------------- 이 PC의 글꼴
 # 글꼴 파일의 name 표(패밀리 이름)와 cmap 표(한글 '가'가 있는지)만 읽는 작은 파서다.
 # fontTools를 들이지 않으려고 직접 읽는다 — 필요한 것은 두 표뿐이다.
 
 FONT_DIRS = [Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts",
              Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "Windows" / "Fonts",
              Path("/usr/share/fonts"), Path("/usr/local/share/fonts"), Path.home() / ".fonts"]
+# 사람이 '이 사용자만'으로 깐 글꼴이 들어가는 폴더. 화면이 '이 PC에 설치한 글꼴'로 따로 묶는다 —
+# 윈도에 처음부터 있는 영문 글꼴(Arial·Calibri…) 100여 개 사이에 직접 깐 글꼴이 묻히지 않게.
+USER_FONT_DIRS = [FONT_DIRS[1], FONT_DIRS[4]]
 HANGUL = 0xAC00
 
 
@@ -450,15 +480,20 @@ def _faces(path: Path) -> list[tuple[str, bool]]:
 
 
 @lru_cache(maxsize=1)
-def hangul_fonts() -> tuple[str, ...]:
-    """이 PC에 깔린, 한글이 들어 있는 글꼴 패밀리(가나다·ABC 순). 한 번 읽고 기억한다."""
-    fams: set[str] = set()
+def installed_fonts() -> tuple[tuple[str, bool, bool], ...]:
+    """이 PC에 깔린 글꼴 — (패밀리, 한글 있음, 사용자가 깐 것) 패밀리 순. 한 번 읽고 기억한다.
+    가변 글꼴은 엔진이 못 써서 빠진다(_faces). 패밀리의 굵기 중 하나라도 한글이 있으면 '있음'이다."""
+    fams: dict[str, list[bool]] = {}
     for d in FONT_DIRS:
         if not d.is_dir():
             continue
+        user = d in USER_FONT_DIRS
         # 하위 폴더까지 본다 — 리눅스는 /usr/share/fonts/truetype/noto/처럼 한 단계 더 들어가 있다.
         for root, _dirs, files in os.walk(d):
             for name in files:
                 if name.lower().endswith((".ttf", ".otf", ".ttc")):
-                    fams.update(f for f, ko in _faces(Path(root) / name) if ko)
-    return tuple(sorted(fams))
+                    for f, ko in _faces(Path(root) / name):
+                        v = fams.setdefault(f, [False, False])
+                        v[0] |= ko
+                        v[1] |= user
+    return tuple((f, ko, user) for f, (ko, user) in sorted(fams.items()))

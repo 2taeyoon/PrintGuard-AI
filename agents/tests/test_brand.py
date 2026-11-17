@@ -2,7 +2,8 @@
 
 지키는 것:
 - 색은 CMYK 0~100만 받는다. 틀린 값은 **고쳐 넣지 않고 거절한다**(조용히 고치면 등록한 색과 찍히는 색이 달라진다).
-- 이 PC에 없는(한글이 없는) 글꼴은 거절한다 — 엔진이 한글 없는 기본 글꼴로 바꿔 찍어 글자가 사라진다.
+- 이 PC에 없는 글꼴은 거절한다 — 엔진이 한글 없는 기본 글꼴로 바꿔 찍어 글자가 사라진다.
+- 영문 전용 글꼴은 받되, 한글 상자에는 한글 글꼴을 쓰라고 엔진 쪽에 일러 준다.
 - 이 PC에서 직접 온 요청은 이 PC의 클로드(MCP)와 한 키트를 쓴다. 터널을 거친 요청은 바깥 사람으로 본다.
 """
 from pathlib import Path
@@ -221,11 +222,14 @@ def _fake_faces(monkeypatch, table):
     monkeypatch.setattr(brand, "faces", lambda p: table.get(Path(p).name.replace(".tmp", ""), []))
 
 
-def test_font_without_hangul_or_variable_is_refused(monkeypatch):
+def test_latin_only_font_is_taken_but_variable_font_is_refused(monkeypatch):
+    """영문 전용 글꼴도 받는다(영문 로고타입·영문 제목). 한글이 없다는 것은 적어 둔다.
+    가변 글꼴과 글꼴이 아닌 파일은 여전히 거절한다."""
     _fake_faces(monkeypatch, {"Latin.ttf": [{"family": "Latin", "style": "Regular", "hangul": False}],
                               "Var.ttf": []})
-    with pytest.raises(ValueError, match="한글이 없는"):
-        brand.add_font("kit-f", b"x", "Latin.ttf")
+    kit = brand.add_font("kit-f", b"x", "Latin.ttf")
+    assert [(f["family"], f["hangul"]) for f in kit["fonts"]] == [("Latin", False)]
+    brand.remove_font("kit-f", "Latin.ttf")
     with pytest.raises(ValueError, match="가변 글꼴"):
         brand.add_font("kit-f", b"x", "Var.ttf")
     with pytest.raises(ValueError, match=r"\.ttf"):
@@ -248,7 +252,8 @@ def test_uploaded_font_can_be_picked_and_goes_beside_the_document(monkeypatch, t
         assert c.put("/designcraft/brand", json={**KIT, "title_font": "KitOnlyFont"}, headers=_h("kit-g")).status_code == 400
         r = c.post("/designcraft/brand/font", files={"file": ("KitOnlyFont-Bold.ttf", b"FONTDATA", "font/ttf")}, headers=_h("kit-g"))
         assert r.status_code == 200, r.text
-        assert r.json()["data"]["fonts"] == [{"family": "KitOnlyFont", "style": "Bold", "name": "KitOnlyFont-Bold.ttf", "bytes": 8}]
+        assert r.json()["data"]["fonts"] == [{"family": "KitOnlyFont", "style": "Bold", "name": "KitOnlyFont-Bold.ttf", "bytes": 8,
+                                              "hangul": True}]
         assert c.put("/designcraft/brand", json={**KIT, "title_font": "KitOnlyFont"}, headers=_h("kit-g")).status_code == 200
         # 필드를 저장해도 올린 글꼴은 남는다
         assert c.get("/designcraft/brand", headers=_h("kit-g")).json()["data"]["fonts"][0]["family"] == "KitOnlyFont"
@@ -298,11 +303,63 @@ def test_font_list_can_be_read_again_after_installing_a_font(monkeypatch, tmp_pa
     refresh=1이면 다시 읽어 새 글꼴이 들어온다."""
     monkeypatch.setattr(brand, "FONT_DIRS", [tmp_path])
     monkeypatch.setattr(brand, "_faces", lambda p: [(p.stem, True)])
-    brand.hangul_fonts.cache_clear()
+    brand.installed_fonts.cache_clear()
+    names = lambda r: [f["family"] for f in r.json()["data"]]  # noqa: E731
     (tmp_path / "Old.ttf").write_bytes(b"x")
     with TestClient(app) as c:
-        assert c.get("/designcraft/brand/fonts").json()["data"] == ["Old"]
+        assert names(c.get("/designcraft/brand/fonts")) == ["Old"]
         (tmp_path / "Pretendard.otf").write_bytes(b"x")           # 켠 뒤에 깐 글꼴
-        assert c.get("/designcraft/brand/fonts").json()["data"] == ["Old"]
-        assert c.get("/designcraft/brand/fonts?refresh=1").json()["data"] == ["Old", "Pretendard"]
-    brand.hangul_fonts.cache_clear()
+        assert names(c.get("/designcraft/brand/fonts")) == ["Old"]
+        assert names(c.get("/designcraft/brand/fonts?refresh=1")) == ["Old", "Pretendard"]
+    brand.installed_fonts.cache_clear()
+
+
+def test_font_list_marks_latin_only_and_user_installed(monkeypatch, tmp_path):
+    """영문 전용 글꼴도 목록에 오고, 한글이 없다는 것과 사람이 직접 깐 글꼴인지가 같이 온다.
+    (윈도 기본 영문 글꼴 100여 개 사이에 직접 깐 글꼴이 묻히지 않게 화면이 따로 묶는다.)"""
+    sysd, userd = tmp_path / "sys", tmp_path / "user"
+    sysd.mkdir(); userd.mkdir()
+    monkeypatch.setattr(brand, "FONT_DIRS", [sysd, userd])
+    monkeypatch.setattr(brand, "USER_FONT_DIRS", [userd])
+    table = {"Arial.ttf": [("Arial", False)], "Batang.ttc": [("Batang", True)], "Pretendard.otf": [("Pretendard", True)],
+             "Brand-Regular.otf": [("BrandSans", False)], "Brand-Bold.otf": [("BrandSans", False)]}
+    monkeypatch.setattr(brand, "_faces", lambda p: table[p.name])
+    for n in ("Arial.ttf", "Batang.ttc"):
+        (sysd / n).write_bytes(b"x")
+    for n in ("Pretendard.otf", "Brand-Regular.otf", "Brand-Bold.otf"):
+        (userd / n).write_bytes(b"x")
+    brand.installed_fonts.cache_clear()
+    with TestClient(app) as c:
+        rows = c.get("/designcraft/brand/fonts?refresh=1").json()["data"]
+    brand.installed_fonts.cache_clear()
+    assert rows == [{"family": "Arial", "hangul": False, "user": False},
+                    {"family": "Batang", "hangul": True, "user": False},
+                    {"family": "BrandSans", "hangul": False, "user": True},
+                    {"family": "Pretendard", "hangul": True, "user": True}]
+
+
+def test_latin_only_font_is_saved_and_kept_off_hangul_text():
+    """영문 전용 글꼴을 고르면 키트에 그 사실이 남고, 엔진 쪽 안내문은 그 글꼴을 영문·숫자에만 쓰고
+    한글이 든 상자는 한글 글꼴로 짜라고 한다. 한글을 영문 글꼴로 짜면 PDF에 한 자도 안 찍힌다."""
+    fonts = {"Malgun Gothic": True, "Batang": True, "BrandSans": False}
+    kit = brand.validate({**KIT, "title_font": "BrandSans", "body_font": "Batang"}, fonts)
+    assert kit["latin_only"] == ["BrandSans"]
+    b = brand.prompt_block(kit, None, "Malgun Gothic")
+    assert '"BrandSans"에는 **한글이 없다**' in b and '한글이 한 글자라도 든 글 상자는 "Batang"로 짠다' in b
+    # 둘 다 영문 전용이면 한글은 기본 한글 글꼴로
+    both = brand.validate({**KIT, "title_font": "BrandSans", "body_font": "BrandSans"}, fonts)
+    assert '든 글 상자는 "Malgun Gothic"로 짠다' in brand.prompt_block(both, None, "Malgun Gothic")
+    # 한글 글꼴만 고르면 그런 말이 없다
+    ko = brand.validate({**KIT, "title_font": "Batang"}, fonts)
+    assert ko["latin_only"] == [] and "한글이 없다" not in brand.prompt_block(ko, None, "Malgun Gothic")
+
+
+def test_brand_for_carries_latin_only_to_the_prompt(monkeypatch):
+    """오케스트레이터가 엔진 쪽에 넘기는 키트에 latin_only가 실려야 한다. 빠지면 prompt_block이
+    '한글은 한글 글꼴로' 안내를 못 만들어, 영문 전용 글꼴로 짠 한글이 PDF에서 사라진다."""
+    from pg_agents.orchestrator import app as orch
+    monkeypatch.setattr(orch.brand, "font_files", lambda owner, kit: [])
+    monkeypatch.setattr(orch.brand, "load", lambda owner: {**KIT, "title_font": "BrandSans", "latin_only": ["BrandSans"]})
+    got = orch._brand_for("ctx", {}, "kit-x")
+    assert got["latin_only"] == ["BrandSans"]
+    assert "한글이 없다" in brand.prompt_block(got, None, "Malgun Gothic")
