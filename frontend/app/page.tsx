@@ -731,10 +731,11 @@ function Home() {
               ))}
             </div>
           </div>
+          {/* 같은 문서를 두 번째 이상 검수했으면 지난 회차와 맞대 본 것이 이 결과 아래에 저절로 붙는다.
+              처음 검수하는 문서면 아무것도 그리지 않는다. */}
+          {agentJob?.context_id && <ComparePanel current={agentJob.context_id} />}
         </>
       )}
-      {/* 교정지를 주고받을 때 — 같은 문서를 또 검수하면 지난 회차와 바로 맞대 본다 */}
-      <ComparePanel current={agentJob?.context_id} />
 
       <div className="disclaimer">
         <p>이 검수 결과는 인쇄소의 최종 승인과 사람의 교정을 대체하지 않습니다. 색상은 실제 인쇄 결과를 보장하지 않는 위험 예측입니다.</p>
