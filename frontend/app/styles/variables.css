@@ -22,6 +22,8 @@
   --redLight: #ffecea;   /* 주의 상자 배경(붉은 계열의 옅은 면) */
   --redPoint: #ffd5d1;
   --greenBright: #34c759;
+  --greenLight: #e8f8ed;  /* 회차 비교의 '넣음' 면 */
+  --orangeBright: #ff9500; /* 회차 비교의 '그림 변화' 테두리 */
   --purpleBright: #af52de;
 
   --font: "Pretendard", "Malgun Gothic", sans-serif;

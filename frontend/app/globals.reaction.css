@@ -52,7 +52,9 @@
     padding: 8px 8px 16px; background: var(--white); border-bottom: 1px solid var(--borderSubtle); box-shadow: 0 0 20px 0 var(--borderStrong); }
   .topmenu a { height: 48px; justify-content: flex-start; padding: 0 16px; font-size: 1.6rem; }
   .RouteApp.open .topmenu { display: flex; }
-  .papers, .riskgrid, .agent_grid { grid-template-columns: 1fr; }
+  /* 1fr은 '내용보다 좁아지지 않는' 칸이라, 종이 카드 안의 긴 이름 하나가 칸을 400px로 밀어
+     휴대폰 폭에서 옆으로 넘쳤다. minmax(0, 1fr)이면 화면 폭에 맞춰 줄어든다. */
+  .papers, .riskgrid, .agent_grid { grid-template-columns: minmax(0, 1fr); }
   .page_head h1 { font-size: 3.0rem; }
   .waterfall li { grid-template-columns: 1fr 72px; }
   .waterfall .wf_track { grid-column: 1 / -1; }

@@ -304,3 +304,30 @@ export async function dcFile(ctx: string, name: string): Promise<Blob> {
   if (!r.ok) throw new Error(`${name}을 받지 못했습니다(${r.status})`);
   return r.blob();
 }
+
+// ---- 브랜드 키트. 로고·색·글꼴을 한 번 등록하면 말로 부탁해 만드는 문서가 늘 그 브랜드로 나온다 ----
+// 이 PC의 화면과 이 PC의 클로드(MCP)는 같은 키트를 쓴다(오케스트레이터가 주인을 그렇게 가린다).
+export type BrandColor = { name: string; c: number; m: number; y: number; k: number };
+export type BrandKit = {
+  name: string; colors: BrandColor[]; title_font: string; body_font: string;
+  logo: { name: string; bytes: number } | null;
+};
+export type BrandDraft = Omit<BrandKit, "logo">;
+
+export const getBrand = async () => j<BrandKit | null>(await call("/designcraft/brand"));
+/** 이 PC에 깔린, 한글이 들어 있는 글꼴. 없는 글꼴을 적으면 엔진이 한글 없는 기본 글꼴로 찍는다.
+ *  다른 키트 함수처럼 call을 거친다 — 나중에 이 창구에 인증이 붙어도 조용히 빈 목록이 되지 않게. */
+export const brandFonts = async () => j<string[]>(await call("/designcraft/brand/fonts"));
+export const saveBrand = async (kit: BrandDraft) =>
+  j<BrandKit>(await call("/designcraft/brand", { method: "PUT", body: JSON.stringify(kit) }, { "Content-Type": "application/json" }));
+export async function uploadBrandLogo(file: File): Promise<BrandKit> {
+  const fd = new FormData();
+  fd.append("file", file);
+  return j<BrandKit>(await call("/designcraft/brand/logo", { method: "POST", body: fd }));
+}
+export const deleteBrand = async () => j<{ deleted: boolean }>(await call("/designcraft/brand", { method: "DELETE" }));
+export async function brandLogoBlob(): Promise<string> {
+  const r = await call("/designcraft/brand/logo");
+  if (!r.ok) throw new Error(`로고를 받지 못했습니다(${r.status})`);
+  return URL.createObjectURL(await r.blob());
+}

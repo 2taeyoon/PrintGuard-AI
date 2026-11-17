@@ -1,0 +1,214 @@
+"""브랜드 키트 — 등록한 색·글꼴·로고가 그대로 지켜지고, 주인이 바르게 갈리는지.
+
+지키는 것:
+- 색은 CMYK 0~100만 받는다. 틀린 값은 **고쳐 넣지 않고 거절한다**(조용히 고치면 등록한 색과 찍히는 색이 달라진다).
+- 이 PC에 없는(한글이 없는) 글꼴은 거절한다 — 엔진이 한글 없는 기본 글꼴로 바꿔 찍어 글자가 사라진다.
+- 이 PC에서 직접 온 요청은 이 PC의 클로드(MCP)와 한 키트를 쓴다. 터널을 거친 요청은 바깥 사람으로 본다.
+"""
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+from pg_agents import brand
+from pg_agents.auth import mint, tool_subject
+from pg_agents.orchestrator.app import app
+
+KIT = {"name": "여백 출판사", "colors": [{"name": "주색", "c": 100, "m": 80, "y": 0, "k": 10}],
+       "title_font": "", "body_font": ""}
+
+
+def _h(sub: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {mint('browser', subject=sub)}"}
+
+
+def test_validate_refuses_bad_colors_instead_of_fixing_them():
+    with pytest.raises(ValueError, match="0~100"):
+        brand.validate({"colors": [{"name": "주색", "c": 120, "m": 0, "y": 0, "k": 0}]})
+    with pytest.raises(ValueError, match="겹칩니다"):
+        brand.validate({"colors": [{"name": "a", "c": 0, "m": 0, "y": 0, "k": 0}] * 2})
+    with pytest.raises(ValueError, match="6개"):
+        brand.validate({"colors": [{"name": f"c{i}", "c": 0, "m": 0, "y": 0, "k": 0} for i in range(7)]})
+    assert brand.validate(KIT)["colors"][0] == {"name": "주색", "c": 100, "m": 80, "y": 0, "k": 10}
+
+
+def test_validate_refuses_font_not_on_this_pc():
+    with pytest.raises(ValueError, match="없는"):
+        brand.validate({**KIT, "title_font": "Helvetica"}, fonts=["Malgun Gothic"])
+    assert brand.validate({**KIT, "body_font": "Malgun Gothic"}, fonts=["Malgun Gothic"])["body_font"] == "Malgun Gothic"
+
+
+def test_prompt_block_carries_exact_values_and_logo_path():
+    b = brand.prompt_block({**KIT, "title_font": "Batang"}, "/x/brand_logo.png", "Malgun Gothic")
+    assert "주색(c100 m80 y0 k10)" in b
+    assert '제목은 "Batang"' in b and '본문은 "Batang"' in b     # 본문이 비면 제목 글꼴을 쓴다
+    assert "/x/brand_logo.png" in b
+
+
+def test_kits_are_per_owner_and_logo_path_never_leaks():
+    with TestClient(app) as c:
+        assert c.get("/designcraft/brand", headers=_h("kit-a")).json()["data"] is None
+        r = c.put("/designcraft/brand", json=KIT, headers=_h("kit-a"))
+        assert r.status_code == 200, r.text
+        r = c.post("/designcraft/brand/logo", files={"file": ("logo.png", b"\x89PNG fake", "image/png")},
+                   headers=_h("kit-a"))
+        assert r.status_code == 200
+        got = c.get("/designcraft/brand", headers=_h("kit-a")).json()["data"]
+        assert got["colors"] == KIT["colors"] and got["logo"] == {"name": "logo.png", "bytes": 9}
+        assert "path" not in got["logo"]                                  # PC 안의 경로는 밖으로 내보내지 않는다
+        assert c.get("/designcraft/brand/logo", headers=_h("kit-a")).content == b"\x89PNG fake"
+        # 남의 키트는 안 보인다
+        assert c.get("/designcraft/brand", headers=_h("kit-b")).json()["data"] is None
+        # 다시 저장해도 로고는 그대로 남는다
+        c.put("/designcraft/brand", json={**KIT, "name": "바뀐 이름"}, headers=_h("kit-a"))
+        assert c.get("/designcraft/brand", headers=_h("kit-a")).json()["data"]["logo"]["name"] == "logo.png"
+        assert c.put("/designcraft/brand", json={"colors": [{"name": "x", "c": -1, "m": 0, "y": 0, "k": 0}]},
+                     headers=_h("kit-a")).status_code == 400
+        assert c.post("/designcraft/brand/logo", files={"file": ("a.exe", b"MZ", "application/octet-stream")},
+                      headers=_h("kit-a")).status_code == 400
+        assert c.delete("/designcraft/brand", headers=_h("kit-a")).json()["data"]["deleted"] is True
+        assert c.get("/designcraft/brand", headers=_h("kit-a")).json()["data"] is None
+
+
+def test_this_pc_shares_kit_with_its_tool_but_tunnel_does_not():
+    with TestClient(app, client=("127.0.0.1", 50000)) as c:
+        c.put("/designcraft/brand", json=KIT, headers=_h("browser-anon"))
+        assert brand.load(tool_subject())["name"] == "여백 출판사"        # 이 PC의 클로드가 같은 키트를 본다
+        # 터널로 들어온 요청은 주소가 127.0.0.1이어도 바깥 사람이다
+        r = c.get("/designcraft/brand", headers={**_h("outsider"), "X-Forwarded-For": "203.0.113.9"})
+        assert r.json()["data"] is None
+        c.delete("/designcraft/brand", headers=_h("browser-anon"))
+
+
+def test_apply_copies_logo_into_the_document_folder(monkeypatch):
+    """edit_document로 직접 짤 때 로고를 넣을 수 있어야 한다 — 엔진은 문서 폴더 밖을 못 읽는다."""
+    from pg_agents.orchestrator import app as orch
+    monkeypatch.setitem(orch.DCJOBS, "ctx_dc_kit", {"client": "kit-c", "made": True, "filename": "a.idml"})
+    monkeypatch.setattr(orch, "_dc_save", lambda ctx: None)   # 공용 저장소에 가짜 문서를 남기지 않는다
+    with TestClient(app) as c:
+        c.put("/designcraft/brand", json=KIT, headers=_h("kit-c"))
+        c.post("/designcraft/brand/logo", files={"file": ("d.pdf", b"%PDF-1.4 fake", "application/pdf")}, headers=_h("kit-c"))
+        got = c.post("/designcraft/ctx_dc_kit/brand", headers=_h("kit-c")).json()["data"]
+        assert Path(got["logo_path"]).parts[-3:] == ("ctx_dc_kit", "assets", "brand_logo.pdf")
+        assert orch.DCJOBS["ctx_dc_kit"]["assets"][0]["path"] == got["logo_path"]   # compose도 이 경로를 안다
+        assert c.post("/designcraft/ctx_dc_kit/brand", headers=_h("someone-else")).status_code == 404
+        c.delete("/designcraft/brand", headers=_h("kit-c"))
+
+
+def test_decimal_cmyk_is_refused_not_rounded():
+    """12.4를 12로 저장하면 등록한 색과 찍히는 색이 달라진다. 거절하고 이유를 말한다."""
+    with pytest.raises(ValueError, match="정수"):
+        brand.validate({"colors": [{"name": "주색", "c": 12.4, "m": 0, "y": 0, "k": 0}]})
+    with pytest.raises(ValueError, match="0~100"):
+        brand.validate({"colors": [{"name": "주색", "c": True, "m": 0, "y": 0, "k": 0}]})
+    assert brand.validate({"colors": [{"name": "주색", "c": 12.0, "m": 0, "y": 0, "k": 0}]})["colors"][0]["c"] == 12
+
+
+def test_empty_font_list_still_refuses_fonts():
+    """이 PC에서 한글 글꼴을 하나도 못 찾았으면, 어떤 글꼴도 받지 않는다(검사를 건너뛰지 않는다)."""
+    with pytest.raises(ValueError, match="없는"):
+        brand.validate({**KIT, "title_font": "Malgun Gothic"}, fonts=[])
+    assert brand.validate(KIT, fonts=[])["title_font"] == ""          # 비워 두는 것은 된다
+
+
+def test_new_logo_replaces_old_only_after_it_is_written(monkeypatch):
+    owner = "kit-logo"
+    first = brand.set_logo(owner, b"PNG-1", ".png", "a.png")["logo"]["path"]
+    second = brand.set_logo(owner, b"%PDF-2", ".pdf", "b.pdf")["logo"]["path"]
+    assert not Path(first).exists() and Path(second).read_bytes() == b"%PDF-2"   # 확장자가 달라도 옛 것은 정리된다
+    # 쓰다가 실패하면 옛 로고는 그대로 남는다
+    monkeypatch.setattr(Path, "write_bytes", lambda self, data: (_ for _ in ()).throw(OSError("디스크가 찼습니다")))
+    with pytest.raises(OSError):
+        brand.set_logo(owner, b"PNG-3", ".png", "c.png")
+    monkeypatch.undo()
+    kit = brand.load(owner)
+    assert kit["logo"]["name"] == "b.pdf" and Path(kit["logo"]["path"]).read_bytes() == b"%PDF-2"
+    # JSON 저장이 실패해도 옛 로고와 기록은 그대로고, 새 파일은 남지 않는다
+    monkeypatch.setattr(brand, "_write", lambda o, k: (_ for _ in ()).throw(OSError("JSON 저장 실패")))
+    with pytest.raises(OSError):
+        brand.set_logo(owner, b"PNG-4", ".pdf", "d.pdf")
+    monkeypatch.undo()
+    kit = brand.load(owner)
+    assert kit["logo"]["name"] == "b.pdf" and Path(kit["logo"]["path"]).read_bytes() == b"%PDF-2"
+    assert len(list(brand.BRAND.glob(f"{brand._key(owner)}_logo.*"))) == 1
+    brand.delete(owner)
+
+
+def test_truncated_ttc_is_skipped(tmp_path):
+    """잘린 ttc 헤더가 struct.error로 글꼴 조회 전체를 죽이지 않는다."""
+    bad = tmp_path / "bad.ttc"
+    bad.write_bytes(b"ttcf")
+    assert brand._faces(bad) == []
+
+
+def test_saving_fields_and_logo_together_keeps_both(monkeypatch):
+    """두 쪽이 번갈아 저장해도 서로의 값을 지우지 않는다."""
+    import threading
+    import time
+    real_load = brand.load
+
+    def slow_load(o):
+        data = real_load(o)
+        time.sleep(0.02)  # 읽은 뒤 쓰기 전에 멈춰, 잠금이 없으면 같은 옛 상태를 읽고 서로 덮어쓰게 한다
+        return data
+    monkeypatch.setattr(brand, "load", slow_load)
+    owner = "kit-race"
+    errs = []
+
+    def fields(i):
+        try:
+            brand.save(owner, {"name": f"이름{i}", "colors": [], "title_font": "", "body_font": ""})
+        except Exception as e:      # noqa: BLE001
+            errs.append(e)
+
+    def logo(i):
+        try:
+            brand.set_logo(owner, f"L{i}".encode(), ".png", f"l{i}.png")
+        except Exception as e:      # noqa: BLE001
+            errs.append(e)
+    ts = [threading.Thread(target=f, args=(i,)) for i in range(20) for f in (fields, logo)]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    kit = brand.load(owner)
+    assert not errs and kit["name"].startswith("이름") and kit["logo"]["name"].startswith("l")
+    brand.delete(owner)
+
+
+def test_compose_with_a_kit_reaches_the_agent(monkeypatch):
+    """/compose가 키트를 실어 에이전트를 부른다. 예전에는 부탁 글이 HTTP 요청 변수를 덮어써
+    키트 주인을 가리다 넘어졌다(str에 headers가 없다) — compose가 늘 500이었다."""
+    from pg_agents.orchestrator import app as orch
+    monkeypatch.setitem(orch.DCJOBS, "ctx_dc_cmp", {"client": "kit-d", "made": True, "filename": "a.idml",
+                                                     "width_mm": 90, "height_mm": 50})
+    monkeypatch.setattr(orch, "_dc_save", lambda ctx: None)
+    sent = {}
+
+    async def fake_ask(agent, skill, _ctx, body):
+        sent.update(agent=agent, skill=skill, body=body)
+        return {"status": "completed", "output": {"available": True, "commands": [], "says": "짰습니다"}}
+    monkeypatch.setattr(orch, "_ask", fake_ask)
+    monkeypatch.setattr(orch, "log_event", lambda *a, **k: None)
+    with TestClient(app) as c:
+        c.put("/designcraft/brand", json=KIT, headers=_h("kit-d"))
+        c.post("/designcraft/brand/logo", files={"file": ("d.pdf", b"%PDF logo", "application/pdf")}, headers=_h("kit-d"))
+        r = c.post("/designcraft/ctx_dc_cmp/compose", json={"request": "명함 만들어 줘"}, headers=_h("kit-d"))
+        assert r.status_code == 200, r.text
+        assert sent["skill"] == "compose" and sent["body"]["request"] == "명함 만들어 줘"
+        assert sent["body"]["brand"]["colors"] == KIT["colors"]
+        assert sent["body"]["brand"]["logo_path"] == sent["body"]["assets"][-1]["path"]
+        c.delete("/designcraft/brand", headers=_h("kit-d"))
+
+
+def test_changed_logo_with_the_same_size_is_copied_again(monkeypatch):
+    """크기만 같다고 건너뛰면, 색 코드만 바꾼 SVG처럼 바이트 수가 같은 새 로고가 문서에 안 들어간다."""
+    from pg_agents.orchestrator import app as orch
+    monkeypatch.setitem(orch.DCJOBS, "ctx_dc_same", {"client": "kit-e", "made": True, "filename": "a.idml"})
+    monkeypatch.setattr(orch, "_dc_save", lambda ctx: None)
+    with TestClient(app) as c:
+        c.put("/designcraft/brand", json=KIT, headers=_h("kit-e"))
+        c.post("/designcraft/brand/logo", files={"file": ("d.svg", b"<svg fill='#ff0000'/>", "image/svg+xml")}, headers=_h("kit-e"))
+        p1 = c.post("/designcraft/ctx_dc_same/brand", headers=_h("kit-e")).json()["data"]["logo_path"]
+        c.post("/designcraft/brand/logo", files={"file": ("d.svg", b"<svg fill='#0000ff'/>", "image/svg+xml")}, headers=_h("kit-e"))
+        p2 = c.post("/designcraft/ctx_dc_same/brand", headers=_h("kit-e")).json()["data"]["logo_path"]
+        assert p1 == p2 and Path(p2).read_bytes() == b"<svg fill='#0000ff'/>"
+        c.delete("/designcraft/brand", headers=_h("kit-e"))

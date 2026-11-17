@@ -51,6 +51,7 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+from .. import brand as brandkit
 from ..client import call_agent
 from ..common_log import log_event
 from ..config import DC_OUT, SRC
@@ -763,7 +764,7 @@ COMPOSE_SHOT = (
 
 
 def _compose_prompt(request: str, doc: dict[str, Any], catalog: list[dict[str, Any]],
-                    assets: list[dict[str, Any]] | None = None) -> str:
+                    assets: list[dict[str, Any]] | None = None, brand: dict[str, Any] | None = None) -> str:
     rows = "\n".join(f"- {c['id']} {c['params']}" for c in catalog)
     g = _box(doc)
     w, h = doc.get("width_mm") or 0, doc.get("height_mm") or 0
@@ -809,6 +810,8 @@ def _compose_prompt(request: str, doc: dict[str, Any], catalog: list[dict[str, A
           f"5. 명령은 {COMPOSE_MAX}개를 넘기지 않는다.\n\n"
           + COMPOSE_SHOT + "\n"
           "쓸 수 있는 명령\n" + rows + "\n\n"
+        # 브랜드 키트(색·글꼴·로고)가 있으면 부탁보다 앞에 둔다 — 부탁에 따로 적힌 것이 없으면 이대로 짠다.
+        + (brandkit.prompt_block(brand, brand.get("logo_path"), KO_FONT) if brand else "")
         # 올려 둔 사진이 있으면 경로를 알려 준다. 안 알려 주면 LLM이 경로를 지어내고,
         # 그 경로는 울타리 밖이라 엔진이 거절한다.
         + (("올려 둔 그림 파일(file.place의 path에 **이 값을 그대로** 쓴다)\n"
@@ -820,13 +823,14 @@ def _compose_prompt(request: str, doc: dict[str, Any], catalog: list[dict[str, A
 
 
 def _compose_blocking(request: str, doc: dict[str, Any], client=None,
-                      assets: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+                      assets: list[dict[str, Any]] | None = None,
+                      brand: dict[str, Any] | None = None) -> dict[str, Any]:
     from ..llm import TruncatedAnswer, ask, have_key
     if client is None and not have_key():
         return {"available": False, "commands": [], "says": "", "dropped": [],
                 "reason": "이 PC의 에이전트에 LLM 열쇠가 없습니다. agents/.env에 ANTHROPIC_API_KEY를 넣어 주세요"}
     cat = [c for c in _commands_blocking()["commands"] if c["id"] in COMPOSE_OK]
-    prompt = _compose_prompt(request, doc, cat, assets)
+    prompt = _compose_prompt(request, doc, cat, assets, brand)
     try:
         raw = client(prompt) if client else ask(prompt, max_tokens=COMPOSE_TOKENS)
     except TruncatedAnswer:
@@ -851,11 +855,13 @@ def _compose_blocking(request: str, doc: dict[str, Any], client=None,
             dropped.append(cid)
             continue
         ok.append({"command": cid, "params": params})
-    return {"available": True, "commands": _normalize(ok), "says": str(obj.get("says") or "")[:300],
+    # 한글 글에 글꼴이 빠졌을 때 세울 글꼴. 브랜드 키트가 있으면 그 본문 글꼴이다.
+    fallback = (brand or {}).get("body_font") or (brand or {}).get("title_font") or KO_FONT
+    return {"available": True, "commands": _normalize(ok, fallback), "says": str(obj.get("says") or "")[:300],
             "dropped": sorted(set(dropped))}
 
 
-def _normalize(cmds: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _normalize(cmds: list[dict[str, Any]], ko_font: str = KO_FONT) -> list[dict[str, Any]]:
     """LLM이 짠 계획을 **엔진이 실제로 먹는 모양**으로 바로잡는다.
 
     프롬프트로 일러 둬도 LLM은 확률적이라 계속 어긋난다. 실측으로 본 어긋남이 셋이었다.
@@ -914,10 +920,10 @@ def _normalize(cmds: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 prev = final[-1] if final else None
                 if prev and prev["command"] == "type.char":
                     attrs = dict(prev["params"].get("attrs") or {})
-                    attrs.setdefault("fontFamily", KO_FONT)
+                    attrs.setdefault("fontFamily", ko_font)
                     prev["params"]["attrs"] = attrs
                 else:
-                    final.append({"command": "type.char", "params": {"attrs": {"fontFamily": KO_FONT}}})
+                    final.append({"command": "type.char", "params": {"attrs": {"fontFamily": ko_font}}})
         final.append({"command": cid, "params": p})
     return final
 
@@ -928,8 +934,15 @@ async def compose(req: AgentRequest) -> dict[str, Any]:
         return {"status": "rejected", "outcome": "INVALID_INPUT", "output": {"message": "무엇을 만들지 적어 주세요"}}
     doc = {k: req.input.get(k) for k in ("pages", "width_mm", "height_mm", "facing",
                                         "margin_mm", "bleed_mm")}
-    assets = [a for a in (req.input.get("assets") or []) if isinstance(a, dict)][:20]
-    r = await asyncio.to_thread(_compose_blocking, request, doc, None, assets)
+    kit = req.input.get("brand") if isinstance(req.input.get("brand"), dict) else None
+    assets = [a for a in (req.input.get("assets") or []) if isinstance(a, dict)]
+    # 브랜드 로고를 맨 앞에 둔다. 뒤에 붙은 채로 20개를 자르면 그림이 많은 문서에서 로고가 빠지고,
+    # 프롬프트는 로고를 넣으라는데 그 경로는 허용 목록에 없어 file.place가 버려진다.
+    logo = (kit or {}).get("logo_path")
+    if logo:
+        assets = [a for a in assets if a.get("path") == logo][:1] + [a for a in assets if a.get("path") != logo]
+    assets = assets[:20]
+    r = await asyncio.to_thread(_compose_blocking, request, doc, None, assets, kit)
     n = len(r["commands"])
     return {"status": "completed", "output": r,
             "evidence": {"queries": [], "ref_ids": [],

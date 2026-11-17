@@ -23,6 +23,7 @@ import { useCallback, useEffect, useState } from "react";
 import { mcpStatus, type McpStatus } from "@/lib/agentClient";
 import { SetupGuide } from "../dc-shared";
 import WatchDoc from "../watch-doc";
+import BrandKitPanel from "./brand-kit";
 import { SignInNote } from "../sign-in";
 
 export default function MakePage() {
@@ -56,6 +57,10 @@ export default function MakePage() {
       </div>
 
       <SignInNote />
+
+      {/* 한 번 등록해 두면 말로 부탁해 만드는 문서가 늘 이 색·글꼴·로고로 나온다.
+          맨 위에 둔다 — 아래쪽에 두었더니 화면을 열어도 보이지 않아 "넣는 칸이 없다"는 말을 들었다. */}
+      <BrandKitPanel />
 
       {/* 연결 칸. 지금 무엇으로 돌고 있는지 — 창 없이 도는지, 켜 둔 앱에 붙었는지 — 가 보여야 한다. */}
       <section className="panel dc_mcp">

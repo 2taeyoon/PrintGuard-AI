@@ -253,7 +253,12 @@ export default function WatchDoc() {
   }, [pick, name, stamp]);
 
   // 새 줄이 붙으면 아래로 따라 내려간다(채팅과 같다).
-  useEffect(() => { end.current?.scrollIntoView({ block: "nearest" }); }, [msgs.length]);
+  // 새 줄이 오면 **채팅 칸 안에서만** 맨 아래로 내린다. `scrollIntoView`를 썼더니 창 전체가 같이
+  // 내려가, 화면을 열자마자 위쪽(브랜드 키트·연결 칸)이 위로 밀려 나가 "칸이 없다"는 말을 들었다.
+  useEffect(() => {
+    const box = end.current?.parentElement;
+    if (box) box.scrollTop = box.scrollHeight;
+  }, [msgs.length]);
 
   /** 결과물 받기. 고친 뒤와 갓 만든 뒤의 파일 이름이 달라서 있는 쪽을 쓴다. */
   const dl = async (names: string[], as: string) => {
@@ -340,9 +345,11 @@ export default function WatchDoc() {
                 붙이는 방법은 <Link href="/help">도움말</Link>에 적어 두었습니다.
               </p>
             </div>
-          ) : msgs.map((m) => (
+          ) : msgs.map((m, i) => (
+            // 기록 번호만으로는 겹친다 — 문서 머리 줄과 그 첫 걸음 줄이 **같은 기록 한 줄**에서 나온다.
+            // 목록은 뒤에 붙기만 하므로 자리 번호를 더해도 이미 그린 줄의 열쇠는 바뀌지 않는다.
             m.room ? (
-              <div key={m.id} className={`chat_doc${m.ctx === pick ? " on" : ""}`}>
+              <div key={`${m.id}-${i}`} className={`chat_doc${m.ctx === pick ? " on" : ""}`}>
                 <b>{m.room}</b>
                 <span className="note">{m.what}{m.detail && ` · ${m.detail}`}</span>
                 {/* 이름이 겹칠 때가 있다(이름을 안 주고 만들면 전부 '새 문서.idml'이다).
@@ -354,7 +361,7 @@ export default function WatchDoc() {
                 </button>
               </div>
             ) : (
-              <div key={m.id} className={`msg${m.mine ? " me" : ""}${m.error ? " bad" : ""}`}>
+              <div key={`${m.id}-${i}`} className={`msg${m.mine ? " me" : ""}${m.error ? " bad" : ""}`}>
                 <div className="msg_body">
                   <b>{m.what}</b>
                   {m.detail && <span className="pl_detail">{m.detail}</span>}

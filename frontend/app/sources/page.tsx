@@ -98,7 +98,9 @@ const GROUPS: Group[] = [
     lead: "앱과 에이전트를 만든 라이브러리입니다. 버전은 frontend/package.json과 agents/requirements.txt에 적혀 있습니다.",
     items: [
       { name: "Next.js 16 · React 19", use: "앱 화면", url: "https://nextjs.org" },
-      { name: "PDF.js (pdfjs-dist)", use: "PDF 해석과 쪽 그리기", url: "https://mozilla.github.io/pdf.js/" },
+      { name: "PDF.js (pdfjs-dist)", use: "PDF 해석과 쪽 그리기. ‘회차 비교’에서는 두 회차의 낱말과 위치를 읽고 쪽을 같은 배율로 그려 대조합니다(브라우저 안)", url: "https://mozilla.github.io/pdf.js/" },
+      { name: "가장 긴 공통 부분열 (Longest common subsequence)", use: "‘회차 비교’의 낱말 대조 — 두 회차의 낱말 줄에서 공통 부분을 찾아 지워진 낱말과 새로 들어간 낱말을 가립니다", url: "https://en.wikipedia.org/wiki/Longest_common_subsequence" },
+      { name: "OpenType 규격 — name·cmap 표 (Microsoft)", use: "브랜드 키트의 글꼴 목록. 이 PC의 글꼴 파일에서 패밀리 이름(name)과 한글 ‘가’가 있는지(cmap)만 직접 읽습니다", url: "https://learn.microsoft.com/en-us/typography/opentype/spec/" },
       { name: "pdf-lib", use: "평가용 샘플 PDF 만들기", url: "https://pdf-lib.js.org" },
       { name: "onnxruntime-web", use: "브라우저에서 임베딩 모델 실행", url: "https://onnxruntime.ai" },
       { name: "@huggingface/transformers (Transformers.js)", use: "토크나이저와 모델 불러오기", url: "https://huggingface.co/docs/transformers.js" },
@@ -107,7 +109,7 @@ const GROUPS: Group[] = [
       { name: "PyMuPDF", use: "교정 에이전트의 쪽별 글과 위치 추출", url: "https://pymupdf.readthedocs.io" },
       { name: "onnxruntime · tokenizers · NumPy", use: "가이드 에이전트의 임베딩·점수 계산. 브라우저와 같은 int8 ONNX 모델을 서버에서도 그대로 돌립니다", url: "https://onnxruntime.ai" },
       { name: "Model Context Protocol (MCP)", use: "외부 LLM 도구가 이 앱의 조회·요청 기능을 쓰게 하는 서버, 그리고 DesignCraft를 부르는 통로", url: "https://modelcontextprotocol.io" },
-      { name: "DesignCraft (storytold/designcraft)", use: "인디자인 엔진. ‘인쇄 검수’가 편집 파일을 열고 교정을 반영할 때, ‘작업 만들기’가 인쇄물을 만들 때 씁니다. designcraft-cli의 MCP 서버를 자식 프로세스로 띄워 IDML을 열고, 글자를 찾아 바꾸고, PDF로 내보냅니다. ‘작업 만들기’는 클로드·커서가 MCP로 시킨 일을 글로 따라 보는 화면입니다 — 엔진이 받는 **547개 명령**이 그대로 열려 있어, 할 수 있는 일의 범위를 저희 코드가 아니라 엔진이 정합니다. 읽고 쓰는 범위는 의뢰 폴더로 가둬 띄웁니다(--automation-read-root/--automation-write-root). 재배포하지 않고 쓰는 사람이 직접 설치합니다", url: "https://github.com/storytold/designcraft" },
+      { name: "DesignCraft (storytold/designcraft)", use: "인디자인 엔진. ‘인쇄 검수’가 편집 파일을 열고 교정을 반영할 때, ‘작업 만들기’가 인쇄물을 만들 때 씁니다. designcraft-cli의 MCP 서버를 자식 프로세스로 띄워 IDML을 열고, 글자를 찾아 바꾸고, PDF로 내보냅니다. ‘작업 만들기’는 클로드·커서가 MCP로 시킨 일을 글로 따라 보는 화면입니다 — 엔진이 받는 **547개 명령**이 그대로 열려 있어, 할 수 있는 일의 범위를 저희 코드가 아니라 엔진이 정합니다. 읽고 쓰는 범위는 의뢰 폴더로 가둬 띄웁니다(--automation-read-root/--automation-write-root). 등록한 브랜드 키트(색·글꼴·로고)가 있으면 그것으로 짭니다. 재배포하지 않고 쓰는 사람이 직접 설치합니다", url: "https://github.com/storytold/designcraft" },
       { name: "krilla · hayro · usvg (DesignCraft 안)", use: "위 엔진이 PDF를 쓰고 읽는 데 쓰는 라이브러리 — 내보낸 PDF의 글자·색 처리는 이쪽이 합니다", url: "https://github.com/storytold/designcraft" },
       { name: "LangSmith", use: "선택 기능인 추적 내보내기 — 사용자가 키를 직접 넣을 때만 켜집니다", url: "https://smith.langchain.com" },
       { name: "SQLite", use: "공통 로그와 안전 관문 기록 저장", url: "https://www.sqlite.org" },
@@ -126,6 +128,8 @@ const GROUPS: Group[] = [
       { name: "맞춤법 교정 사전 (public/data/korean-misuse.json, 32낱말)", use: "흔한 오용과 외래어 표기를 모은 목록입니다. 판단 기준은 위 국립국어원 자료이고, 어떤 낱말을 넣을지는 개발자가 골랐습니다. 브라우저의 ‘바로 검사’와 교정 에이전트가 같은 파일을 읽습니다" },
       { name: "교정 목록 형식 (lib/fixlist.ts)", use: "‘쪽 | 원래 내용 | 수정할 내용’ 한 줄 형식. 검수 화면이 만들어 내보냅니다(다른 도구에 넣어 쓰시라고). 규격을 따른 것이 아니라 개발자가 정했습니다" },
       { name: "10쪽 시험용 잡지 (IDML)", use: "원본을 고치는 기능을 끝까지 돌려 보려고 만든 자료. 쪽마다 오탈자를 심고 저해상 사진을 하나 섞었습니다. 저장소에는 넣지 않습니다" },
+      { name: "회차 비교 규칙 (lib/compare.ts)", use: "그림 비교 문턱(10px 칸, 평균 차이 22/255, 두 칸 이상 붙은 것만)과 요청 반영 판정(반영·누락·확인 필요)은 개발자가 시험용 PDF로 정했습니다. 실제 교정지로 재지 않았습니다" },
+      { name: "브랜드 키트 (agents/pg_agents/brand.py)", use: "키트 저장·검증과 LLM에 넘기는 안내문. 화면의 색 네모는 CMYK를 단순 환산한 어림 색입니다(R = 255×(1−C)×(1−K) 식). 인쇄 색이 아닙니다" },
       { name: "측정 산출물 (public/data/eval_summary.json, proofread_eval.json)", use: "평가 측정표 화면이 그대로 읽는 수치" },
     ],
   },
@@ -138,7 +142,7 @@ export default function SourcesPage() {
         <h1>출처</h1>
         <p className="lead">
           이 앱이 쓴 자료를 전부 적었습니다 — 가이드의 근거 문헌, 색 프로파일과 계산 규격, 종이·인쇄소 데이터, 모델,
-          라이브러리, 원본 수정에 쓰는 편집 엔진, 개발자가 만든 것까지. 원문을 확인하지 못한 것은 그렇게 표시했습니다.
+          라이브러리, 원본 수정·작업 만들기에 쓰는 편집 엔진, 회차 비교·브랜드 키트의 규칙, 개발자가 만든 것까지. 원문을 확인하지 못한 것은 그렇게 표시했습니다.
         </p>
         <p className="lead">
           <b>이 앱은 모델을 직접 학습시키지 않았습니다.</b> 공개 모델을 그대로 쓰고, 무엇을 쓸지는 재서
