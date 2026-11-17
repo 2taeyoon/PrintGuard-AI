@@ -55,7 +55,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
         run: |
-          n=$(gh pr view "$PR" --json commits --jq '[.commits[] | select(any(.authors[]; .login == "claude[bot]" or .login == "claude"))] | length')
+          # 깃헙 로그인으로 세면 안 된다. 클로드 봇 커밋은 작성자 이름이 claude[bot]인데 이메일이
+          # github-actions[bot]의 것이라, 깃헙은 그 커밋을 github-actions[bot]으로 잇는다(PR #100에서
+          # 확인). 로그인으로 셌더니 늘 0이라 '세 번이면 멈춤'이 걸리지 않았다. git의 작성자 이름으로 센다.
+          n=$(git log --format='%an' "origin/${{ github.event.pull_request.base.ref }}..HEAD" | grep -cxF 'claude[bot]' || true)
           echo "fixes=$n" >> "$GITHUB_OUTPUT"
           echo "start=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           if [ "$n" -ge 3 ]; then echo "can_fix=no" >> "$GITHUB_OUTPUT"; else echo "can_fix=yes" >> "$GITHUB_OUTPUT"; fi
