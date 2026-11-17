@@ -963,52 +963,6 @@ input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, 
   padding: 4px 10px; border: 1px solid var(--borderStrong); background: var(--bgMuted); font-size: 1.5rem; }
 
 
-/* ===== 회차 비교(/compare) ===== */
-.cmp_form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px; }
-.cmp_file, .cmp_req { display: flex; flex-direction: column; gap: 8px; font-size: 1.5rem; }
-.cmp_req { grid-column: 1 / -1; }
-.cmp_req textarea { width: 100%; font: inherit; font-size: 1.5rem; padding: 8px 12px; border: 1px solid var(--borderLight); border-radius: 0; resize: vertical; }
-.cmp_go { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
-.cmp_go .note { flex: 1 1 240px; min-width: 0; }
-.cmp_chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.cmp_c_text { background: var(--themaLight); color: var(--thema); }
-.cmp_c_vis { background: var(--bgMuted); color: var(--black); box-shadow: inset 3px 0 0 var(--orangeBright); }
-.cmp_c_warn { background: var(--redLight); color: var(--redBright); }
-.cmp_h2 { font-size: 1.7rem; font-weight: 700; margin: 16px 0 8px; }
-.cmp_table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 1.4rem; }
-.cmp_table th, .cmp_table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--borderSubtle); vertical-align: middle; }
-.cmp_table th { color: var(--blacklight); font-weight: 600; white-space: nowrap; }
-.cmp_st_ok { background: var(--greenLight); color: #1f8a3c; }
-.cmp_st_miss { background: var(--redLight); color: var(--redBright); }
-.cmp_st_check { background: var(--bgMuted); color: var(--blackmute); }
-.cmp_pg { padding: 2px 8px; font-size: 1.4rem; min-height: 0; }
-/* 쪽 목록 | 이전·수정 두 장 | 바뀐 것 목록 */
-.cmp_ws { display: grid; grid-template-columns: 96px minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
-.cmp_view { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding: 16px; background: var(--bgMuted); }
-.cmp_side { margin: 0; }
-.cmp_side figcaption { font-size: 1.4rem; font-weight: 700; color: var(--blacklight); margin-bottom: 8px; }
-.cmp_mark { position: absolute; pointer-events: none; }
-.cmp_del { background: rgba(255, 59, 48, 0.22); outline: 1px solid var(--redBright); }
-.cmp_ins { background: rgba(52, 199, 89, 0.24); outline: 1px solid var(--greenBright); }
-.cmp_vis { outline: 2px solid var(--orangeBright); background: rgba(255, 149, 0, 0.10); }
-.cmp_mark.on { outline-width: 3px; background-color: rgba(0, 113, 227, 0.22); outline-color: var(--thema); }
-.cmp_list { position: sticky; top: 88px; }
-.cmp_items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.cmp_item { width: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; text-align: left; font-size: 1.4rem; padding: 6px 8px; border-color: var(--borderLight); color: var(--black); }
-.cmp_item.on { border-color: var(--thema); background: var(--themaLight); }
-.cmp_item del { color: var(--redBright); }
-.cmp_item ins { color: #1f8a3c; text-decoration: none; font-weight: 600; }
-.cmp_k_rep { background: var(--themaLight); color: var(--thema); }
-.cmp_k_del { background: var(--redLight); color: var(--redBright); }
-.cmp_k_ins { background: var(--greenLight); color: #1f8a3c; }
-@media (max-width: 1280px) { .cmp_ws { grid-template-columns: 96px minmax(0, 1fr); } .cmp_list { grid-column: 1 / -1; position: static; } }
-@media (max-width: 768px) {
-  .cmp_form { grid-template-columns: minmax(0, 1fr); }
-  .cmp_ws { grid-template-columns: minmax(0, 1fr); }
-  .cmp_ws .pages { flex-direction: row; flex-wrap: wrap; }
-  .cmp_view { grid-template-columns: minmax(0, 1fr); padding: 8px; }
-}
-
 /* ---------- 브랜드 키트(작업 만들기) ----------
    색 네모는 화면용 어림 색이라 작게 둔다. 값(CMYK)이 주인이고 네모는 알아보기용이다. */
 .bk_grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 12px 0 4px; }
@@ -1077,12 +1031,6 @@ main a:not(.pill):not(.ghost):not(.card):not(.shoplist a):not(.qa_shot a):not(.l
 /* 브랜드 키트 — 내 컴퓨터 글꼴에서 고르기 */
 .bk_local { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .bk_local input { width: 280px; max-width: 100%; }
-
-/* 지난 회차와 비교 — 같은 문서를 다시 검수하면 그 결과 아래에 저절로 붙는다 */
-.cmp_head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin-bottom: 16px; }
-.cmp_head h2 { font-size: 1.8rem; margin: 0; }
-.cmp_file select { width: 100%; max-width: 100%; }
-.cmp_wrap .panel { border: 0; padding: 0; margin: 0 0 16px; background: none; box-shadow: none; }
 
 /* 따라 보기 칸 — 지금 하고 있는 일(클로드·코덱스가 생각하는 동안에도 움직인다) */
 .dc_now { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 12px; padding: 12px 16px;

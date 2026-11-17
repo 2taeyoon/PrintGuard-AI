@@ -457,19 +457,6 @@ def test_layout_fixes_are_picked_from_what_the_check_found():
     assert plan.layout_list(j) == [] and plan.can_fix(j) is False
 
 
-def test_i_can_take_back_the_pdf_of_my_earlier_round():
-    """교정 회차 비교는 지난 회차 PDF를 서버에서 다시 받는다(손으로 다시 올리지 않게).
-    받은 바이트는 올린 그대로여야 하고, 남의 의뢰 PDF는 '없는 의뢰'로 막힌다."""
-    body = PDF + b"round-1"
-    with client() as a, client("someone-else") as b:
-        ctx = a.post("/jobs", files={"file": ("명함_1차.pdf", body, "application/pdf")}).json()["data"]["context_id"]
-        r = a.get(f"/jobs/{ctx}/pdf")
-        assert r.status_code == 200 and r.content == body
-        assert r.headers["content-type"] == "application/pdf"
-        assert b.get(f"/jobs/{ctx}/pdf").status_code == 404
-        assert a.get("/jobs/ctx_job_nobody/pdf").status_code == 404
-
-
 def test_a_request_through_the_tunnel_does_not_see_this_pcs_work():
     """공개 사이트는 터널(cloudflared)을 거쳐 127.0.0.1로 들어온다. 주소만 믿었더니 로그인하지 않은
     아무나 이 PC에서 클로드가 만드는 문서와 작업 기록을 볼 수 있었다. 중계 머리말이 있으면 바깥이다.

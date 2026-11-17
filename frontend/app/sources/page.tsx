@@ -98,8 +98,7 @@ const GROUPS: Group[] = [
     lead: "앱과 에이전트를 만든 라이브러리입니다. 버전은 frontend/package.json과 agents/requirements.txt에 적혀 있습니다.",
     items: [
       { name: "Next.js 16 · React 19", use: "앱 화면", url: "https://nextjs.org" },
-      { name: "PDF.js (pdfjs-dist)", use: "PDF 해석과 쪽 그리기. ‘회차 비교’에서는 두 회차의 낱말과 위치를 읽고 쪽을 같은 배율로 그려 대조합니다(브라우저 안)", url: "https://mozilla.github.io/pdf.js/" },
-      { name: "가장 긴 공통 부분열 (Longest common subsequence)", use: "‘회차 비교’의 낱말 대조 — 두 회차의 낱말 줄에서 공통 부분을 찾아 지워진 낱말과 새로 들어간 낱말을 가립니다", url: "https://en.wikipedia.org/wiki/Longest_common_subsequence" },
+      { name: "PDF.js (pdfjs-dist)", use: "PDF 해석과 쪽 그리기. 검수 결과의 쪽 그림을 그립니다(브라우저 안)", url: "https://mozilla.github.io/pdf.js/" },
       { name: "Local Font Access API (W3C WICG)", use: "브랜드 키트의 ‘이 컴퓨터 글꼴’. 허용하면 브라우저가 보고 있는 컴퓨터의 글꼴 목록과 파일을 읽어 준다(크롬·엣지). 고른 글꼴만 저장할 때 키트로 올린다", url: "https://wicg.github.io/local-font-access/" },
       { name: "OpenType 규격 — name·cmap 표 (Microsoft)", use: "브랜드 키트의 글꼴 목록. 이 PC의 글꼴 파일에서 패밀리 이름(name)과 한글 ‘가’가 있는지(cmap)만 직접 읽습니다", url: "https://learn.microsoft.com/en-us/typography/opentype/spec/" },
       { name: "pdf-lib", use: "평가용 샘플 PDF 만들기", url: "https://pdf-lib.js.org" },
@@ -129,7 +128,6 @@ const GROUPS: Group[] = [
       { name: "맞춤법 교정 사전 (public/data/korean-misuse.json, 32낱말)", use: "흔한 오용과 외래어 표기를 모은 목록입니다. 판단 기준은 위 국립국어원 자료이고, 어떤 낱말을 넣을지는 개발자가 골랐습니다. 브라우저의 ‘바로 검사’와 교정 에이전트가 같은 파일을 읽습니다" },
       { name: "교정 목록 형식 (lib/fixlist.ts)", use: "‘쪽 | 원래 내용 | 수정할 내용’ 한 줄 형식. 검수 화면이 만들어 내보냅니다(다른 도구에 넣어 쓰시라고). 규격을 따른 것이 아니라 개발자가 정했습니다" },
       { name: "10쪽 시험용 잡지 (IDML)", use: "원본을 고치는 기능을 끝까지 돌려 보려고 만든 자료. 쪽마다 오탈자를 심고 저해상 사진을 하나 섞었습니다. 저장소에는 넣지 않습니다" },
-      { name: "회차 비교 규칙 (lib/compare.ts)", use: "그림 비교 문턱(10px 칸, 평균 차이 22/255, 두 칸 이상 붙은 것만)과 요청 반영 판정(반영·누락·확인 필요)은 개발자가 시험용 PDF로 정했습니다. 실제 교정지로 재지 않았습니다" },
       { name: "브랜드 키트 (agents/pg_agents/brand.py)", use: "키트 저장·검증과 LLM에 넘기는 안내문. 화면의 색 네모는 CMYK를 단순 환산한 어림 색입니다(R = 255×(1−C)×(1−K) 식). 인쇄 색이 아닙니다" },
       { name: "측정 산출물 (public/data/eval_summary.json, proofread_eval.json)", use: "평가 측정표 화면이 그대로 읽는 수치" },
     ],
@@ -143,7 +141,7 @@ export default function SourcesPage() {
         <h1>출처</h1>
         <p className="lead">
           이 앱이 쓴 자료를 전부 적었습니다 — 가이드의 근거 문헌, 색 프로파일과 계산 규격, 종이·인쇄소 데이터, 모델,
-          라이브러리, 원본 수정·작업 만들기에 쓰는 편집 엔진, 회차 비교·브랜드 키트의 규칙, 개발자가 만든 것까지. 원문을 확인하지 못한 것은 그렇게 표시했습니다.
+          라이브러리, 원본 수정·작업 만들기에 쓰는 편집 엔진, 브랜드 키트의 규칙, 개발자가 만든 것까지. 원문을 확인하지 못한 것은 그렇게 표시했습니다.
         </p>
         <p className="lead">
           <b>이 앱은 모델을 직접 학습시키지 않았습니다.</b> 공개 모델을 그대로 쓰고, 무엇을 쓸지는 재서

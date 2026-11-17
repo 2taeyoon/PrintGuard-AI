@@ -15,7 +15,6 @@ import { CUSTOM, GROUPS as FORMATS, dims, match } from "@/lib/formats";
 import { measure, type Measured } from "@/lib/pagesize";
 import { assess, inputFrom, type Risk } from "@/lib/risk";
 import CopyFixes from "./copy-fixes";
-import ComparePanel from "./compare-panel";
 import { LAYOUT_FIX, autoFixOf } from "@/lib/fixlist";
 import { SignInNote } from "./sign-in";
 import FixResultPanel from "./fix-result";
@@ -731,9 +730,6 @@ function Home() {
               ))}
             </div>
           </div>
-          {/* 같은 문서를 두 번째 이상 검수했으면 지난 회차와 맞대 본 것이 이 결과 아래에 저절로 붙는다.
-              처음 검수하는 문서면 아무것도 그리지 않는다. */}
-          {agentJob?.context_id && <ComparePanel current={agentJob.context_id} />}
         </>
       )}
 
