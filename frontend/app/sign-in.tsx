@@ -17,9 +17,12 @@ export function useSession(): Session {
 }
 
 /** 켜짐·꺼짐·확인 중 셋을 가린다. '아직 모른다'를 '꺼졌다'로 적으면 멀쩡한데 꺼진 것처럼 보인다. */
-function Stat({ what, on, title }: { what: string; on: boolean | null; title?: string }) {
-  const word = on === null ? "확인 중" : on ? (what.startsWith("DesignCraft") ? "연결됨" : "켜짐") : (what.startsWith("DesignCraft") ? "연결 안 됨" : "꺼짐");
-  return <span className={`hstat ${on === null ? "wait" : on ? "on" : "off"}`} title={title}>{what} {word}</span>;
+function Stat({ what, on, title, full }: { what: string; on: boolean | null; title?: string; full: string }) {
+  // 헤더 칸이 좁다. '에이전트 검사 켜짐'·'DesignCraft MCP 연결됨'은 둘이 합쳐 한 줄을 다 먹어 메뉴를 밀었다.
+  // 짧은 이름만 보이고, 무엇인지는 마우스를 올리면(title) 다 나온다.
+  const mcp = what === "MCP";
+  const word = on === null ? "확인 중" : on ? (mcp ? "연결됨" : "켜짐") : (mcp ? "끊김" : "꺼짐");
+  return <span className={`hstat ${on === null ? "wait" : on ? "on" : "off"}`} title={`${full} ${word}${title ? ` — ${title}` : ""}`}>{what} {word}</span>;
 }
 
 /** 헤더에 다는 상태 두 개 — 에이전트 검사와 DesignCraft MCP.
@@ -53,8 +56,8 @@ function AgentStatus({ note }: { note?: string }) {
 
   return (
     <>
-      <Stat what="에이전트 검사" on={up} title={up ? note : undefined} />
-      <Stat what="DesignCraft MCP" on={dc} />
+      <Stat what="에이전트" full="에이전트 검사" on={up} title={up ? note : undefined} />
+      <Stat what="MCP" full="DesignCraft MCP" on={dc} />
     </>
   );
 }

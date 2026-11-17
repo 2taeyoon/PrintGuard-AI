@@ -234,28 +234,29 @@ def test_font_without_hangul_or_variable_is_refused(monkeypatch):
 
 
 def test_uploaded_font_can_be_picked_and_goes_beside_the_document(monkeypatch, tmp_path):
-    """올린 글꼴은 고를 수 있고, 키트를 문서에 쓰면 그 문서 **원본 옆** Document Fonts/로 간다.
+    """(이름은 어느 PC에도 깔려 있을 리 없는 것을 쓴다 — Pretendard를 쓰면 그 글꼴을 깐 PC에서 깨진다.)
+    올린 글꼴은 고를 수 있고, 키트를 문서에 쓰면 그 문서 **원본 옆** Document Fonts/로 간다.
     작업 폴더에 두면 엔진이 안 읽는다 — 고치기는 원본(SRC/<src_ref>/)을 열기 때문이다."""
     from pg_agents.orchestrator import app as orch
-    _fake_faces(monkeypatch, {"Pretendard-Bold.ttf": [{"family": "Pretendard", "style": "Bold", "hangul": True}]})
+    _fake_faces(monkeypatch, {"KitOnlyFont-Bold.ttf": [{"family": "KitOnlyFont", "style": "Bold", "hangul": True}]})
     monkeypatch.setattr(orch, "SRC", tmp_path)
     (tmp_path / "ref1").mkdir()
     monkeypatch.setitem(orch.DCJOBS, "ctx_dc_font", {"client": "kit-g", "made": True, "filename": "a.idml", "src_ref": "ref1"})
     monkeypatch.setattr(orch, "_dc_save", lambda ctx: None)
     with TestClient(app) as c:
         # 올리기 전에는 고를 수 없다
-        assert c.put("/designcraft/brand", json={**KIT, "title_font": "Pretendard"}, headers=_h("kit-g")).status_code == 400
-        r = c.post("/designcraft/brand/font", files={"file": ("Pretendard-Bold.ttf", b"FONTDATA", "font/ttf")}, headers=_h("kit-g"))
+        assert c.put("/designcraft/brand", json={**KIT, "title_font": "KitOnlyFont"}, headers=_h("kit-g")).status_code == 400
+        r = c.post("/designcraft/brand/font", files={"file": ("KitOnlyFont-Bold.ttf", b"FONTDATA", "font/ttf")}, headers=_h("kit-g"))
         assert r.status_code == 200, r.text
-        assert r.json()["data"]["fonts"] == [{"family": "Pretendard", "style": "Bold", "name": "Pretendard-Bold.ttf", "bytes": 8}]
-        assert c.put("/designcraft/brand", json={**KIT, "title_font": "Pretendard"}, headers=_h("kit-g")).status_code == 200
+        assert r.json()["data"]["fonts"] == [{"family": "KitOnlyFont", "style": "Bold", "name": "KitOnlyFont-Bold.ttf", "bytes": 8}]
+        assert c.put("/designcraft/brand", json={**KIT, "title_font": "KitOnlyFont"}, headers=_h("kit-g")).status_code == 200
         # 필드를 저장해도 올린 글꼴은 남는다
-        assert c.get("/designcraft/brand", headers=_h("kit-g")).json()["data"]["fonts"][0]["family"] == "Pretendard"
+        assert c.get("/designcraft/brand", headers=_h("kit-g")).json()["data"]["fonts"][0]["family"] == "KitOnlyFont"
         got = c.post("/designcraft/ctx_dc_font/brand", headers=_h("kit-g")).json()["data"]
-        assert (tmp_path / "ref1" / "Document Fonts" / "Pretendard-Bold.ttf").read_bytes() == b"FONTDATA"
-        assert got["fonts"] == [{"family": "Pretendard", "style": "Bold"}]
+        assert (tmp_path / "ref1" / "Document Fonts" / "KitOnlyFont-Bold.ttf").read_bytes() == b"FONTDATA"
+        assert got["fonts"] == [{"family": "KitOnlyFont", "style": "Bold"}]
         # 빼면 그 글꼴을 고른 칸은 기본값(맑은 고딕)으로 돌아간다
-        k = c.delete("/designcraft/brand/font/Pretendard-Bold.ttf", headers=_h("kit-g")).json()["data"]
+        k = c.delete("/designcraft/brand/font/KitOnlyFont-Bold.ttf", headers=_h("kit-g")).json()["data"]
         assert k["fonts"] == [] and k["title_font"] == ""
         c.delete("/designcraft/brand", headers=_h("kit-g"))
 
@@ -289,3 +290,19 @@ def test_pc_owner_sees_the_same_kit_through_the_public_site():
         c.get("/designcraft/brand", headers={**stranger, **tunnel})
         assert not brand.is_pc_owner("g-stranger")
         c.delete("/designcraft/brand", headers=anon)
+
+
+
+def test_font_list_can_be_read_again_after_installing_a_font(monkeypatch, tmp_path):
+    """글꼴 목록은 한 번 읽고 기억한다. 에이전트를 켠 뒤에 깐 글꼴(Pretendard)이 새로고침해도 안 보였다.
+    refresh=1이면 다시 읽어 새 글꼴이 들어온다."""
+    monkeypatch.setattr(brand, "FONT_DIRS", [tmp_path])
+    monkeypatch.setattr(brand, "_faces", lambda p: [(p.stem, True)])
+    brand.hangul_fonts.cache_clear()
+    (tmp_path / "Old.ttf").write_bytes(b"x")
+    with TestClient(app) as c:
+        assert c.get("/designcraft/brand/fonts").json()["data"] == ["Old"]
+        (tmp_path / "Pretendard.otf").write_bytes(b"x")           # 켠 뒤에 깐 글꼴
+        assert c.get("/designcraft/brand/fonts").json()["data"] == ["Old"]
+        assert c.get("/designcraft/brand/fonts?refresh=1").json()["data"] == ["Old", "Pretendard"]
+    brand.hangul_fonts.cache_clear()

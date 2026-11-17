@@ -5,7 +5,7 @@ import { MODEL_DOWNLOAD_MB } from "@/lib/guide";
 // 임베딩 모델을 불러오는 동안 도는 진행 표시와 상태 문구
 export function GuideBadge({ ready, status }: { ready: boolean; status: string }) {
   return (
-    <span className={`badge${ready ? "" : " loading"}`} role="status" aria-live="polite">
+    <span className={`badge${ready ? " good" : " loading"}`} role="status" aria-live="polite">
       {!ready && !status.startsWith("가이드 검색 사용 불가") && <span className="spinner" aria-hidden="true" />}
       {status || "가이드 준비 중"}
     </span>

@@ -183,6 +183,15 @@ export default function BrandKitPanel() {
       })
       .catch(() => undefined);              // 권한 이름을 모르는 브라우저 — 단추로 물어본다
   }, [readLocal]);
+  // 글꼴을 새로 깔았을 때. 에이전트 PC의 목록은 서버가 다시 읽고, 이 컴퓨터 글꼴은 브라우저가 다시 읽는다.
+  // 크롬은 켤 때 글꼴 목록을 읽어 두므로, 방금 깐 글꼴이 이 컴퓨터 목록에 안 보이면 크롬을 다시 켜야 한다.
+  const refreshFonts = () => run("글꼴 목록 새로 불러오는 중…", async () => {
+    const f = await brandFonts(true);
+    setFonts(f);
+    const n = localState === "granted" ? await readLocal() : 0;
+    setMsg({ ok: true, text: `글꼴 목록을 새로 불러왔습니다 — 한글 글꼴 ${f.length}개${n ? ` · 이 컴퓨터 글꼴 ${n}종` : ""}. `
+      + "방금 깐 글꼴이 안 보이면 크롬을 껐다 켜 주세요(크롬은 켤 때 글꼴 목록을 읽습니다)." });
+  });
   const loadLocal = () => run("이 컴퓨터 글꼴 읽는 중…", async () => {
     const n = await readLocal();
     if (!n) throw new Error("이 브라우저는 내 컴퓨터 글꼴을 읽지 못합니다(크롬·엣지에서 됩니다). 아래에서 글꼴 파일을 올려 주세요.");
@@ -297,9 +306,9 @@ export default function BrandKitPanel() {
           </ul>
         )}
         <div className="bk_local">
-          {localState === "granted" && local && (
-            <span className="note">이 컴퓨터 글꼴 {local.size}종이 위 글꼴 칸에 들어 있습니다.</span>
-          )}
+          <button type="button" className="ghost small" disabled={!!busy} onClick={() => void refreshFonts()}>
+            글꼴 목록 새로 불러오기
+          </button>
           {localState === "prompt" && (
             <button type="button" className="ghost small" disabled={!!busy} onClick={() => void loadLocal()}>
               이 컴퓨터 글꼴 불러오기
@@ -351,7 +360,7 @@ export default function BrandKitPanel() {
           </div>
         ))}
         {kit.colors.length < MAX_COLORS && (
-          <button type="button" className="ghost small" onClick={addColor}>색 더하기</button>
+          <button type="button" className="ghost small" onClick={addColor}>색 등록하기</button>
         )}
       </div>
 

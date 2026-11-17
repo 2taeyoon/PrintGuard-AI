@@ -695,7 +695,8 @@ input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, 
 .acct img { display: block; width: 28px; height: 28px; object-fit: cover; }
 /* 헤더 상태 뱃지(에이전트 검사·DesignCraft MCP). 원본 수정 화면의 연결 뱃지와 같은 색을 쓴다 */
 .hstat { padding: 2px 8px; font-weight: 600; white-space: nowrap; font-size: 1.4rem; }
-.hstat.on { background: var(--themaLight); color: var(--thema); }
+/* 켜짐·준비됨은 '에이전트 9/9 정상'(.chip.good)과 같은 초록으로 맞춘다 — 같은 뜻에 같은 색 */
+.hstat.on, .badge.good { background: var(--greenBright); color: var(--white); }
 .hstat.off { background: var(--redLight); color: var(--redBright); }
 .hstat.wait { background: var(--bgMuted); color: var(--blackmute); }
 /* 좁은 화면에서는 이름과 함께 뱃지도 접는다 — 헤더가 두 줄로 넘어가면 메뉴가 밀린다 */
@@ -1076,3 +1077,12 @@ main a:not(.pill):not(.ghost):not(.card):not(.shoplist a):not(.qa_shot a):not(.l
 /* 브랜드 키트 — 내 컴퓨터 글꼴에서 고르기 */
 .bk_local { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .bk_local input { width: 280px; max-width: 100%; }
+
+/* 교정 회차 비교 — 인쇄 검수 화면 안의 접는 칸 */
+.cmp_wrap > summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; list-style: none; }
+.cmp_wrap > summary::-webkit-details-marker { display: none; }
+.cmp_wrap > summary strong { font-size: 1.8rem; }
+.cmp_wrap > summary::after { content: "펼치기"; margin-left: auto; font-size: 1.4rem; color: var(--thema); }
+.cmp_wrap[open] > summary::after { content: "접기"; }
+.cmp_wrap[open] > summary { margin-bottom: 16px; }
+.cmp_wrap .panel { border: 0; padding: 0; margin: 0 0 16px; background: none; box-shadow: none; }
