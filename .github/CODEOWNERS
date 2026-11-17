@@ -2,5 +2,4 @@
 # 규칙을 고치는 PR이 규칙을 거쳐 가게 하려는 것이다 — 클로드가 자기 울타리를 옮기지 못한다.
 /.github/          @2taeyoon
 /CLAUDE.md         @2taeyoon
-/.coderabbit.yaml  @2taeyoon
 /agents/.env*      @2taeyoon
