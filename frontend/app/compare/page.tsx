@@ -105,7 +105,7 @@ export default function Compare() {
         pages.push({ page: i, changes, visual, sizeChanged: !sameSize });
       }
       const checks = checkRequests(parseRequests(req), oldTexts, newTexts);
-      const first = pages.find((p) => p.changes.length || p.visual.length || p.only)?.page ?? 1;
+      const first = pages.find((p) => p.changes.length || p.visual.length || p.only || p.sizeChanged)?.page ?? 1;
       setRes({ pages, oldCount: o.numPages, newCount: n.numPages, checks, sizes });
       setPage(first);
     } catch (e) {
@@ -141,7 +141,7 @@ export default function Compare() {
   const size = res?.sizes[page - 1] ?? [1, 1];
   const pct = (b: Box) => ({ left: `${(b[0] / size[0]) * 100}%`, top: `${(b[1] / size[1]) * 100}%`,
     width: `${((b[2] - b[0]) / size[0]) * 100}%`, height: `${((b[3] - b[1]) / size[1]) * 100}%` });
-  const changedPages = res?.pages.filter((p) => p.changes.length || p.visual.length || p.only) ?? [];
+  const changedPages = res?.pages.filter((p) => p.changes.length || p.visual.length || p.only || p.sizeChanged) ?? [];
   const textCount = res?.pages.reduce((n, p) => n + p.changes.length, 0) ?? 0;
   const visCount = res?.pages.reduce((n, p) => n + p.visual.length, 0) ?? 0;
   const tally = (s: string) => res?.checks.filter((c) => c.status === s).length ?? 0;
@@ -217,7 +217,7 @@ export default function Compare() {
           <div className="cmp_ws">
             <div className="pages">
               {res.pages.map((p) => {
-                const n = p.changes.length + p.visual.length + (p.only ? 1 : 0);
+                const n = p.changes.length + p.visual.length + (p.only || p.sizeChanged ? 1 : 0);
                 return (
                   <button key={p.page} className={p.page === page ? "on" : ""} onClick={() => { setPage(p.page); setFocus(null); }}>
                     {p.page}쪽{n > 0 && <span className="dot">{n}</span>}

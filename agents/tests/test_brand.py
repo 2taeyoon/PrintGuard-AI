@@ -126,9 +126,24 @@ def test_new_logo_replaces_old_only_after_it_is_written(monkeypatch):
     brand.delete(owner)
 
 
-def test_saving_fields_and_logo_together_keeps_both():
+def test_truncated_ttc_is_skipped(tmp_path):
+    """잘린 ttc 헤더가 struct.error로 글꼴 조회 전체를 죽이지 않는다."""
+    bad = tmp_path / "bad.ttc"
+    bad.write_bytes(b"ttcf")
+    assert brand._faces(bad) == []
+
+
+def test_saving_fields_and_logo_together_keeps_both(monkeypatch):
     """두 쪽이 번갈아 저장해도 서로의 값을 지우지 않는다."""
     import threading
+    import time
+    real_load = brand.load
+
+    def slow_load(o):
+        data = real_load(o)
+        time.sleep(0.02)  # 읽은 뒤 쓰기 전에 멈춰, 잠금이 없으면 같은 옛 상태를 읽고 서로 덮어쓰게 한다
+        return data
+    monkeypatch.setattr(brand, "load", slow_load)
     owner = "kit-race"
     errs = []
 

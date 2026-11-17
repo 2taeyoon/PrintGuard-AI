@@ -246,8 +246,12 @@ def _faces(path: Path) -> list[tuple[str, bool]]:
         return []
     offs = [0]
     if buf[:4] == b"ttcf":
-        n = struct.unpack_from(">I", buf, 8)[0]
-        offs = list(struct.unpack_from(f">{n}I", buf, 12))
+        # 잘린 ttc는 헤더를 읽다 struct.error가 난다. 파일 하나 때문에 글꼴 조회 전체가 죽지 않게 건너뛴다.
+        try:
+            n = struct.unpack_from(">I", buf, 8)[0]
+            offs = list(struct.unpack_from(f">{n}I", buf, 12))
+        except struct.error:
+            return []
     out = []
     for o in offs:
         try:
