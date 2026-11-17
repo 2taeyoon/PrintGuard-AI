@@ -496,26 +496,27 @@ LANGSMITH_PROJECT=printguard
 
 LangSmith로 나가는 것은 공통 로그로 만든 추적(에이전트·skill·시간·상태·관문 결정)뿐입니다. PDF 본문과 입력값은 공통 로그에 애초에 남기지 않으므로 나가지 않습니다.
 
-## PR 코드 검수 (CodeRabbit)
+## PR 코드 검수 (클로드 리뷰)
 
-PR을 올리면 **CodeRabbit**이 읽고 한국어로 의견을 답니다. 설정은 저장소 뿌리의
-[`.coderabbit.yaml`](.coderabbit.yaml) 하나이고, PR이 올라온 **그 브랜치의 설정**이 쓰입니다.
+`main`으로 PR을 올리면 **클로드 봇**이 읽습니다(`.github/workflows/claude-review.yml`). 사람이 부르지
+않아도 PR이 열릴 때와 새 커밋이 올라올 때마다 돕니다. 열쇠는 구독(Max) 토큰
+`CLAUDE_CODE_OAUTH_TOKEN` 하나이고, API 열쇠는 쓰지 않습니다.
 
-처음 한 번은 사람이 켜야 합니다 — [app.coderabbit.ai](https://app.coderabbit.ai/login)에서
-GitHub로 로그인하고 이 저장소를 고릅니다(공개 저장소라 무료 등급으로 돕니다).
+1. main 대비 바뀐 것을 읽습니다. 실제 버그·보안·인쇄 사고만 봅니다(취향은 지적하지 않습니다).
+2. 고칠 것이 있으면 고쳐 같은 가지에 밀고, 무엇을 왜 고쳤는지 답글을 남깁니다. 그 커밋이 다시 리뷰를 부릅니다.
+3. 고칠 것이 없으면 검사(CI)가 끝나길 기다렸다가 승인하고 "OK" 답글을 달고 머지합니다.
 
 | 무엇 | 왜 그렇게 뒀나 |
 |---|---|
-| `language: ko-KR` | 이 저장소의 글은 전부 한국어다. 의견만 영어로 오면 읽는 사람이 둘로 갈린다 |
-| `profile: chill` | 혼자 쓰는 저장소에서 `assertive`는 금세 소음이 된다 |
-| `auto_review.base_branches: [main]` | `dev` → `main` PR 하나가 이 저장소의 길이다 |
-| `ruff`·`markdownlint`·`languagetool` **끔** | 저장소에 설정이 없는 린터는 기본 규칙으로 수백 줄을 쏟는다. 한국어 문서는 줄이 길다 |
-| `eslint`·`shellcheck`·`gitleaks` 켬 | 설정이 있고(`frontend/eslint.config.mjs`), 열쇠가 섞여 들어오는 것은 막아야 한다 |
-| `path_filters` | 만들어지거나 받아 온 것(시험용 PDF 60MB, 인쇄소 17,082곳, 종이 489종)은 검수가 뜻이 없다 |
-| `path_instructions` | 이 저장소에서 **실제로 났던 사고**를 적어 뒀다 — JSX 줄바꿈이 띄어쓰기를 먹는 것, 효과 안에서 setState, 파랑 두 가지 섞어 쓰기, safety 관문을 건너뛴 파일 쓰기 |
+| 한 실행 안에서 읽기·고치기·머지 | 전에는 CodeRabbit이 읽고 클로드가 고쳐 서로를 기다렸다. 22개 파일 PR에서 리뷰만 14분이 걸렸다 |
+| 고친 커밋이 세 번이면 멈춤 | 고친 것을 다시 읽고 또 고치는 고리가 끝없이 돌지 않게. 넘으면 `needs-human`을 붙인다 |
+| 머지 판단은 셸이 | 검사 기다리기와 "읽은 뒤 새 커밋이 올라왔는가"는 확실해야 해서 모델에 맡기지 않는다 |
+| `--match-head-commit` | 읽은 커밋에만 머지된다. 그 뒤에 올라온 커밋은 함께 들어가지 않는다 |
+| 같은 저장소 가지만 | 공개 저장소라 남의 포크 PR에는 손대지 않는다 |
+| `.github/`·`CLAUDE.md`·`.env`는 안 고침 | 규칙과 열쇠는 사람이 고친다. 문제가 있으면 변경 요청과 `needs-human`만 남긴다 |
 
-PR 댓글로 부릅니다: `@coderabbitai review`(새 커밋만) · `full review`(전부 다시) ·
-`configuration`(지금 적용된 설정) · `pause`/`resume` · `help`.
+**워크플로를 고치는 PR은 이 리뷰가 돌지 않습니다.** 클로드 액션은 워크플로 파일이 `main`과 다른
+PR에서는 스스로 멈춥니다(남이 워크플로를 바꿔 비밀값을 빼 가는 것을 막는 장치). 그런 PR은 사람이 머지합니다.
 
 ## 저장소에 없는 파일
 
