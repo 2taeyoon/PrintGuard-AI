@@ -320,7 +320,8 @@ export type BrandDraft = Omit<BrandKit, "logo" | "fonts">;
 export const getBrand = async () => j<BrandKit | null>(await call("/designcraft/brand"));
 /** 이 PC에 깔린, 한글이 들어 있는 글꼴. 없는 글꼴을 적으면 엔진이 한글 없는 기본 글꼴로 찍는다.
  *  다른 키트 함수처럼 call을 거친다 — 나중에 이 창구에 인증이 붙어도 조용히 빈 목록이 되지 않게. */
-export const brandFonts = async () => j<string[]>(await call("/designcraft/brand/fonts"));
+export const brandFonts = async (refresh = false) =>
+  j<string[]>(await call(`/designcraft/brand/fonts${refresh ? "?refresh=1" : ""}`));
 export const saveBrand = async (kit: BrandDraft) =>
   j<BrandKit>(await call("/designcraft/brand", { method: "PUT", body: JSON.stringify(kit) }, { "Content-Type": "application/json" }));
 export async function uploadBrandLogo(file: File): Promise<BrandKit> {

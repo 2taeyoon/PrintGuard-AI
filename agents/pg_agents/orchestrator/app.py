@@ -844,8 +844,13 @@ async def dc_brand_get(request: Request, authorization: str | None = Auth) -> di
 
 
 @app.get("/designcraft/brand/fonts")
-async def dc_brand_fonts() -> dict[str, Any]:
-    """이 PC에 깔린, 한글이 들어 있는 글꼴. 키트의 글꼴은 이 목록에서만 고른다."""
+async def dc_brand_fonts(refresh: bool = False) -> dict[str, Any]:
+    """이 PC에 깔린, 한글이 들어 있는 글꼴. 키트의 글꼴은 이 목록에서만 고른다.
+
+    목록은 한 번 읽고 기억한다(글꼴 폴더를 다 읽는 데 몇 초 걸린다). 그래서 에이전트를 켠 뒤에 깐
+    글꼴은 보이지 않았다 — Pretendard를 깔고 새로고침해도 안 떴다. `refresh=1`이면 다시 읽는다."""
+    if refresh:
+        brand.hangul_fonts.cache_clear()
     return {"data": list(await asyncio.to_thread(brand.hangul_fonts)), "meta": {}}
 
 
