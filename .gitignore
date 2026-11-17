@@ -29,3 +29,4 @@ _workspace/
 # 클로드 리뷰가 실행 안에서만 쓰는 판정 메모(커밋하지 않는다)
 .claude-verdict
 .claude-review.md
+.merge-check.md
