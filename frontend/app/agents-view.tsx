@@ -191,7 +191,8 @@ export default function AgentsView({ initialCtx = "", showWarn = true, withFix =
       const ok = await orchestratorUp();
       if (!alive) return;
       setUp(ok);
-      if (!ok) return;
+      // 꺼지면 받아 둔 것을 비운다. 그대로 두면 꺼진 뒤에도 마지막 목록·기록이 살아 있는 것처럼 남는다.
+      if (!ok) { setAgents({}); setJobs([]); setLogs([]); setTrace(null); return; }
       const a = await listAgents();
       if (!alive) return;
       setAgents(a);
@@ -208,6 +209,10 @@ export default function AgentsView({ initialCtx = "", showWarn = true, withFix =
 
   const list = Object.entries(agents).sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b));
   const onCount = list.filter(([, a]) => a.status !== "off").length;
+  // 흰 상자마다 '없다'를 분명히 적는다. 전에는 에이전트가 꺼져도 목록 칸에 '불러오는 중…'이 끝없이 돌고,
+  // 의뢰 추적은 있지도 않은 의뢰를 '위에서 고르라'고 했다 — 비어 있는 까닭을 어디에도 말하지 않았다.
+  const off = up === false;
+  const OFF = "에이전트가 꺼져 있어";
 
   return (
     <>
@@ -218,14 +223,18 @@ export default function AgentsView({ initialCtx = "", showWarn = true, withFix =
         <aside className="agent_side">
           <div className="side_head">
             <strong>이 검수에 참여</strong>
-            <span className="chip">{onCount}/{list.length} 켜짐</span>
+            <span className="chip">{off ? "꺼짐" : `${onCount}/${list.length} 켜짐`}</span>
           </div>
           <ul className="agent_list">
             {list.map(([name, a]) => (
               <AgentRow key={name} name={name} a={a} open={opened.includes(name)} toggle={toggle}
                 why={COND[name.replace("(fake)", "")]?.(withFix)} />
             ))}
-            {list.length === 0 && <li className="aitem"><span className="note">에이전트를 불러오는 중…</span></li>}
+            {list.length === 0 && (
+              <li className="aitem"><span className="note">
+                {off ? `${OFF} 목록이 없습니다. 에이전트를 켜면 여기에 나옵니다.` : up === null ? "에이전트를 불러오는 중…" : "에이전트가 없습니다."}
+              </span></li>
+            )}
           </ul>
         </aside>
 
@@ -234,7 +243,7 @@ export default function AgentsView({ initialCtx = "", showWarn = true, withFix =
           <div className="panel job_pick">
             <strong>의뢰</strong>
             <select value={ctx} onChange={(e) => setCtx(e.target.value)} aria-label="의뢰 고르기">
-              <option value="">전체(최근 기록만)</option>
+              <option value="">{jobs.length ? "전체(최근 기록만)" : off ? "의뢰 없음 — 에이전트 꺼짐" : "의뢰 없음"}</option>
               {jobs.map((j) => (
                 <option key={j.context_id} value={j.context_id}>
                   {j.filename} · {JOB_STATUS[j.status] ?? j.status} · {clock(j.created)}
@@ -270,7 +279,10 @@ export default function AgentsView({ initialCtx = "", showWarn = true, withFix =
             </div>
             {!(trace && trace.spans.length > 0) && (
               <ol className="timeline">
-                <li className="empty_row">{ctx ? "이 의뢰에는 아직 구간이 없습니다." : "위에서 의뢰를 고르면 에이전트별 구간 막대(워터폴)가 나옵니다."}</li>
+                <li className="empty_row">{off ? `${OFF} 추적할 의뢰가 없습니다.`
+                  : ctx ? "이 의뢰에는 아직 구간이 없습니다."
+                    : jobs.length === 0 ? "맡긴 의뢰가 없습니다. 위에서 PDF를 고르고 ‘에이전트에 맡기기’를 누르면 여기에 에이전트별 구간 막대가 나옵니다."
+                      : "위에서 의뢰를 고르면 에이전트별 구간 막대(워터폴)가 나옵니다."}</li>
               </ol>
             )}
             {trace && trace.spans.length > 0 && (
@@ -312,7 +324,7 @@ export default function AgentsView({ initialCtx = "", showWarn = true, withFix =
           <section className="panel">
             <div className="toolbar">
               <strong>소통 기록</strong>
-              <span className="note">{logs.length}줄{ctx ? "" : " · 최근 300줄"}</span>
+              <span className="note">{logs.length ? `${logs.length}줄${ctx ? "" : " · 최근 300줄"}` : "없음"}</span>
             </div>
             <ol className="timeline">
               {logs.map((l) => (
@@ -324,7 +336,9 @@ export default function AgentsView({ initialCtx = "", showWarn = true, withFix =
                   {!ctx && <span className="note" title={l.context_id}>의뢰 {jobNo(l.context_id)}</span>}
                 </li>
               ))}
-              {logs.length === 0 && <li className="empty_row">아직 기록이 없습니다. 위에서 에이전트 검사 모드로 맡겨 보세요.</li>}
+              {logs.length === 0 && (
+                <li className="empty_row">{off ? `${OFF} 소통 기록이 없습니다.` : "소통 기록이 없습니다. 위에서 PDF를 에이전트에 맡기면 에이전트끼리 주고받은 말이 여기에 쌓입니다."}</li>
+              )}
             </ol>
           </section>
         </div>
