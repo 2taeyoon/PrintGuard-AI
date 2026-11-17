@@ -108,14 +108,8 @@ export function toScreen(v: JobView): { analysis: Analysis; risks: (Risk & { hit
   const analysis: Analysis = { pages: pf.pages ?? 0, pageSizes: pf.page_sizes ?? [], issues, colorSummary: pf.color_summary ?? {}, texts: pf.texts ?? [], colorReport: co.color_report ?? null };
   return { analysis, risks, hits, texts: pf.texts ?? [], proofSkipped: (v.results.proofread?.skipped ?? []) as ProofSkip[] };
 }
-export type JobRow = { context_id: string; status: string; filename: string; created: number; pdf?: string };
+export type JobRow = { context_id: string; status: string; filename: string; created: number };
 export const listJobs = async () => j<JobRow[]>(await call("/jobs"));
-/** 그 의뢰가 검수한 PDF. 교정 회차 비교가 지난 회차를 다시 올리게 하지 않으려고 쓴다. */
-export async function jobPdf(ctx: string): Promise<Blob> {
-  const r = await call(`/jobs/${encodeURIComponent(ctx)}/pdf`);
-  if (!r.ok) throw new Error(`이 회차의 PDF를 받지 못했습니다(${r.status})`);
-  return r.blob();
-}
 
 /** 의뢰와 그 소통 기록을 **지운다.** 로그인 여부와 상관없다 — 주인을 가리는 값은 토큰 속
  *  subject이고, 그건 익명 세션에도 있다. 되돌릴 수 없어서 부르는 쪽이 먼저 묻는다. */
