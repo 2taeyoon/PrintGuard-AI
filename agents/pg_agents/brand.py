@@ -46,6 +46,43 @@ def _key(owner: str) -> str:
     return hashlib.sha256(owner.encode()).hexdigest()[:20]
 
 
+# ---------------------------------------------------------------- 이 PC의 주인인 구글 계정
+# 이 PC의 화면과 이 PC의 클로드(MCP)는 한 키트를 쓴다. 그런데 같은 사람이 **공개 사이트**로
+# 들어오면 요청이 터널을 거쳐 '바깥 사람'으로 보이고, 키트가 구글 계정 몫으로 따로 생겼다.
+# 화면에는 그 키트가 보이는데 클로드는 이 PC의 키트로 만들어, "키트대로 안 만든다"가 됐다(실제로 났다).
+#
+# 그래서 **이 PC 앞에서** 구글로 로그인한 계정을 적어 둔다. 그 계정이 공개 사이트로 들어와도 이 PC의
+# 키트를 쓴다. 적는 일은 이 PC에서 직접 온 요청만 한다 — 터널로 들어온 사람은 자기를 적을 수 없다.
+def _owners() -> Path:
+    return BRAND / "pc_owner_accounts.json"
+
+
+def link_pc_owner(subject: str) -> None:
+    if not subject:
+        return
+    BRAND.mkdir(parents=True, exist_ok=True)
+    k = _key(subject)
+    try:
+        got = set(json.loads(_owners().read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        got = set()
+    if k in got:
+        return
+    got.add(k)
+    tmp = _owners().with_suffix(".tmp")
+    tmp.write_text(json.dumps(sorted(got)), encoding="utf-8")
+    os.replace(tmp, _owners())
+
+
+def is_pc_owner(subject: str) -> bool:
+    if not subject:
+        return False
+    try:
+        return _key(subject) in set(json.loads(_owners().read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        return False
+
+
 def _json(owner: str) -> Path:
     return BRAND / f"{_key(owner)}.json"
 

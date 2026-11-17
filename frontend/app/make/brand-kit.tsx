@@ -47,6 +47,16 @@ const fromHex = (hex: string): Pick<BrandColor, "c" | "m" | "y" | "k"> => {
   const p = (v: number) => Math.round(((1 - v - k) / (1 - k)) * 100);
   return { c: p(r), m: p(g), y: p(b), k: Math.round(k * 100) };
 };
+/** 브라우저가 읽어 주는 내 컴퓨터 글꼴 하나(Local Font Access). 크롬·엣지에만 있다. */
+type LocalFont = { family: string; style: string; fullName: string; postscriptName: string; blob: () => Promise<Blob> };
+/** 글꼴 파일 머리 4바이트로 확장자를 정한다 — 서버는 확장자로 형식을 가린다. */
+async function fontFile(f: LocalFont): Promise<File> {
+  const blob = await f.blob();
+  const head = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
+  const tag = String.fromCharCode(...head);
+  const ext = tag === "OTTO" ? ".otf" : tag === "ttcf" ? ".ttc" : ".ttf";
+  return new File([blob], `${f.postscriptName || f.fullName}${ext}`, { type: "font/" + ext.slice(1) });
+}
 const kb = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)}MB` : `${Math.round(n / 1024)}KB`);
 
 export default function BrandKitPanel() {
@@ -126,6 +136,29 @@ export default function BrandKitPanel() {
     const got = k.fonts?.[k.fonts.length - 1];        // 서버는 새로 올린 것을 끝에 붙인다
     setMsg({ ok: true, text: `글꼴을 올렸습니다 — ${got ? `${got.family} ${got.style}` : f.name}. 위 글꼴 칸에서 고르세요.` });
   });
+  // 내 컴퓨터 글꼴 — 브라우저가 처음 한 번 '글꼴 읽기'를 허락할지 묻는다. 고르면 그 파일을 읽어 위와 같은 길로
+  // 키트에 올린다. 그래서 공개 사이트에서도 된다(에이전트 PC가 아니라 **보고 있는 사람의 컴퓨터** 글꼴이다).
+  const [local, setLocal] = useState<Map<string, LocalFont[]> | null>(null);
+  const [localQ, setLocalQ] = useState("");
+  const loadLocal = () => run("내 컴퓨터 글꼴 읽는 중…", async () => {
+    const q = (window as unknown as { queryLocalFonts?: () => Promise<LocalFont[]> }).queryLocalFonts;
+    if (!q) throw new Error("이 브라우저는 내 컴퓨터 글꼴을 읽지 못합니다(크롬·엣지에서 됩니다). 아래에서 글꼴 파일을 올려 주세요.");
+    const all = await q.call(window);
+    const byFamily = new Map<string, LocalFont[]>();
+    for (const f of all) byFamily.set(f.family, [...(byFamily.get(f.family) ?? []), f]);
+    setLocal(byFamily);
+    setMsg({ ok: true, text: `이 컴퓨터 글꼴 ${byFamily.size}종을 읽었습니다. 이름으로 찾아 굵기를 누르면 키트에 올립니다(한글이 있는 것만 받습니다).` });
+  });
+  const pickLocal = (f: LocalFont) => run(`${f.fullName} 올리는 중…`, async () => {
+    const k = await uploadBrandFont(await fontFile(f));
+    setSaved((sv) => ({ ...(sv ?? k), fonts: k.fonts })); setKit((cur) => ({ ...cur, fonts: k.fonts }));
+    setEditing(true);
+    setMsg({ ok: true, text: `글꼴을 올렸습니다 — ${f.fullName}. 위 글꼴 칸에서 고르세요.` });
+  });
+  const localShown = local
+    ? [...local.entries()].filter(([fam]) => !localQ || fam.toLowerCase().includes(localQ.toLowerCase()))
+      .sort(([a], [b]) => a.localeCompare(b, "ko")).slice(0, 40)
+    : [];
   const dropFont = (name: string) => run("글꼴 빼는 중…", async () => {
     const k = await deleteBrandFont(name);
     setSaved(k); setKit((cur) => ({ ...cur, fonts: k.fonts, title_font: k.title_font, body_font: k.body_font }));
@@ -221,6 +254,32 @@ export default function BrandKitPanel() {
             ))}
           </ul>
         )}
+        <div className="bk_local">
+          <button type="button" className="ghost small" disabled={!!busy} onClick={() => void loadLocal()}>
+            이 컴퓨터 글꼴에서 고르기
+          </button>
+          {local && (
+            <input value={localQ} placeholder={`글꼴 이름으로 찾기 (${local.size}종)`} aria-label="내 컴퓨터 글꼴 찾기"
+              onChange={(e) => setLocalQ(e.target.value)} />
+          )}
+        </div>
+        {local && (
+          <ul className="bk_local_list">
+            {localShown.map(([fam, faces]) => (
+              <li key={fam}>
+                <b>{fam}</b>
+                {fonts.includes(fam) && <span className="note">이 PC에 깔려 있어 올리지 않고도 고를 수 있음</span>}
+                <span className="bk_local_styles">
+                  {faces.map((f) => (
+                    <button key={f.postscriptName || f.fullName} type="button" className="ghost small" disabled={!!busy}
+                      onClick={() => void pickLocal(f)}>{f.style}</button>
+                  ))}
+                </span>
+              </li>
+            ))}
+            {localShown.length === 0 && <li className="note">찾는 글꼴이 없습니다.</li>}
+          </ul>
+        )}
         <input type="file" accept=".ttf,.otf,.ttc"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) void addFont(f); e.target.value = ""; }} />
         <p className="note">
@@ -233,6 +292,9 @@ export default function BrandKitPanel() {
       <div className="bk_colors">
         <b>색 <span className="note">(CMYK · 0~100 · 첫 색이 주된 색 · 네모를 누르면 색 고르기 창)</span></b>
         {kit.colors.length === 0 && <p className="note">아직 등록한 색이 없습니다.</p>}
+        {kit.colors[0] && kit.colors[0].c + kit.colors[0].m + kit.colors[0].y + kit.colors[0].k === 0 && (
+          <p className="err">첫 색(주된 색)이 C0 M0 Y0 K0, 곧 흰색입니다. 주된 색은 제목·띠·강조에 쓰여서 흰 종이에서는 보이지 않습니다.</p>
+        )}
         {kit.colors.map((c, i) => (
           // 이름 줄과 CMYK 줄을 나눠 둔다. 넓은 화면에서는 두 묶음이 한 줄로 이어지고(display: contents),
           // 폰에서는 이름·빼기 한 줄, C·M·Y·K 한 줄로 갈린다 — 안 나누면 K만 다음 줄로 떨어졌다.

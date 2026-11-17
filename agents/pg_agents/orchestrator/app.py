@@ -809,15 +809,22 @@ async def dc_commands() -> dict[str, Any]:
 
 def _kit_owner(request: Request, authorization: str | None, write: bool = False) -> str:
     """이 PC에서 온 요청이면(이 PC의 브라우저든 이 PC의 클로드든) 한 사람으로 본다 —
-    `_visible`과 같은 규칙이다. 그래야 화면에서 등록한 키트를 클로드가 MCP로 만들 때 쓴다."""
-    who = _writer(authorization).subject if write else _who(authorization)
+    `_visible`과 같은 규칙이다. 그래야 화면에서 등록한 키트를 클로드가 MCP로 만들 때 쓴다.
+    이 PC 앞에서 구글로 로그인한 계정은 공개 사이트로 들어와도 같은 키트를 쓴다(`brand.link_pc_owner`)."""
+    c = _writer(authorization) if write else _claims(authorization)
+    who = c.subject if c else ""
     # 터널(cloudflared 같은 것)을 거쳐 온 요청도 주소는 127.0.0.1이다. 그대로 믿으면 바깥 사람이
     # 이 PC 주인의 키트를 고칠 수 있다. 중계 머리말이 붙어 있으면 바깥으로 본다.
     proxied = any(h in request.headers for h in ("x-forwarded-for", "cf-connecting-ip", "forwarded", "x-real-ip"))
     if _at_this_pc(request) and not proxied:
+        # 구글로 로그인한 사람만 적는다. 익명 토큰은 브라우저 주소마다 달라 적어 봐야 공개 사이트에서 쓸 일이 없다.
+        if c and c.kind == "browser" and c.label != "anon":
+            brand.link_pc_owner(c.subject)
         return tool_subject()
     if not who:
         raise HTTPException(401, "토큰이 필요합니다")
+    if brand.is_pc_owner(who):
+        return tool_subject()
     return who
 
 
