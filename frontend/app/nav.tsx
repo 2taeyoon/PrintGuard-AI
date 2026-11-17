@@ -44,7 +44,6 @@ export default function Shell({ children }: { children: ReactNode }) {
       <footer className="sitefoot">
         <Link href="/privacy">개인정보처리방침</Link>
         <Link href="/terms">이용약관</Link>
-        <a href="https://github.com/2taeyoon/PrintGuard-AI" target="_blank" rel="noreferrer">GitHub</a>
       </footer>
     </div>
   );

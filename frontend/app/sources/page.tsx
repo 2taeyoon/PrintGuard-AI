@@ -100,6 +100,7 @@ const GROUPS: Group[] = [
       { name: "Next.js 16 · React 19", use: "앱 화면", url: "https://nextjs.org" },
       { name: "PDF.js (pdfjs-dist)", use: "PDF 해석과 쪽 그리기. ‘회차 비교’에서는 두 회차의 낱말과 위치를 읽고 쪽을 같은 배율로 그려 대조합니다(브라우저 안)", url: "https://mozilla.github.io/pdf.js/" },
       { name: "가장 긴 공통 부분열 (Longest common subsequence)", use: "‘회차 비교’의 낱말 대조 — 두 회차의 낱말 줄에서 공통 부분을 찾아 지워진 낱말과 새로 들어간 낱말을 가립니다", url: "https://en.wikipedia.org/wiki/Longest_common_subsequence" },
+      { name: "Local Font Access API (W3C WICG)", use: "브랜드 키트의 ‘이 컴퓨터 글꼴’. 허용하면 브라우저가 보고 있는 컴퓨터의 글꼴 목록과 파일을 읽어 준다(크롬·엣지). 고른 글꼴만 저장할 때 키트로 올린다", url: "https://wicg.github.io/local-font-access/" },
       { name: "OpenType 규격 — name·cmap 표 (Microsoft)", use: "브랜드 키트의 글꼴 목록. 이 PC의 글꼴 파일에서 패밀리 이름(name)과 한글 ‘가’가 있는지(cmap)만 직접 읽습니다", url: "https://learn.microsoft.com/en-us/typography/opentype/spec/" },
       { name: "pdf-lib", use: "평가용 샘플 PDF 만들기", url: "https://pdf-lib.js.org" },
       { name: "onnxruntime-web", use: "브라우저에서 임베딩 모델 실행", url: "https://onnxruntime.ai" },
