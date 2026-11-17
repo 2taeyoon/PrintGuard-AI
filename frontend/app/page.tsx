@@ -15,6 +15,7 @@ import { CUSTOM, GROUPS as FORMATS, dims, match } from "@/lib/formats";
 import { measure, type Measured } from "@/lib/pagesize";
 import { assess, inputFrom, type Risk } from "@/lib/risk";
 import CopyFixes from "./copy-fixes";
+import ComparePanel from "./compare-panel";
 import { LAYOUT_FIX, autoFixOf } from "@/lib/fixlist";
 import { SignInNote } from "./sign-in";
 import FixResultPanel from "./fix-result";
@@ -366,7 +367,7 @@ function Home() {
       {/* 가이드 검색: 검수 전에 규격을 확인할 수 있게 맨 위에 둔다(기본은 접힘) */}
       <GuideSearch guide={guide} mode={mode} ready={!!agentUp}
         badge={mode === "direct" ? <GuideBadge ready={!!guide} status={guideStatus} />
-          : <span className="badge">Guide 에이전트 준비됨</span>} />
+          : <span className="badge good">Guide 에이전트 준비됨</span>} />
 
       <div className="modebar" role="tablist" aria-label="검사 방식">
         <button type="button" role="tab" aria-selected={mode === "agent"} className={`pill${mode === "agent" ? " on" : ""}`} onClick={() => setMode("agent")}>
@@ -732,6 +733,9 @@ function Home() {
           </div>
         </>
       )}
+      {/* 교정지를 주고받을 때 — 이전본과 수정본을 맞대 본다(브라우저 안에서만) */}
+      <ComparePanel />
+
       <div className="disclaimer">
         <p>이 검수 결과는 인쇄소의 최종 승인과 사람의 교정을 대체하지 않습니다. 색상은 실제 인쇄 결과를 보장하지 않는 위험 예측입니다.</p>
         <p>계산에는 한계가 있습니다. 색 공간은 PDF 안의 정보를 읽은 값이고, 이미지 매칭은 가로·세로 픽셀 수로 합니다.

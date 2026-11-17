@@ -8,7 +8,6 @@ import SignIn from "./sign-in";
 
 const TABS = [
   { href: "/", label: "인쇄 검수" },
-  { href: "/compare", label: "회차 비교" },
   { href: "/make", label: "작업 만들기" },
   { href: "/papers", label: "종이 안내" },
   { href: "/shops", label: "인쇄소 지도" },
