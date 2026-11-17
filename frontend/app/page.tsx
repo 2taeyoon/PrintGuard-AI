@@ -733,8 +733,8 @@ function Home() {
           </div>
         </>
       )}
-      {/* 교정지를 주고받을 때 — 이전본과 수정본을 맞대 본다(브라우저 안에서만) */}
-      <ComparePanel />
+      {/* 교정지를 주고받을 때 — 같은 문서를 또 검수하면 지난 회차와 바로 맞대 본다 */}
+      <ComparePanel current={agentJob?.context_id} />
 
       <div className="disclaimer">
         <p>이 검수 결과는 인쇄소의 최종 승인과 사람의 교정을 대체하지 않습니다. 색상은 실제 인쇄 결과를 보장하지 않는 위험 예측입니다.</p>

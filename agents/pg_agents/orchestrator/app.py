@@ -268,7 +268,23 @@ async def health() -> dict[str, Any]:
 async def list_jobs(authorization: str | None = Auth) -> dict[str, Any]:
     mine = _mine(_who(authorization))
     rows = sorted((j for j in JOBS.values() if j.context_id in mine), key=lambda j: -j.created)[:30]
-    return {"data": [{"context_id": j.context_id, "status": j.status, "filename": j.filename, "created": j.created} for j in rows], "meta": {}}
+    # pdf는 파일 지문(앞 12자). 같은 파일을 옵션만 바꿔 다시 검수한 것을 회차 비교가 새 회차로 세지 않게 한다.
+    return {"data": [{"context_id": j.context_id, "status": j.status, "filename": j.filename, "created": j.created,
+                      "pdf": (j.pdf_ref or "")[:12]} for j in rows], "meta": {}}
+
+
+@app.get("/jobs/{ctx}/pdf")
+async def job_pdf(ctx: str, authorization: str | None = Auth) -> FileResponse:
+    """그 의뢰가 검수한 PDF를 돌려준다. 교정 회차 비교가 쓴다.
+
+    전에는 비교하려면 이전본·수정본 PDF를 손으로 다시 골라 올려야 했다. 이미 검수하며 올린 파일을
+    또 찾게 하는 셈이라, 같은 문서를 여러 번 검수했으면 화면이 그 회차들을 바로 꺼내 비교한다.
+    남의 의뢰는 지우기와 같이 '없는 의뢰'로 답한다."""
+    j = _owned(ctx, _who(authorization))
+    p = STORE / f"{j.pdf_ref}.pdf"
+    if not j.pdf_ref or not p.is_file():
+        raise HTTPException(404, "이 회차의 PDF가 남아 있지 않습니다")
+    return FileResponse(p, media_type="application/pdf", filename=j.filename or "round.pdf")
 
 
 # ---------- 지우기 ----------
