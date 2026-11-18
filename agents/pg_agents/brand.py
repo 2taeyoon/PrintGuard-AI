@@ -39,6 +39,8 @@ from .config import DATA
 
 BRAND = DATA / "brand"
 MAX_COLORS = 6
+MAX_TERMS = 100      # '우리 회사 표기' 짝의 상한. 한 쪽마다 전부 찾아 보므로 끝없이 받지 않는다
+TERM_MAX_LEN = 30
 NAME_RE = re.compile(r"^[0-9A-Za-z가-힣 _\-]{1,20}$")
 
 
@@ -142,6 +144,38 @@ def validate(body: dict[str, Any], fonts: list[str] | dict[str, bool] | None = N
         out[slot] = f
     if isinstance(fonts, dict):
         out["latin_only"] = sorted({f for f in (out["title_font"], out["body_font"]) if f and not fonts.get(f, True)})
+    out["terms"] = validate_terms(body.get("terms") or [])
+    return out
+
+
+def validate_terms(items: Any) -> list[dict[str, str]]:
+    """'우리 회사 표기' — 틀린 표기 → 맞는 표기. 검수가 문서에서 틀린 표기를 찾아 맞는 표기로 바꿀 짝을
+    만든다(편집 파일이면 원본 수정까지). 그래서 **어긋난 짝은 받지 않는다**:
+
+    - 같은 '틀린 표기'가 두 번이면 어느 쪽으로 바꿀지 정할 수 없다.
+    - '맞는 표기'가 다른 짝의 '틀린 표기'면 바꾼 글자를 다시 바꾸게 된다(앱→어플→앱 …).
+    """
+    if not isinstance(items, list) or len(items) > MAX_TERMS:
+        raise ValueError(f"표기는 {MAX_TERMS}개까지 등록합니다")
+    out: list[dict[str, str]] = []
+    for t in items:
+        wrong = str((t or {}).get("wrong") or "").strip()
+        right = str((t or {}).get("right") or "").strip()
+        if not wrong and not right:
+            continue
+        if not wrong or not right:
+            raise ValueError(f"표기는 '틀린 표기'와 '맞는 표기'를 둘 다 적어 주세요: '{wrong or right}'")
+        if len(wrong) > TERM_MAX_LEN or len(right) > TERM_MAX_LEN:
+            raise ValueError(f"표기는 {TERM_MAX_LEN}자까지입니다: '{wrong}'")
+        if wrong == right:
+            raise ValueError(f"틀린 표기와 맞는 표기가 같습니다: '{wrong}'")
+        if any(o["wrong"] == wrong for o in out):
+            raise ValueError(f"같은 틀린 표기가 두 번 있습니다: '{wrong}'")
+        out.append({"wrong": wrong, "right": right})
+    wrongs = {o["wrong"] for o in out}
+    for o in out:
+        if o["right"] in wrongs:
+            raise ValueError(f"'{o['right']}'는 다른 줄에서 틀린 표기로 적혀 있습니다 — 바꾼 글자를 또 바꾸게 됩니다")
     return out
 
 

@@ -365,3 +365,27 @@ def test_brand_for_carries_latin_only_to_the_prompt(monkeypatch):
     got = orch._brand_for("ctx", {}, "kit-x")
     assert got["latin_only"] == ["BrandSans"]
     assert "한글이 없다" in brand.prompt_block(got, None, "Malgun Gothic")
+
+
+def test_house_terms_are_kept_and_crossed_pairs_refused():
+    """'우리 회사 표기'는 검수가 찾아 바꿀 짝이 된다. 바꿀 쪽을 정할 수 없는 짝은 받지 않는다."""
+    kit = brand.validate({**KIT, "terms": [{"wrong": " 어플 ", "right": "앱"}, {"wrong": "", "right": ""}]})
+    assert kit["terms"] == [{"wrong": "어플", "right": "앱"}], "앞뒤 빈칸은 떼고, 빈 줄은 버린다"
+    assert brand.validate(KIT)["terms"] == [], "표기가 없어도 키트는 저장된다"
+    with pytest.raises(ValueError, match="두 번"):
+        brand.validate({"terms": [{"wrong": "어플", "right": "앱"}, {"wrong": "어플", "right": "애플리케이션"}]})
+    with pytest.raises(ValueError, match="또 바꾸게"):
+        brand.validate({"terms": [{"wrong": "어플", "right": "앱"}, {"wrong": "앱", "right": "어플"}]})
+    with pytest.raises(ValueError, match="같습니다"):
+        brand.validate({"terms": [{"wrong": "앱", "right": "앱"}]})
+    with pytest.raises(ValueError, match="둘 다"):
+        brand.validate({"terms": [{"wrong": "어플", "right": ""}]})
+    with pytest.raises(ValueError, match="100개"):
+        brand.validate({"terms": [{"wrong": f"w{i}", "right": f"r{i}"} for i in range(101)]})
+
+
+def test_house_terms_survive_the_api_round_trip():
+    c = TestClient(app)
+    r = c.put("/designcraft/brand", json={**KIT, "terms": [{"wrong": "홈페이지", "right": "웹사이트"}]}, headers=_h("terms-user"))
+    assert r.status_code == 200, r.text
+    assert c.get("/designcraft/brand", headers=_h("terms-user")).json()["data"]["terms"] == [{"wrong": "홈페이지", "right": "웹사이트"}]

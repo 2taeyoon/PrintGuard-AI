@@ -15,12 +15,12 @@ from ..server import create_agent_app
 from .detectors import detect
 
 DEFAULT_METHODS = os.environ.get("PG_PROOF_METHODS", "rules,kiwi_typo")
-KIND_LABEL = {"misuse": "맞춤법·표준어", "spacing": "띄어쓰기", "rate": "율/률", "typo": "오타", "llm": "교정(LLM)"}
+KIND_LABEL = {"misuse": "맞춤법·표준어", "spacing": "띄어쓰기", "rate": "율/률", "typo": "오타", "llm": "교정(LLM)", "house": "표기 통일(브랜드 키트)"}
 
 CARD = AgentCard.model_validate({
     "name": "proofread", "description": "맞춤법·띄어쓰기·오타 수정 제안(자동 수정 없음). PDF 본문은 untrusted로 다룬다.", "url": "http://127.0.0.1:8706",
     "skills": [{"id": "suggest_corrections", "description": "PDF의 쪽별 글에서 틀린 곳을 찾아 수정 제안을 돌려준다(원문은 고치지 않는다)", "grade": "read",
-                "allowed_requesters": ["orchestrator", "report", "mcp"], "input_schema": {"pdf_ref": "sha256", "methods": "string?"},
+                "allowed_requesters": ["orchestrator", "report", "mcp"], "input_schema": {"pdf_ref": "sha256", "methods": "string?", "terms": "[{wrong,right}]? 브랜드 키트의 회사 표기"},
                 "output_schema": {"suggestions": "[{key,page,original,suggestion,reason,kind,kind_label,source,rect}]"}}],
 })
 
@@ -33,7 +33,7 @@ def page_texts(pdf_ref: str) -> list[tuple[str, Any]]:
     return [(p.get_text("text"), p) for p in doc]
 
 
-def suggest(pdf_ref: str, methods: list[str]) -> tuple[list[dict[str, Any]], dict[str, str]]:
+def suggest(pdf_ref: str, methods: list[str], terms: list[dict[str, str]] | None = None) -> tuple[list[dict[str, Any]], dict[str, str]]:
     """쪽마다 탐지기를 돌려 제안을 모은다. 넘어진 방법은 **그 쪽에서 빼고 계속 간다.**
 
     탐지는 쪽 단위다. 20쪽짜리면 LLM을 스무 번 부르는데, 무료 등급은 분당 횟수가 정해져 있어
@@ -45,7 +45,7 @@ def suggest(pdf_ref: str, methods: list[str]) -> tuple[list[dict[str, Any]], dic
     left = list(methods)
     bad: dict[str, str] = {}
     for no, (text, page) in enumerate(page_texts(pdf_ref), start=1):
-        found, broke = detect(text, left)
+        found, broke = detect(text, left, terms)
         for m, why in broke.items():
             bad.setdefault(m, why)
             if m in left:
@@ -61,12 +61,13 @@ def suggest(pdf_ref: str, methods: list[str]) -> tuple[list[dict[str, Any]], dic
 
 
 # 방법 이름을 사람 말로. 화면이 '무엇이 빠졌는지'를 말하려면 이 이름이 필요하다.
-METHOD_LABEL = {"rules": "규칙 사전", "kiwi_typo": "Kiwi 오타 모델", "kiwi_space": "Kiwi 띄어쓰기", "llm": "LLM 교정"}
+METHOD_LABEL = {"rules": "규칙 사전", "kiwi_typo": "Kiwi 오타 모델", "kiwi_space": "Kiwi 띄어쓰기", "llm": "LLM 교정", "house": "브랜드 키트 표기"}
 
 
 async def suggest_corrections(req):
     methods = [m for m in str(req.input.get("methods") or DEFAULT_METHODS).split(",") if m]
-    sug, bad = suggest(str(req.input.get("pdf_ref")), methods)
+    terms = [t for t in (req.input.get("terms") or []) if isinstance(t, dict)][:100]
+    sug, bad = suggest(str(req.input.get("pdf_ref")), methods, terms)
     # 넘어진 방법이 있어도 **완료로 돌려준다.** 전에는 통째로 실패여서, LLM이 분당 한도에 걸리면
     # 규칙·Kiwi가 찾아 둔 맞춤법까지 같이 사라지고 뒤의 원본 수정 단계도 서지 못했다.
     skipped = [{"method": m, "label": METHOD_LABEL.get(m, m), "reason": why} for m, why in bad.items()]

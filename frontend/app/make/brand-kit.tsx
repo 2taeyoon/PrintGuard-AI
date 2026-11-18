@@ -28,7 +28,15 @@ import {
 } from "@/lib/agentClient";
 
 const MAX_COLORS = 6;
-const EMPTY: BrandKit = { name: "", colors: [], title_font: "", body_font: "", logo: null, fonts: [] };
+const EMPTY: BrandKit = { name: "", colors: [], title_font: "", body_font: "", logo: null, fonts: [], terms: [] };
+
+// '우리 회사 표기'는 한 줄에 하나 — `틀린 표기 → 맞는 표기`. 화살표 대신 `->`나 `=`도 받는다.
+// 쓰는 중인 줄을 망가뜨리지 않으려고 글 상자는 글 그대로 들고 있다가 저장할 때만 짝으로 바꾼다.
+const fmtTerms = (t?: { wrong: string; right: string }[]) => (t ?? []).map((x) => `${x.wrong} → ${x.right}`).join("\n");
+const parseTerms = (s: string) => s.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).map((l) => {
+  const [wrong, ...rest] = l.split(/\s*(?:→|->|=>|=)\s*/);
+  return { wrong: (wrong ?? "").trim(), right: rest.join(" ").trim() };
+});
 const PREVIEWABLE = /\.(png|jpe?g|svg)$/i;
 
 /** 화면용 어림 색. 인쇄 색과 같지 않다 — 그래서 값 칸 옆에만 작게 둔다. */
@@ -86,6 +94,7 @@ export default function BrandKitPanel() {
   // 등록해 둔 키트는 **요약으로 접어** 보여 준다. 늘 펼쳐 두면 칸이 길어 아래 '에이전트가 하는 일'을
   // 밀어내고, 정작 무엇이 등록돼 있는지는 입력 칸 사이에 묻힌다. 고칠 때만 펼친다.
   const [editing, setEditing] = useState(false);
+  const [termsText, setTermsText] = useState("");
 
   // 미리보기 요청에 번호를 붙인다. 올리고 바로 지우는 식으로 연달아 부르면, 먼저 보낸 요청의 답이
   // 늦게 와서 지운 로고를 다시 띄웠다. 마지막 번호가 아닌 답은 버리고 그 blob 주소도 놓아 준다.
@@ -114,7 +123,7 @@ export default function BrandKitPanel() {
 
   useEffect(() => {
     Promise.all([getBrand(), brandFonts().catch(() => [] as InstalledFont[])])
-      .then(([k, f]) => { setFonts(f); setSaved(k); setKit(k ?? EMPTY); showLogo(k); },
+      .then(([k, f]) => { setFonts(f); setSaved(k); setKit(k ?? EMPTY); setTermsText(fmtTerms(k?.terms)); showLogo(k); },
         (e: unknown) => setMsg({ ok: false, text: `키트를 불러오지 못했습니다 — ${e instanceof Error ? e.message : String(e)}` }))
       .finally(() => setBusy(null));
   }, [showLogo]);
@@ -149,8 +158,9 @@ export default function BrandKitPanel() {
       draft = { ...draft, [slot]: got };
     }
     setBusy("저장 중…");
-    const k = await saveBrand({ name: draft.name, colors: draft.colors, title_font: draft.title_font, body_font: draft.body_font });
-    setSaved(k); setKit(k); setEditing(false);
+    const k = await saveBrand({ name: draft.name, colors: draft.colors, title_font: draft.title_font, body_font: draft.body_font,
+      terms: parseTerms(termsText) });
+    setSaved(k); setKit(k); setTermsText(fmtTerms(k.terms)); setEditing(false);
     setMsg({ ok: true, text: "저장했습니다. 이제 클로드에게 만들게 하면 이 키트로 짭니다." });
   });
   const logo = (f: File) => run("로고 올리는 중…", async () => {
@@ -213,13 +223,14 @@ export default function BrandKitPanel() {
   const wipe = () => run("지우는 중…", async () => {
     setSure(false);
     await deleteBrand();
-    setSaved(null); setKit(EMPTY); showLogo(null); setEditing(false);
+    setSaved(null); setKit(EMPTY); setTermsText(""); showLogo(null); setEditing(false);
     setMsg({ ok: true, text: "키트를 지웠습니다." });
   });
 
-  const dirty = JSON.stringify({ ...kit, logo: null }) !== JSON.stringify({ ...(saved ?? EMPTY), logo: null });
+  const dirty = JSON.stringify({ ...kit, logo: null, terms: null }) !== JSON.stringify({ ...(saved ?? EMPTY), logo: null, terms: null })
+    || termsText.trim() !== fmtTerms(saved?.terms).trim();
   const form = !saved || editing;
-  const cancel = () => { setKit(saved ?? EMPTY); setEditing(false); setMsg(null); };
+  const cancel = () => { setKit(saved ?? EMPTY); setTermsText(fmtTerms(saved?.terms)); setEditing(false); setMsg(null); };
   // 고를 수 있는 글꼴 — 겹치지 않게 한 번씩만:
   //   기본(Malgun Gothic) / 키트에 올린 글꼴 / 이 PC에 설치한 글꼴 / 윈도우 기본 글꼴 / 내 컴퓨터에만 있는 글꼴.
   // 한글·영문으로 묶음을 나누지 않는다 — 이름 옆에 지원 언어를 붙인다('Batang (한글·영문·한자)', 'Arial (영문)').
@@ -292,6 +303,9 @@ export default function BrandKitPanel() {
               ))}
               {saved.colors.length === 0 && <span className="note">등록한 색 없음</span>}
             </div>
+            {(saved.terms ?? []).length > 0 && (
+              <span className="note">우리 회사 표기 {saved.terms!.length}개 — {saved.terms!.slice(0, 3).map((t) => `${t.wrong}→${t.right}`).join(", ")}{saved.terms!.length > 3 ? " …" : ""}</span>
+            )}
           </div>
         </div>
       )}
@@ -383,6 +397,18 @@ export default function BrandKitPanel() {
         {kit.colors.length < MAX_COLORS && (
           <button type="button" className="ghost small" onClick={addColor}>색 등록하기</button>
         )}
+      </div>
+
+      <div className="bk_terms">
+        <label className="bk_field">
+          <b>우리 회사 표기 <span className="note">(한 줄에 하나 · 틀린 표기 → 맞는 표기)</span></b>
+          <textarea rows={4} value={termsText} placeholder={"어플 → 앱\n홈페이지 → 웹사이트\nPrintguard → PrintGuard"}
+            onChange={(e) => setTermsText(e.target.value)} />
+        </label>
+        <p className="note">
+          검수할 때 문서에서 왼쪽 표기를 찾아 오른쪽으로 고치자고 제안합니다. 편집 파일(<code>.idml</code>)로 맡기면 맞춤법처럼 원본 사본까지 고칩니다.
+          회사가 정한 표기라 어느 쪽이 맞는지 따지지 않으니, 정말로 늘 바꿀 것만 넣어 주세요.
+        </p>
       </div>
 
       <div className="bk_logo">

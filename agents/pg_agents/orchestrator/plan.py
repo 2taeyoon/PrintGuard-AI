@@ -31,6 +31,27 @@ def _size(j: Job) -> dict[str, Any]:
     return {"pdf_ref": j.pdf_ref, "width_mm": o.get("width_mm", 148), "height_mm": o.get("height_mm", 210), "bleed_mm": o.get("bleed_mm", 3)}
 
 
+def _preflight(j: Job) -> dict[str, Any]:
+    # 인쇄소 규격(도련·안전 여백·해상도·PDF/X …). 없으면 preflight가 기본 규격으로 본다 — 전과 같은 결과.
+    spec = j.options.get("spec")
+    return {**_size(j), **({"spec": spec} if isinstance(spec, dict) else {})}
+
+
+def house_terms(j: Job) -> list[dict[str, str]]:
+    """브랜드 키트의 '우리 회사 표기'. 화면이 키트에서 읽어 의뢰 옵션에 실어 보낸다.
+    교정 에이전트가 이것을 찾아 바꿀 짝으로 만들면, 맞춤법 교정과 같은 길로 원본 수정까지 간다."""
+    out = []
+    for t in j.options.get("terms") or []:
+        if isinstance(t, dict) and str(t.get("wrong") or "") and str(t.get("right") or "") and t.get("wrong") != t.get("right"):
+            out.append({"wrong": str(t["wrong"])[:30], "right": str(t["right"])[:30]})
+    return out[:100]
+
+
+def _proofread(j: Job) -> dict[str, Any]:
+    terms = house_terms(j)
+    return {"pdf_ref": j.pdf_ref, **({"terms": terms} if terms else {})}
+
+
 def _color(j: Job) -> dict[str, Any]:
     o = j.options
     return {**_size(j), "paper_id": paper_id(j), "profile": o.get("profile", "auto"), "intent": o.get("intent", "relative"),
@@ -129,10 +150,10 @@ def report_input(j: Job) -> dict[str, Any]:
 
 
 def build_plan(available: set[str]) -> list[list[Call]]:
-    first = [Call("preflight", "preflight", "check_structure", _size),
+    first = [Call("preflight", "preflight", "check_structure", _preflight),
              Call("color", "color", "predict_color", _color, when=paper_known)]
     if "proofread" in available:
-        first.append(Call("proofread", "proofread", "suggest_corrections", lambda j: {"pdf_ref": j.pdf_ref},
+        first.append(Call("proofread", "proofread", "suggest_corrections", _proofread,
                           when=lambda j: bool(j.options.get("proofread", True))))
     plan = [first,
             [Call("paper_choice", "paper", "recommend_paper", _recommend, when=lambda j: not paper_known(j))],

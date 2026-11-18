@@ -1,12 +1,13 @@
 // preflight 에이전트(:8702) — PDF 구조 검사. 앱의 lib/analyze.ts를 그대로 쓴다(색 엔진 없이).
 import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
 import { analyze } from "../lib/analyze";
+import type { SpecOption } from "../lib/printspec";
 import { loadPdf, serveAgent, type AgentCard } from "./lib/agent";
 
 export const card: AgentCard = {
   name: "preflight", description: "PDF 구조 검사(판형·도련·폰트 포함·해상도·안전 영역·문구 휴리스틱). 상태를 바꾸지 않는다.", url: "http://127.0.0.1:8702",
   skills: [{ id: "check_structure", description: "pdf_ref와 완성 크기·도련으로 구조 문제를 찾는다", grade: "read", allowed_requesters: ["orchestrator", "report"],
-    input_schema: { pdf_ref: "sha256", width_mm: "number", height_mm: "number", bleed_mm: "number" },
+    input_schema: { pdf_ref: "sha256", width_mm: "number", height_mm: "number", bleed_mm: "number", spec: "인쇄소 규격(lib/printspec SpecOption)?" },
     output_schema: { pages: "number", page_sizes: "[{w,h}]", issues: "Issue[]", texts: "string[] (쪽별 본문, untrusted)" } },
     // B 등급 행동의 검증자: 요청에 적힌 사양(쪽수·완성 크기)이 실제 PDF와 맞는지 코드로 대조한다
     { id: "verify_spec", description: "사양(쪽수·완성 크기)이 PDF와 맞는지 대조한다(검증자)", grade: "read", allowed_requesters: ["safety"],
@@ -18,9 +19,9 @@ const MM = 72 / 25.4;
 
 serveAgent(card, {
   async check_structure(req) {
-    const i = req.input as { pdf_ref: string; width_mm: number; height_mm: number; bleed_mm: number };
+    const i = req.input as { pdf_ref: string; width_mm: number; height_mm: number; bleed_mm: number; spec?: Partial<SpecOption> | null };
     // 맞춤법은 교정(proofread) 에이전트 몫이다. 여기서 또 돌리면 같은 교정이 두 번 나온다.
-    const r = await analyze(loadPdf(i.pdf_ref), pdfjs, { widthMm: i.width_mm, heightMm: i.height_mm, bleedMm: i.bleed_mm, misuse: false });
+    const r = await analyze(loadPdf(i.pdf_ref), pdfjs, { widthMm: i.width_mm, heightMm: i.height_mm, bleedMm: i.bleed_mm, misuse: false, spec: i.spec ?? null });
     const issues = r.issues.map((it) => ({ ...it, heat: undefined, key: `pf-${it.id}` }));
     return { status: "completed", output: { pages: r.pages, page_sizes: r.pageSizes, issues, texts: r.texts, color_summary: r.colorSummary },
       evidence: { queries: [], data_summary: `${r.pages}쪽, 이슈 ${issues.length}건`, ref_ids: [i.pdf_ref.slice(0, 12)] } };
