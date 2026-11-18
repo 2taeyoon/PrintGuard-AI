@@ -15,7 +15,6 @@ import os
 import time
 from types import SimpleNamespace
 
-os.environ["PG_FAKE_AGENTS"] = "1"
 os.environ["PG_GOOGLE_CLIENT_ID"] = "test-client.apps.googleusercontent.com"
 
 import jwt  # noqa: E402

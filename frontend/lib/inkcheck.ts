@@ -18,7 +18,9 @@
 // 정해져 있어 보이지만, 인디자인에서 그 색은 견본(swatch) 하나를 여러 곳이 같이 쓴다 — 큰 제목이나
 // 배경의 리치 블랙은 일부러 쓴 것이다. 견본을 바꾸면 그쪽까지 바뀐다. 저해상도 사진을 줄여 '고쳤던'
 // 일과 같은 자리라 기계가 정하지 않는다.
-import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream, PDFRef, PDFStream, decodePDFRawStream } from "pdf-lib";
+import {
+  PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream, PDFRef, PDFStream, StandardFontEmbedder, StandardFonts, decodePDFRawStream,
+} from "pdf-lib";
 
 export type InkKind = "richblack" | "rgbblack" | "tac" | "overprint" | "registration" | "hairline" | "rgbvector";
 export type InkFinding = {
@@ -36,7 +38,12 @@ type Mat = number[];
 type Color = { fam: "gray" | "rgb" | "cmyk" | "sep" | "devn" | "other"; comps: number[]; names?: string[] };
 type CS = { fam: Color["fam"]; n: number; names?: string[] };
 type GState = { ctm: Mat; fill: Color; stroke: Color; fillCS: CS; strokeCS: CS; lw: number; opFill: boolean; opStroke: boolean };
-type Tok = { t: "num"; v: number } | { t: "name"; v: string } | { t: "str"; n: number } | { t: "arr"; v: Tok[] } | { t: "dict" } | { t: "mark"; v: "[" | "<<" };
+// 문자열은 바이트 그대로(한 글자 = 한 바이트인 latin1 문자열) 들고 간다 — 글자 폭을 글꼴 표에서 찾으려면 코드 값이 필요하다
+type Tok = { t: "num"; v: number } | { t: "name"; v: string } | { t: "str"; s: string } | { t: "arr"; v: Tok[] } | { t: "dict" } | { t: "mark"; v: "[" | "<<" };
+// 글꼴에서 글자 폭(1/1000 글자 크기)을 읽는 법. 2바이트 글꼴(Type0, 한글 글꼴 대부분)은 두 바이트가 한 글자다
+type FontInfo = { twoByte: boolean; width: (code: number) => number };
+const STD14 = new Set<string>(Object.values(StandardFonts));
+const FALLBACK: FontInfo = { twoByte: false, width: () => 500 };
 
 const N = (s: string) => PDFName.of(s);
 const ID: Mat = [1, 0, 0, 1, 0, 0];
@@ -168,6 +175,67 @@ export function inspectInk(doc: PDFDocument, spec: InkSpec): InkReport {
       hit("richblack", box, { minSize: text, maxTac: tac, sample: sampleOf(p) });
   }
 
+  /** 글꼴 사전에서 글자 폭 표를 꺼낸다. 표가 없으면 표준 14글꼴은 pdf-lib의 폭 표를, 그 밖은 글자 크기의 절반을 쓴다. */
+  const fontCache = new Map<unknown, FontInfo>();
+  function fontOf(name: string, res: PDFDict | undefined): FontInfo {
+    const ref = res?.lookupMaybe(N("Font"), PDFDict)?.get(N(name));
+    if (!ref) return FALLBACK;
+    const hit = fontCache.get(ref);
+    if (hit) return hit;
+    let info = FALLBACK;
+    try {
+      const f = look<unknown>(ref);
+      if (f instanceof PDFDict) {
+        const sub = nameOf(f.get(N("Subtype")));
+        if (sub === "Type0") {
+          // 한글 글꼴은 거의 이쪽이다. 폭은 자손 글꼴의 /W([첫CID [폭…]] 또는 [첫 끝 폭])와 /DW(기본 1000)
+          const d = look<unknown>(f.get(N("DescendantFonts")));
+          const cid = d instanceof PDFArray ? look<unknown>(d.get(0)) : undefined;
+          const widths = new Map<number, number>();
+          let dw = 1000;
+          if (cid instanceof PDFDict) {
+            dw = numOf(cid.get(N("DW"))) ?? 1000;
+            const w = look<unknown>(cid.get(N("W")));
+            const arr = w instanceof PDFArray ? w.asArray().map((x) => look<unknown>(x)) : [];
+            for (let i = 0; i < arr.length;) {
+              const first = arr[i] instanceof PDFNumber ? (arr[i] as PDFNumber).asNumber() : NaN;
+              const next = arr[i + 1];
+              if (next instanceof PDFArray) {
+                next.asArray().forEach((x, k) => widths.set(first + k, numOf(x) ?? dw));
+                i += 2;
+              } else {
+                const last = next instanceof PDFNumber ? next.asNumber() : first;
+                const v = numOf(arr[i + 2]) ?? dw;
+                for (let c = first; c <= last && c - first < 70000; c++) widths.set(c, v);
+                i += 3;
+              }
+            }
+          }
+          // CID와 코드가 같다고 본다(Identity-H — 인디자인·워드가 내는 PDF가 그렇다). 다른 CMap이면 기본 폭으로 어림한다
+          info = { twoByte: true, width: (c) => widths.get(c) ?? dw };
+        } else {
+          const wArr = look<unknown>(f.get(N("Widths")));
+          const firstChar = numOf(f.get(N("FirstChar"))) ?? 0;
+          const desc = f.lookupMaybe(N("FontDescriptor"), PDFDict);
+          const missing = (desc && numOf(desc.get(N("MissingWidth")))) || 0;
+          if (wArr instanceof PDFArray) {
+            const ws = wArr.asArray().map((x) => numOf(x) ?? 0);
+            info = { twoByte: false, width: (c) => ws[c - firstChar] ?? (missing || 500) };
+          } else {
+            const base = (nameOf(f.get(N("BaseFont"))) ?? "").replace(/^[A-Z]{6}\+/, "");
+            if (STD14.has(base)) {
+              // 표준 14글꼴은 폭 표를 싣지 않아도 된다(뷰어가 안다). pdf-lib에 같은 표가 있다
+              const emb = StandardFontEmbedder.for(base as unknown as Parameters<typeof StandardFontEmbedder.for>[0]);
+              info = { twoByte: false, width: (c) => { try { return emb.widthOfTextAtSize(String.fromCharCode(c), 1000); } catch { return 500; } } };
+            }
+          }
+        }
+      }
+    } catch { info = FALLBACK; }
+    fontCache.set(ref, info);
+    return info;
+  }
+
   function contentOf(o: unknown): string {
     const parts: string[] = [];
     const one = (x: unknown) => {
@@ -188,9 +256,11 @@ export function inspectInk(doc: PDFDocument, spec: InkSpec): InkReport {
   function run(src: string, res: PDFDict | undefined, start: GState, depth: number) {
     let g: GState = { ...start };
     const stack: GState[] = [];
+    const tstack: { fontSize: number; font: FontInfo; charSp: number; wordSp: number; hScale: number; leading: number; rise: number; mode: number }[] = [];
     let operands: Tok[] = [];
     // 글자 상태
     let fontSize = 0, Tm: Mat = ID, Tlm: Mat = ID, leading = 0, mode = 0, rise = 0;
+    let charSp = 0, wordSp = 0, hScale = 1, font: FontInfo = FALLBACK;
     // 경로
     let pathBox: number[] | null = null;
     const addPt = (x: number, y: number) => {
@@ -198,19 +268,34 @@ export function inspectInk(doc: PDFDocument, spec: InkSpec): InkReport {
       pathBox = pathBox ? [Math.min(pathBox[0], px), Math.min(pathBox[1], py), Math.max(pathBox[2], px), Math.max(pathBox[3], py)] : [px, py, px, py];
     };
     const nums = () => operands.filter((o): o is { t: "num"; v: number } => o.t === "num").map((o) => o.v);
-    const showText = (bytes: number) => {
-      if (mode === 3 || mode === 7 || bytes === 0) return; // 안 보이는 글자(스캔 문서의 OCR 층)는 잉크가 없다
-      const m = mul(g.ctm, Tm);
+    /** 글자를 찍는다. 폭은 글꼴의 폭 표로 잰다(PDF 32000 9.4.4 — 글자 폭·글자 간격 Tc·낱말 간격 Tw·가로 비율 Tz·TJ의 조정값).
+     *  처음에는 '한 바이트 ≈ 글자 크기 절반'으로 어림해서 쪽 위 네모가 글줄과 어긋났다. */
+    const showText = (t: Tok | undefined) => {
+      if (!t) return;
+      const parts: (string | number)[] = t.t === "str" ? [t.s]
+        : t.t === "arr" ? t.v.flatMap((x): (string | number)[] => (x.t === "str" ? [x.s] : x.t === "num" ? [x.v] : [])) : [];
+      if (!parts.some((p) => typeof p === "string" && p.length)) return;
+      const start = Tm;
+      let adv = 0;
+      for (const p of parts) {
+        if (typeof p === "number") { adv -= (p / 1000) * fontSize * hScale; continue; }
+        const step = font.twoByte ? 2 : 1;
+        for (let k = 0; k + step <= p.length; k += step) {
+          const code = step === 2 ? (p.charCodeAt(k) << 8) | p.charCodeAt(k + 1) : p.charCodeAt(k);
+          adv += ((font.width(code) / 1000) * fontSize + charSp + (!font.twoByte && code === 32 ? wordSp : 0)) * hScale;
+        }
+      }
+      Tm = mul(Tm, [1, 0, 0, 1, adv, 0]);
+      if (mode === 3 || mode === 7) return; // 안 보이는 글자(스캔 문서의 OCR 층)는 잉크가 없다
+      const m = mul(g.ctm, start);
       const size = Math.abs(fontSize) * Math.hypot(m[2], m[3]);
-      const [x0, y0] = apply(m, 0, rise);
-      // 글자 폭은 글꼴을 읽어야 안다. 여기서는 '한 바이트 ≈ 글자 크기 절반'으로 어림한다(한글 2바이트 글꼴이면 한 자 ≈ 한 칸).
-      const w = size * 0.5 * Math.min(bytes, 200);
-      const box = [x0, y0 - size * 0.2, x0 + w, y0 + size * 0.9];
+      // 위아래는 글꼴마다 다르지만 대개 글자 크기의 0.9 위, 0.2 아래다. 돌아간 글줄도 네 귀퉁이를 옮겨 감싼다
+      const lo = rise - 0.2 * fontSize, hi = rise + 0.9 * fontSize;
+      const pts = [[0, lo], [adv, lo], [0, hi], [adv, hi]].map(([x, y]) => apply(m, x, y));
+      const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
+      const box = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
       if (mode === 0 || mode === 2 || mode === 4 || mode === 6) checkPaint(g.fill, g.opFill, box, size);
-      Tm = mul(Tm, [1, 0, 0, 1, w / Math.max(Math.hypot(m[0], m[1]), 1e-6), 0]);
     };
-    const strBytes = (t: Tok | undefined): number =>
-      !t ? 0 : t.t === "str" ? t.n : t.t === "arr" ? t.v.reduce((s, x) => s + (x.t === "str" ? x.n : 0), 0) : 0;
     const paint = (fill: boolean, stroke: boolean) => {
       const box = pathBox;
       pathBox = null;
@@ -229,8 +314,14 @@ export function inspectInk(doc: PDFDocument, spec: InkSpec): InkReport {
     const exec = (op: string) => {
       const a = nums();
       switch (op) {
-        case "q": stack.push({ ...g }); break;
-        case "Q": g = stack.pop() ?? g; break;
+        // 글자 상태(크기·글꼴·간격·비율·행간·올림·찍는 방식)도 그래픽 상태의 일부라 q/Q가 같이 저장·복원한다(PDF 32000 8.4.1)
+        case "q": stack.push({ ...g }); tstack.push({ fontSize, font, charSp, wordSp, hScale, leading, rise, mode }); break;
+        case "Q": {
+          g = stack.pop() ?? g;
+          const ts = tstack.pop();
+          if (ts) ({ fontSize, font, charSp, wordSp, hScale, leading, rise, mode } = ts);
+          break;
+        }
         case "cm": if (a.length >= 6) g.ctm = mul(g.ctm, a.slice(-6)); break;
         case "w": if (a.length) g.lw = a[a.length - 1]; break;
         case "gs": {
@@ -275,7 +366,15 @@ export function inspectInk(doc: PDFDocument, spec: InkSpec): InkReport {
         case "n": pathBox = null; break;
         // 글자
         case "BT": Tm = ID; Tlm = ID; break;
-        case "Tf": if (a.length) fontSize = a[a.length - 1]; break;
+        case "Tf": {
+          if (a.length) fontSize = a[a.length - 1];
+          const nm = operands.find((o) => o.t === "name") as { v: string } | undefined;
+          font = nm ? fontOf(nm.v, res) : FALLBACK;
+          break;
+        }
+        case "Tc": if (a.length) charSp = a[0]; break;
+        case "Tw": if (a.length) wordSp = a[0]; break;
+        case "Tz": if (a.length) hScale = a[0] / 100; break;
         case "TL": if (a.length) leading = a[0]; break;
         case "Tr": if (a.length) mode = a[0]; break;
         case "Ts": if (a.length) rise = a[0]; break;
@@ -283,8 +382,11 @@ export function inspectInk(doc: PDFDocument, spec: InkSpec): InkReport {
         case "TD": if (a.length >= 2) { leading = -a[1]; Tlm = mul(Tlm, [1, 0, 0, 1, a[0], a[1]]); Tm = Tlm; } break;
         case "Tm": if (a.length >= 6) { Tlm = a.slice(-6); Tm = Tlm; } break;
         case "T*": Tlm = mul(Tlm, [1, 0, 0, 1, 0, -leading]); Tm = Tlm; break;
-        case "Tj": case "TJ": showText(strBytes(operands[operands.length - 1])); break;
-        case "'": case "\"": Tlm = mul(Tlm, [1, 0, 0, 1, 0, -leading]); Tm = Tlm; showText(strBytes(operands[operands.length - 1])); break;
+        case "Tj": case "TJ": showText(operands[operands.length - 1]); break;
+        case "'": Tlm = mul(Tlm, [1, 0, 0, 1, 0, -leading]); Tm = Tlm; showText(operands[operands.length - 1]); break;
+        case "\"": // aw ac string " — 낱말·글자 간격을 정하고 다음 줄에 찍는다
+          if (a.length >= 2) { wordSp = a[0]; charSp = a[1]; }
+          Tlm = mul(Tlm, [1, 0, 0, 1, 0, -leading]); Tm = Tlm; showText(operands[operands.length - 1]); break;
         // 그림·양식
         case "Do": {
           const nm = operands.find((o) => o.t === "name") as { v: string } | undefined;
@@ -315,28 +417,37 @@ export function inspectInk(doc: PDFDocument, spec: InkSpec): InkReport {
       const c = src.charCodeAt(i);
       if (isWS(c)) { i++; continue; }
       if (c === 37) { while (i < L && src.charCodeAt(i) !== 10 && src.charCodeAt(i) !== 13) i++; continue; } // %
-      if (c === 40) { // ( 문자열 )
-        let depthP = 1, n = 0; i++;
+      if (c === 40) { // ( 문자열 ) — 이스케이프를 풀어 바이트 그대로 모은다
+        let depthP = 1; i++;
+        const out: number[] = [];
+        const ESC: Record<number, number> = { 110: 10, 114: 13, 116: 9, 98: 8, 102: 12 }; // \n \r \t \b \f
         while (i < L && depthP > 0) {
           const d = src.charCodeAt(i);
           if (d === 92) { // \
             const e = src.charCodeAt(i + 1);
-            if (e >= 48 && e <= 55) { let k = 1; while (k < 3 && src.charCodeAt(i + 1 + k) >= 48 && src.charCodeAt(i + 1 + k) <= 55) k++; i += 1 + k; n++; continue; }
-            if (e === 10 || e === 13) { i += 2; continue; }
-            i += 2; n++; continue;
+            if (e >= 48 && e <= 55) {
+              let k = 1; while (k < 3 && src.charCodeAt(i + 1 + k) >= 48 && src.charCodeAt(i + 1 + k) <= 55) k++;
+              out.push(parseInt(src.slice(i + 1, i + 1 + k), 8) & 255); i += 1 + k; continue;
+            }
+            if (e === 13) { i += src.charCodeAt(i + 2) === 10 ? 3 : 2; continue; } // 줄 이음
+            if (e === 10) { i += 2; continue; }
+            out.push(ESC[e] ?? e); i += 2; continue;
           }
           if (d === 40) depthP++;
           else if (d === 41 && --depthP === 0) { i++; break; }
-          n++; i++;
+          out.push(d); i++;
         }
-        operands.push({ t: "str", n });
+        operands.push({ t: "str", s: String.fromCharCode(...out.slice(0, 20000)) });
         continue;
       }
       if (c === 60) { // < 16진 문자열 > 또는 << 사전
         if (src.charCodeAt(i + 1) === 60) { operands.push({ t: "mark", v: "<<" }); i += 2; continue; }
         const j = src.indexOf(">", i);
-        const hex = src.slice(i + 1, j < 0 ? L : j).replace(/\s+/g, "");
-        operands.push({ t: "str", n: Math.ceil(hex.length / 2) });
+        let hex = src.slice(i + 1, j < 0 ? L : j).replace(/[^0-9a-fA-F]/g, "");
+        if (hex.length % 2) hex += "0"; // 홀수면 뒤에 0을 붙인다(PDF 규칙)
+        let s = "";
+        for (let k = 0; k < hex.length && k < 40000; k += 2) s += String.fromCharCode(parseInt(hex.slice(k, k + 2), 16));
+        operands.push({ t: "str", s });
         i = j < 0 ? L : j + 1;
         continue;
       }

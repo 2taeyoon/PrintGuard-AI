@@ -11,6 +11,7 @@ import {
   fill, popGraphicsState, pushGraphicsState, rectangle, setFillingCmykColor, setGraphicsState,
 } from "pdf-lib";
 import { analyze, checkText, type Issue } from "./analyze";
+import { inspectInk } from "./inkcheck";
 import { DEFAULT_SPEC } from "./printspec";
 
 let fail = 0;
@@ -65,7 +66,7 @@ function png(w: number, h: number): Uint8Array {
   ok("작은 리치 블랙 글자를 잡는다(한 쪽 한 항목)", rb.length === 1, kinds(xs));
   ok("…큰 제목은 세지 않는다(1곳)", !!rb[0] && rb[0].detail.includes("1곳"), rb[0]?.detail);
   ok("…글자 크기와 색 값을 제목에 적는다", !!rb[0] && rb[0].title.includes("8.0pt") && rb[0].title.includes("C60 M50 Y50 K100"), rb[0]?.title);
-  ok("…자리를 쪽 위에 표시한다", !!rb[0]?.rect && rb[0].rect[1] > 0 && rb[0].rect[3] < A5[1], rb[0]?.rect);
+  ok("…자리를 쪽 위에 표시한다(큰 제목은 네모에 들지 않는다)", !!rb[0]?.rect && rb[0].rect[1] > 0 && rb[0].rect[3] < A5[1] - 380, rb[0]?.rect);
   ok("리치 블랙 글자 210%는 잉크량 한도(300%) 안이다", !xs.some((i) => i.kind === "tac"), kinds(xs));
 }
 
@@ -183,6 +184,45 @@ function png(w: number, h: number): Uint8Array {
     doc.addPage(A5).drawImage(im, { x: 20, y: 300, width: 100 * MM, height: 67 * MM });
   }, { pdfx: "X-1a" });
   ok("X-1a 규격이면 RGB 사진을 막힘으로 본다", x1a.some((i) => i.kind === "pdfx" && i.severity === "high" && i.title.includes("RGB 사진")), x1a.map((i) => i.title));
+}
+
+// ---------- 8-1. 글자 문제의 자리: 글꼴 폭 표로 잰다 ----------
+{
+  // 기준은 화면이 실제로 그리는 pdf.js의 글줄 폭이다. pdf-lib의 widthOfTextAtSize는 커닝을 넣어 재지만
+  // drawText가 쓰는 Tj에는 커닝이 없어서, 그것과 대면 0.6pt가 어긋난다(처음에 그렇게 잘못 쟀다).
+  const d0 = await PDFDocument.create();
+  const f0 = await d0.embedFont(StandardFonts.Helvetica);
+  d0.addPage(A5).drawText("Rich black body text", { x: 40, y: 400, size: 8, font: f0, color: cmyk(0.6, 0.5, 0.5, 1) });
+  const bytes = await d0.save();
+  const tc = await (await (await pdfjs.getDocument({ data: bytes.slice() }).promise).getPage(1)).getTextContent();
+  const want = (tc.items as { width: number }[])[0].width;
+  const r = (await analyze(bytes, pdfjs, { widthMm: 148, heightMm: 210, bleedMm: 0, misuse: false })).issues.find((i) => i.kind === "richblack")?.rect;
+  ok(`표준 글꼴: 네모의 왼쪽이 글줄 시작(40pt)이다`, !!r && Math.abs(r[0] - 40) < 0.01, r);
+  ok(`표준 글꼴: 네모의 폭이 글줄 폭(${want.toFixed(1)}pt)과 같다`, !!r && Math.abs(r[2] - r[0] - want) < 0.05, r && r[2] - r[0]);
+
+  // 2바이트 글꼴(Type0, 한글 글꼴 대부분): 폭은 자손 글꼴의 /W와 /DW에서 온다. 글꼴 파일 없이 사전만 만들어 잰다
+  async function type0(ops: string) {
+    const doc = await PDFDocument.create();
+    const p = doc.addPage(A5);
+    const cid = doc.context.register(doc.context.obj({ Type: "Font", Subtype: "CIDFontType2", BaseFont: "Test", DW: 1000, W: [1, [1000, 500]] }));
+    const f0 = doc.context.register(doc.context.obj({ Type: "Font", Subtype: "Type0", BaseFont: "Test", Encoding: "Identity-H", DescendantFonts: [cid] }));
+    const res = p.node.Resources()!;
+    res.set(PDFName.of("Font"), doc.context.obj({ F1: f0 }));
+    p.node.set(PDFName.of("Contents"), doc.context.register(doc.context.stream(`BT 0.6 0.5 0.5 1 k /F1 10 Tf ${ops} ET`)));
+    const back = await PDFDocument.load(await doc.save());
+    const rb = inspectInk(back, { tacLimit: 300, minLinePt: 0.25, richBlackMaxPt: 12 }).findings.find((x) => x.kind === "richblack");
+    return rb ? rb.rect[2] - rb.rect[0] : NaN;
+  }
+  ok("Type0: 두 글자(폭 1000·500) 10pt = 15pt", Math.abs(await type0("1 0 0 1 100 100 Tm <00010002> Tj") - 15) < 0.01);
+  ok("Type0: 표에 없는 글자는 기본 폭(DW 1000)으로 = 10pt", Math.abs(await type0("1 0 0 1 100 100 Tm <0009> Tj") - 10) < 0.01);
+  ok("글자 간격(Tc 2)·가로 비율(Tz 50)을 반영한다 = (10+2)×0.5 + (5+2)×0.5 = 9.5pt",
+    Math.abs(await type0("2 Tc 50 Tz 1 0 0 1 100 100 Tm <00010002> Tj") - 9.5) < 0.01);
+  ok("TJ의 조정값(-500 = 글자 크기의 절반만큼 띄움)을 반영한다 = 10 + 5 + 5 = 20pt",
+    Math.abs(await type0("1 0 0 1 100 100 Tm [<0001> -500 <0002>] TJ") - 20) < 0.01);
+  ok("q/Q는 글자 상태도 되돌린다(q 안의 Tc 5는 Q 뒤에 사라져 15pt)",
+    Math.abs(await type0("q 5 Tc Q 1 0 0 1 100 100 Tm <00010002> Tj") - 15) < 0.01);
+  ok("이어 찍은 글자는 앞 글자 끝에서 시작한다(한 네모로 묶여 15+15 = 30pt)",
+    Math.abs(await type0("1 0 0 1 100 100 Tm <00010002> Tj <00010002> Tj") - 30) < 0.01);
 }
 
 // ---------- 9. 깨끗한 샘플: 새 검사가 헛경보를 내지 않는다 ----------

@@ -1,9 +1,7 @@
 """오케스트레이터 목 모드(가짜 부서): 의뢰 → plan 실행 → input-required → 답 → 완료, 멱등성, 공통 로그."""
 import json
-import os
 import time
 
-os.environ["PG_FAKE_AGENTS"] = "1"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
