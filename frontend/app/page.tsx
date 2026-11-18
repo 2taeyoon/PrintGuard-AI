@@ -20,8 +20,9 @@ import { SignInNote } from "./sign-in";
 import FixResultPanel from "./fix-result";
 import { FontNotice, IssueRows } from "./dc-shared";
 import type { ProofSkip } from "@/lib/agentClient";
-import { answerJob, createJob, dcFile, getSource, hostedOrch, orchestratorUp, toScreen, uploadSource, waitJob,
+import { answerJob, createJob, dcFile, getBrand, getSource, hostedOrch, orchestratorUp, toScreen, uploadSource, waitJob,
   type FixResult, type JobView, type SourceView } from "@/lib/agentClient";
+import { DEFAULT_SPEC, PDFX_LABEL, SPECS, loadMySpecs, saveMySpecs, specOption, type PdfX, type PrintSpec } from "@/lib/printspec";
 
 const LEVEL_LABEL = { check: "확인 필요", none: "해당 없음", na: "판단 불가" } as const;
 
@@ -97,6 +98,46 @@ function Home() {
     const k = key === "auto" ? paper?.profile : key;
     if (k && db) setTac(db.profiles[k].tac);
   }
+
+  // ---------- 인쇄소 규격 ----------
+  // 도련과 잉크량 한도는 위의 칸과 같은 값이다 — 규격을 고르면 그 칸이 바뀌고, 칸을 고치면 그 값으로 검사한다.
+  // '내 규격'은 브라우저에 둔다. 처음 화면을 그릴 때 읽으면 서버 화면과 어긋나므로 고르는 칸을 처음 만질 때 읽는다.
+  const [spec, setSpec] = useState<PrintSpec>(DEFAULT_SPEC);
+  const [mine, setMine] = useState<PrintSpec[] | null>(null);
+  const [specName, setSpecName] = useState("");
+  const [specMsg, setSpecMsg] = useState("");
+  const loadMine = () => { if (mine === null) setMine(loadMySpecs()); };
+  function pickSpec(id: string) {
+    const s = [...SPECS, ...(mine ?? [])].find((x) => x.id === id);
+    if (!s) return;
+    setSpec(s); setSpecMsg("");
+    setBleed(s.bleedMm);
+    // 기본 규격은 잉크량 한도를 정하지 않는다 — 고른 종이 프로파일의 한도를 그대로 둔다
+    if (s.id !== DEFAULT_SPEC.id || s.tacLimit !== DEFAULT_SPEC.tacLimit) setTac(s.tacLimit);
+    if (s.id.startsWith("my-")) setSpecName(s.name);
+  }
+  const editSpec = (patch: Partial<PrintSpec>) => setSpec((s) => ({ ...s, ...patch,
+    ...(s.id.startsWith("my-") ? {} : { id: "custom", name: "직접 고친 규격", note: "고른 규격에서 값을 고쳤습니다. 이름을 붙여 저장하면 다음에 다시 고를 수 있습니다." }) }));
+  function saveSpec() {
+    const name = specName.trim();
+    if (!name) { setSpecMsg("규격 이름을 적어 주세요(예: ○○인쇄 책자)."); return; }
+    const list = mine ?? loadMySpecs();
+    const same = list.find((x) => x.name === name);
+    const s: PrintSpec = { ...spec, bleedMm: bleed, tacLimit: tac, id: same?.id ?? `my-${Date.now()}`, name, note: "내가 저장한 규격입니다." };
+    const next = [...list.filter((x) => x.id !== s.id), s];
+    setMine(next); setSpec(s);
+    setSpecMsg(saveMySpecs(next) ? `‘${name}’을 저장했습니다. 이 브라우저에서 다시 고를 수 있습니다.`
+      : "이 브라우저가 저장을 막았습니다(사생활 보호 창일 수 있습니다). 이번 검사에는 그대로 씁니다.");
+  }
+  function dropSpec() {
+    const next = (mine ?? []).filter((x) => x.id !== spec.id);
+    setMine(next); saveMySpecs(next); pickSpec(DEFAULT_SPEC.id); setSpecName("");
+  }
+  // 검사에 넘기는 규격. 도련·한도는 칸에 적힌 값을 쓴다
+  const specNow = () => ({ ...specOption(spec), bleedMm: bleed, tacLimit: tac });
+  // 브랜드 키트의 '우리 회사 표기'. 키트가 없거나 에이전트가 꺼져 있으면 빈 목록 — 검사는 그대로 돈다.
+  const houseTerms = async () => (agentUp ? (await getBrand().catch(() => null))?.terms ?? [] : []);
+  const [onlyHuman, setOnlyHuman] = useState(false);
   // 검사 방식: agent = 에이전트들이 A2A로 나눠 검사(기본), direct = 이 브라우저 안에서 바로.
   // 이 앱이 보여 주려는 것이 에이전트 협업이라 그 화면이 첫 화면이다. '바로 검사'는 `?mode=direct`로 간다.
   // 기본이 에이전트인 덕이 하나 더 있다 — 첫 화면에서 브라우저 임베딩 모델(약 130MB)을 아예 내려받지 않는다.
@@ -287,7 +328,7 @@ function Home() {
       }
       const color = await ColorEngine.create(icc, { intent, tacLimit: tac, paperColor, substrateWhite: parseWhite(whiteIn) ?? undefined,
         wasmUrl: "/lcms/lcms.wasm", moduleUrl: "/lcms/lcms.js" });
-      const result = await analyze(data, pdfjs, { widthMm: w, heightMm: h, bleedMm: bleed, color });
+      const result = await analyze(data, pdfjs, { widthMm: w, heightMm: h, bleedMm: bleed, color, spec: specNow(), terms: await houseTerms() });
       docRef.current = await pdfjs.getDocument({ data: data.slice() }).promise;
       setRes({ ...result, filename: file.name });
       setUsedPaper(paper);
@@ -309,8 +350,10 @@ function Home() {
     try {
       pdfData.current = new Uint8Array(await f.arrayBuffer());
       const opts = { width_mm: w, height_mm: h, bleed_mm: bleed, paper_id: paperId, profile: profileKey, intent, tac_limit: tac,
-        paper_color: paperColor, finish, gsm,
+        paper_color: paperColor, finish, gsm, spec: specNow(),
         ...(parseWhite(whiteIn) ? { substrate_white: parseWhite(whiteIn) } : {}) };
+      const terms = await houseTerms();
+      if (terms.length) Object.assign(opts, { terms });
       // 원본으로 맡기면 파일을 다시 올리지 않는다 — 서버가 이미 그 원본과 거기서 뽑은 PDF를 들고 있다.
       const { context_id } = await createJob(srcCtx ? null : f, opts, srcCtx);
       await settle(await waitJob(context_id, setAgentJob));
@@ -496,6 +539,46 @@ function Home() {
             {readFail && <span className="note">파일에서 크기를 읽지 못했습니다. 암호가 걸렸거나 깨진 PDF일 수 있습니다. 아래 칸을 직접 채워 주세요.</span>}
           </div>
         )}
+        <label>인쇄소 규격
+          <select value={spec.id} onFocus={loadMine} onMouseDown={loadMine} onChange={(e) => pickSpec(e.target.value)}>
+            <optgroup label="인쇄 방식별 흔한 값">
+              {SPECS.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </optgroup>
+            {(mine ?? []).length > 0 && (
+              <optgroup label="내 규격(이 브라우저)">
+                {mine!.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </optgroup>
+            )}
+            {spec.id === "custom" && <option value="custom">직접 고친 규격(저장 안 함)</option>}
+          </select>
+        </label>
+        <details className="specbox">
+          <summary>
+            규격 자세히 — 안쪽 여백 {spec.safeMm}mm · {spec.minPpi}ppi 이상 · {PDFX_LABEL[spec.pdfx]} · 선 {spec.minLinePt}pt 이상
+          </summary>
+          <p className="note">{spec.note} 납품처의 ‘파일 접수 안내’를 받았다면 그 값으로 고쳐 이름을 붙여 저장해 두세요.
+            여기 있는 기본값은 특정 인쇄소의 규격이 아닙니다.</p>
+          <div className="spec_grid">
+            <label>안쪽 여백(mm)<input type="number" step="0.5" min={0} value={spec.safeMm} onChange={(e) => editSpec({ safeMm: +e.target.value })} /></label>
+            <label>최소 해상도(ppi)<input type="number" min={1} value={spec.minPpi} onChange={(e) => editSpec({ minPpi: +e.target.value })} /></label>
+            <label>권장 해상도(ppi)<input type="number" min={1} value={spec.goodPpi} onChange={(e) => editSpec({ goodPpi: +e.target.value })} /></label>
+            <label>PDF/X
+              <select value={spec.pdfx} onChange={(e) => editSpec({ pdfx: e.target.value as PdfX })}>
+                {(Object.keys(PDFX_LABEL) as PdfX[]).map((k) => <option key={k} value={k}>{PDFX_LABEL[k]}</option>)}
+              </select>
+            </label>
+            <label>가장 가는 선(pt)<input type="number" step="0.05" min={0} value={spec.minLinePt} onChange={(e) => editSpec({ minLinePt: +e.target.value })} /></label>
+            <label title="이 크기보다 작은 글자가 C·M·Y가 섞인 검정이면 알립니다">4색 검정 경고 글자 크기(pt)
+              <input type="number" min={0} value={spec.richBlackMaxPt} onChange={(e) => editSpec({ richBlackMaxPt: +e.target.value })} /></label>
+          </div>
+          <p className="note">도련과 총 잉크량 한도는 위아래 칸의 값을 같이 저장합니다.</p>
+          <div className="spec_save">
+            <input type="text" value={specName} maxLength={30} placeholder="규격 이름(예: ○○인쇄 책자)" onChange={(e) => setSpecName(e.target.value)} aria-label="규격 이름" />
+            <button type="button" className="ghost small" onClick={saveSpec}>내 규격으로 저장</button>
+            {spec.id.startsWith("my-") && <button type="button" className="ghost small" onClick={dropSpec}>이 규격 지우기</button>}
+            {specMsg && <span className="note">{specMsg}</span>}
+          </div>
+        </details>
         <label>완성 크기
           <select value={size} onChange={(e) => pickSize(e.target.value)}>
             {FORMATS.map((g) => (
@@ -685,6 +768,10 @@ function Home() {
                   <div className="fixsum">
                     <span className="howfix auto">자동 수정 {auto}건</span>
                     <span className="howfix">사람이 고칠 것 {res.issues.length - auto}건</span>
+                    {/* 사람이 고칠 것만 모아 본다 — 인디자인을 열어 하나씩 고칠 때 자동 수정 항목은 건너뛸 것이라 */}
+                    {auto > 0 && res.issues.length - auto > 0 && (
+                      <label className="chk onlyhuman"><input type="checkbox" checked={onlyHuman} onChange={(e) => setOnlyHuman(e.target.checked)} /> 사람이 고칠 것만 보기</label>
+                    )}
                     <span className="note">
                       <b>자동 수정</b>은 편집 파일(<code>.idml</code>)로 맡기시면 검수 끝에 묻고 바꿔 드립니다 —
                       글자를 찾아 바꾸는 것뿐 아니라 <b>여백 밖 글상자 자리·내보내기 규격</b>까지 고칩니다.
@@ -704,7 +791,7 @@ function Home() {
                   </div>
                 );
               })()}
-              {res.issues.map((i) => (
+              {res.issues.filter((i) => !onlyHuman || !autoFixOf(i)).map((i) => (
                 <div key={i.id} className={`card ${i.severity} ${sel === i.id ? "sel" : ""}`} onClick={() => pick(i)}>
                   <h4><span className={`sev-${i.severity}`}>{SEV_LABEL[i.severity]}</span> · {i.page}쪽 · {i.title}
                     <span className="src">{SRC[i.source]}</span>
@@ -720,6 +807,12 @@ function Home() {
                       // 누르기 전에 무슨 일이 일어날지 알 수 있다.
                       ? <p><b>자동으로 할 일:</b> {LAYOUT_FIX[i.kind]}</p>
                       : <p><b>수정 제안(직접 수정):</b> {i.fix}</p>}
+                  {/* 사람이 고칠 것에 붙는 판단 재료(필요한 원본 px 같은 숫자) */}
+                  {i.advice?.length ? (
+                    <dl className="advice">
+                      {i.advice.map((a) => <div key={a.label}><dt>{a.label}</dt><dd>{a.value}</dd></div>)}
+                    </dl>
+                  ) : null}
                   {hits[i.id]?.length ? (
                     <details className="guide" open={sel === i.id}>
                       <summary>관련 인쇄 가이드 ({hits[i.id].length})</summary>

@@ -116,6 +116,22 @@ form.upload label.chk { flex-direction: row; align-items: center; gap: 8px; min-
 /* 파일 칸은 '파일에서 읽음' 한 줄을 아래에 달고 있어서 한 줄을 통째로 쓴다.
    다만 칸 자체까지 늘리면 '파일 선택' 단추 옆이 허옇게 비어서, 입력만 글 길이에 맞춰 줄인다 */
 form.upload label.wide { flex-basis: 100%; align-items: flex-start; }
+/* 인쇄소 규격 자세히 — 한 줄을 다 쓴다. 닫혀 있을 때는 요약 한 줄만 보인다 */
+form.upload .specbox { flex-basis: 100%; border: 1px solid var(--borderLight); padding: 8px 12px; font-size: 1.4rem; }
+form.upload .specbox summary { cursor: pointer; color: var(--blacklight); }
+form.upload .specbox .note { margin: 8px 0; }
+.spec_grid { display: flex; flex-wrap: wrap; gap: 12px; }
+.spec_grid label { min-width: 150px; }
+.spec_grid input { width: 100%; }
+.spec_save { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.spec_save input { width: 240px; max-width: 100%; }
+/* 사람이 고칠 것의 판단 재료 — 이름과 값을 나란히 */
+.card .advice { display: grid; gap: 2px; margin: 8px 0 0; padding: 8px 12px; background: var(--bgMuted); font-size: 1.3rem; }
+/* 목록 칸이 좁아(300px 남짓) 이름과 값을 위아래로 둔다. 옆으로 두면 줄마다 값이 다른 자리에서 시작했다 */
+.card .advice > div { display: block; }
+.card .advice dt { color: var(--blacklight); font-size: 1.2rem; }
+.card .advice dd { margin: 0 0 4px; font-weight: 600; }
+.fixsum .onlyhuman { display: inline-flex; align-items: center; gap: 6px; font-size: 1.3rem; }
 form.upload label.wide input[type="file"] { width: auto; max-width: 320px; }
 /* 파일 고르기 칸. 전에는 <label>이 input을 품어서 설명 글귀를 눌러도 파일 창이 떴다.
    지금은 제목만 label이고 input·설명은 그 바깥이라, 칸 모양을 여기서 맡는다. */
@@ -967,8 +983,9 @@ input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, 
    색 네모는 화면용 어림 색이라 작게 둔다. 값(CMYK)이 주인이고 네모는 알아보기용이다. */
 .bk_grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 12px 0 4px; }
 .bk_field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.bk_field input, .bk_field select { width: 100%; }
-.bk_colors, .bk_logo { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+.bk_field input, .bk_field select, .bk_field textarea { width: 100%; }
+.bk_terms textarea { font-size: 1.6rem; padding: 8px 12px; border: 1px solid var(--borderStrong); border-radius: 0; background: var(--white); color: var(--black); resize: vertical; }
+.bk_colors, .bk_logo, .bk_terms { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
 .bk_color { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .bk_chead, .bk_chs { display: contents; }
 .bk_drop { order: 1; }   /* 넓은 화면에서는 빼기가 CMYK 뒤에 온다 */

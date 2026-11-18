@@ -138,3 +138,30 @@ def test_gemini_default_model_and_rate_limit_retry(monkeypatch):
     seq.append(Res(200, "[]"))
     _gemini("프롬프트", "key")
     assert "gemini-3.5-flash:generateContent" in urls[-1]
+
+
+def test_house_terms_win_over_other_detectors_and_skip_correct_spots():
+    """브랜드 키트의 표기는 회사가 정한 것이라 다른 탐지기보다 먼저 온다. 이미 맞게 쓴 자리는 다시 잡지 않는다."""
+    text = "우리 어플을 받으세요. 웹사이트와 사이트를 보세요."
+    terms = [{"wrong": "어플", "right": "앱"}, {"wrong": "사이트", "right": "웹사이트"}]
+    found, bad = detect(text, ["rules"], terms)
+    house = [s for s in found if s["source"] == "house"]
+    assert not bad
+    assert [(s["original"], s["suggestion"]) for s in house] == [("어플", "앱"), ("사이트", "웹사이트")]
+    assert text[house[1]["start"]:house[1]["end"]] == "사이트" and house[1]["start"] > text.index("웹사이트") + 3, \
+        "'웹사이트' 안의 '사이트'가 아니라 뒤에 따로 쓴 '사이트'만 잡는다"
+    assert detect(text, ["rules"])[0] == [s for s in found if s["source"] != "house"], "표기가 없으면 전과 같다"
+
+
+def test_house_terms_reach_the_proofread_agent(monkeypatch):
+    from pg_agents.proofread import agent as pa
+    seen = {}
+
+    def fake(pdf_ref, methods, terms=None):
+        seen["terms"] = terms
+        return [], {}
+    monkeypatch.setattr(pa, "suggest", fake)
+    import asyncio
+    from types import SimpleNamespace
+    asyncio.run(pa.suggest_corrections(SimpleNamespace(input={"pdf_ref": "x", "terms": [{"wrong": "어플", "right": "앱"}, "버릴 것"]})))
+    assert seen["terms"] == [{"wrong": "어플", "right": "앱"}]

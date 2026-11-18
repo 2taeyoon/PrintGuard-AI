@@ -151,10 +151,32 @@ from ..llm import gemini as _gemini  # noqa: E402,F401  (둘째 길을 직접 �
 from ..llm import have_key as _have_key  # noqa: E402
 
 
+def house(text: str, terms: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """브랜드 키트의 '우리 회사 표기'(틀린 표기 → 맞는 표기).
+
+    맞춤법 사전과 달리 **회사가 정한 것**이라 어느 쪽이 맞는지 따질 일이 없다. 그래서 다른 탐지기보다
+    먼저 돌려, 같은 자리를 Kiwi가 다르게 고치자고 해도 회사 표기가 이긴다.
+    '맞는 표기' 안에 '틀린 표기'가 들어 있는 경우(틀림 '사이트' → 맞음 '웹사이트')는 이미 맞게 쓴
+    자리를 다시 잡지 않는다.
+    """
+    out: list[dict[str, Any]] = []
+    for t in terms:
+        wrong, right = str(t.get("wrong") or ""), str(t.get("right") or "")
+        if not wrong or wrong == right:
+            continue
+        ok_spans = [(m.start(), m.end()) for m in re.finditer(re.escape(right), text)] if wrong in right else []
+        for m in re.finditer(re.escape(wrong), text):
+            if any(a <= m.start() and m.end() <= b for a, b in ok_spans):
+                continue
+            out.append({"kind": "house", "original": wrong, "suggestion": right, "reason": f"브랜드 키트에서 '{right}'로 쓰기로 정했습니다",
+                        "source": "house", "start": m.start(), "end": m.end()})
+    return out
+
+
 DETECTORS = {"rules": rules, "kiwi_typo": kiwi_typo, "kiwi_space": kiwi_space, "llm": llm}
 
 
-def detect(text: str, methods: list[str]) -> tuple[list[dict[str, Any]], dict[str, str]]:
+def detect(text: str, methods: list[str], terms: list[dict[str, str]] | None = None) -> tuple[list[dict[str, Any]], dict[str, str]]:
     """여러 탐지기 결과를 합치고, 같은 위치를 겹쳐 가리키는 제안은 하나만 남긴다(먼저 온 방법 우선).
 
     **탐지기 하나가 넘어져도 나머지는 살린다.** 전에는 한 덩어리로 돌려서, LLM이 분당 한도(429)에
@@ -165,9 +187,9 @@ def detect(text: str, methods: list[str]) -> tuple[list[dict[str, Any]], dict[st
     seen: list[tuple[int, int]] = []
     out: list[dict[str, Any]] = []
     bad: dict[str, str] = {}
-    for m in methods:
+    for m in (["house"] if terms else []) + list(methods):
         try:
-            found = DETECTORS[m](text)
+            found = house(text, terms or []) if m == "house" else DETECTORS[m](text)
         except Exception as e:                      # noqa: BLE001 - 어떤 이유든 나머지는 살린다
             bad[m] = str(e)[:200]
             continue

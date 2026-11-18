@@ -498,3 +498,18 @@ def test_what_the_tool_is_doing_shows_up_before_anything_is_put_in(monkeypatch):
         assert texts[0] == "쓸 엔진 기능을 찾아봅니다 — ‘표’"
         assert texts[1].startswith("브랜드 키트를")
         assert len(texts) == 2
+
+
+def test_spec_and_house_terms_go_to_the_right_agents():
+    """인쇄소 규격은 preflight로, 브랜드 키트 표기는 교정 에이전트로 간다. 둘 다 없으면 전과 같은 입력이다."""
+    from pg_agents.orchestrator import plan as P
+    from pg_agents.orchestrator.engine import Job
+    base = {"context_id": "c", "idempotency_key": "k", "pdf_ref": "sha", "filename": "a.pdf"}
+    spec = {"safeMm": 5, "minPpi": 200, "pdfx": "X-1a"}
+    j = Job(options={"spec": spec, "terms": [{"wrong": "어플", "right": "앱"}, {"wrong": "같음", "right": "같음"}, "x"]}, **base)
+    assert P._preflight(j)["spec"] == spec
+    assert P._proofread(j) == {"pdf_ref": "sha", "terms": [{"wrong": "어플", "right": "앱"}]}, "어긋난 짝은 넘기지 않는다"
+    plain = Job(options={}, **base)
+    assert "spec" not in P._preflight(plain) and P._proofread(plain) == {"pdf_ref": "sha"}
+    first = P.build_plan({"preflight", "proofread"})[0]
+    assert {c.agent: c.build for c in first}["preflight"] is P._preflight

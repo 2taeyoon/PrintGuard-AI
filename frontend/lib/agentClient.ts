@@ -89,7 +89,7 @@ export function toScreen(v: JobView): { analysis: Analysis; risks: (Risk & { hit
   type Sug = { key: string; page: number; original: string; suggestion: string; reason: string; kind: string; kind_label: string; source: string; rect: number[] | null };
   const proof = ((v.results.proofread?.suggestions ?? []) as Sug[]).map((s) => ({
     key: s.key, id: 0, kind: "typo", severity: s.kind === "typo" || s.kind === "llm" ? "low" : "medium", page: s.page,
-    title: `${s.kind_label}: '${s.original}' → '${s.suggestion}'`, detail: `${s.reason} (탐지: ${s.source === "rules" ? "규칙" : s.source === "kiwi_typo" ? "Kiwi 오타 모델" : s.source})`,
+    title: `${s.kind_label}: '${s.original}' → '${s.suggestion}'`, detail: `${s.reason} (탐지: ${s.source === "rules" ? "규칙" : s.source === "kiwi_typo" ? "Kiwi 오타 모델" : s.source === "house" ? "브랜드 키트" : s.source})`,
     fix: "원본 파일에서 직접 고치세요. 자동으로 고치지 않습니다.", rect: s.rect, source: "proofread" as const, heat: undefined,
     // 제목 문자열로 녹여 버리지 않고 따로 들고 간다 — 인디자인 원본 수정이 이 두 값으로 글자를 찾는다
     edit: { original: s.original, suggestion: s.suggestion },
@@ -317,6 +317,8 @@ export type BrandKit = {
   name: string; colors: BrandColor[]; title_font: string; body_font: string;
   logo: { name: string; bytes: number } | null;
   fonts?: BrandFont[];
+  // 우리 회사 표기(틀린 표기 → 맞는 표기). 검수가 문서에서 찾아 바꿀 짝을 만든다
+  terms?: { wrong: string; right: string }[];
 };
 export type BrandDraft = Omit<BrandKit, "logo" | "fonts">;
 

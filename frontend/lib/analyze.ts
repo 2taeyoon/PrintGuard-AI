@@ -2,6 +2,8 @@
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream, PDFStream } from "pdf-lib";
 import { heatRGBA, type ColorEngine, type ColorStats } from "./color";
 import MISUSE_JSON from "@/public/data/korean-misuse.json";
+import { inspectInk, spotDuplicates, type InkFinding } from "./inkcheck";
+import { DEFAULT_SPEC, type SpecOption } from "./printspec";
 
 export type Sev = "high" | "medium" | "low";
 export type Issue = {
@@ -13,7 +15,12 @@ export type Issue = {
   // 사람이 판단해야 하는 항목(여백 부족, 수치 불일치 등)에는 없다 — 그래서 선택이다.
   edit?: { original: string; suggestion: string };
   heat?: { w: number; h: number; rgba: Uint8ClampedArray }; // ΔE 지도
+  // **사람이 고칠 것**에 붙이는 판단 재료. '해상도 낮음'만 말하면 사람은 다시 계산해야 한다 —
+  // 몇 px짜리 원본이 필요한지, 지금 사진으로 어디까지 키울 수 있는지를 숫자로 같이 준다.
+  advice?: { label: string; value: string }[];
 };
+/** 브랜드 키트의 '우리 회사 표기'. 틀린 표기 → 맞는 표기. */
+export type HouseTerm = { wrong: string; right: string };
 export type PageInfo = { w: number; h: number };
 export type Analysis = {
   pages: number; pageSizes: PageInfo[]; issues: Issue[]; colorSummary: Record<string, number>; texts: string[];
@@ -191,8 +198,14 @@ export async function analyze(
   data: Uint8Array, pdfjs: PdfJs,
   // misuse: 맞춤법 사전을 여기서 돌릴지. 에이전트 검사에서는 **교정 에이전트가 같은 사전을 돌리므로**
   // preflight가 또 돌리면 같은 교정이 두 번 나온다. 브라우저 혼자 검사할 때만 켠다.
-  opts: { widthMm: number; heightMm: number; bleedMm: number; color?: ColorEngine | null; misuse?: boolean },
+  // spec: 인쇄소 규격(lib/printspec). 비우면 전과 같은 기준(DEFAULT_SPEC)으로 본다.
+  // terms: 브랜드 키트의 표기 사전. misuse와 같이 움직인다 — 에이전트 검사에서는 교정 에이전트가 같은 사전을 돌린다.
+  opts: { widthMm: number; heightMm: number; bleedMm: number; color?: ColorEngine | null; misuse?: boolean;
+    spec?: Partial<SpecOption> | null; terms?: HouseTerm[] },
 ): Promise<Analysis> {
+  const spec: SpecOption = { ...DEFAULT_SPEC, ...(opts.spec ?? {}) };
+  // 잉크량 한도는 색 엔진(종이 프로파일)이 정한 값이 있으면 그것을 따른다 — 사진과 벡터가 서로 다른 한도로 재이면 안 된다
+  const tacLimit = opts.color?.tacLimit ?? spec.tacLimit;
   const issues: Issue[] = [];
   const colorImgs: { area: number; pageArea: number; stats: ColorStats }[] = [];
   const doc = await PDFDocument.load(data, { ignoreEncryption: false, updateMetadata: false });
@@ -203,6 +216,7 @@ export async function analyze(
   const texts: string[] = [];
   const summary: Record<string, number> = {};
   const expect = opts.widthMm && opts.heightMm ? [opts.widthMm * MM, opts.heightMm * MM] : null;
+  const views: number[][] = []; // 쪽마다 [vx0, vy0, vh, vw] — 잉크 검사의 자리를 화면 좌표로 옮길 때 쓴다
 
   for (let i = 0; i < pages.length; i++) {
     const p = i + 1;
@@ -213,6 +227,7 @@ export async function analyze(
     const [vx0, vy0, vx1, vy1] = jsPage.view as number[];
     const vw = vx1 - vx0, vh = vy1 - vy0;
     pageSizes.push({ w: vw, h: vh });
+    views.push([vx0, vy0, vh, vw]);
 
     // 크기·도련
     const tw = trimArr ? trimArr.width : media.width, th = trimArr ? trimArr.height : media.height;
@@ -277,11 +292,7 @@ export async function analyze(
       } else if (cs.startsWith("DeviceCMYK")) summary.cmyk = (summary.cmyk ?? 0) + 1;
       if (im.w && im.widthPt > 0 && cs !== "Mask") {
         const dpi = im.w / (im.widthPt / 72);
-        if (dpi < 150) {
-          issues.push(mk("resolution", dpi < 100 ? "high" : "medium", p, `이미지 해상도 낮음 (${dpi.toFixed(0)}dpi)`,
-            "유효 해상도가 인쇄 권장치(300dpi, 최소 150dpi)보다 낮습니다.",
-            "원본 고해상도 이미지로 교체하거나 크기를 줄이세요.", rect));
-        }
+        if (dpi < spec.minPpi) issues.push(lowRes(p, dpi, im, rect, spec));
       }
     }
 
@@ -290,7 +301,7 @@ export async function analyze(
     let text = "";
     let clip: number[] | null = null;
     let safe: number[] | null = null;
-    const safePt = 3 * MM;
+    const safePt = spec.safeMm * MM;
     for (const it of tc.items as { str: string; transform: number[]; width: number; height: number; hasEOL?: boolean }[]) {
       text += it.str + (it.hasEOL ? "\n" : "");
       if (!it.str.trim()) continue;
@@ -307,8 +318,8 @@ export async function analyze(
     if (clip) issues.push(mk("clip", "high", p, "텍스트가 페이지 밖으로 나감",
       "텍스트가 페이지 경계를 넘어 잘릴 수 있습니다.", "텍스트 박스 위치·크기를 조정하세요.", clip));
     if (safe) issues.push(mk("safe", "medium", p, "안전 영역 침범 의심",
-      "글자가 재단선 안쪽 3mm 이내에 있어 재단 오차로 잘릴 수 있습니다.",
-      "중요한 글자는 재단선에서 3~5mm 안쪽에 두세요.", safe));
+      `글자가 재단선 안쪽 ${spec.safeMm}mm 이내에 있어 재단 오차로 잘릴 수 있습니다.`,
+      `중요한 글자는 재단선에서 ${spec.safeMm}mm보다 안쪽에 두세요.`, safe));
   }
 
   // 출력 의도
@@ -319,7 +330,9 @@ export async function analyze(
       "PDF에 출력 프로파일이 지정되지 않았습니다.", "인쇄소가 지정한 PDF/X 프로파일로 내보내세요."));
   }
   issues.push(...checkFonts(doc));
-  issues.push(...checkText(texts, { misuse: opts.misuse !== false }));
+  issues.push(...checkInk(doc, spec, tacLimit, views));
+  issues.push(...checkPdfx(doc, spec, summary));
+  issues.push(...checkText(texts, { misuse: opts.misuse !== false, terms: opts.terms }));
   issues.sort((a, b) => SEV[a.severity] - SEV[b.severity] || a.page - b.page);
   issues.forEach((x, k) => (x.id = k + 1));
   await task.destroy?.();
@@ -335,6 +348,110 @@ export async function analyze(
     };
   }
   return { pages: pages.length, pageSizes, issues, colorSummary: summary, texts, colorReport };
+}
+
+const f0 = (n: number) => n.toFixed(0);
+
+/** 저해상도 사진. **고치지 않는다** — 사진을 줄여 ppi를 맞추면 지면이 망가진다(PR #121).
+ *  대신 사람이 바로 판단할 숫자를 준다: 이 자리에 맞는 원본은 몇 px인지, 지금 사진으로는 어디까지인지. */
+function lowRes(p: number, dpi: number, im: Placed, rect: number[], spec: SpecOption): Issue {
+  const wMm = im.widthPt / MM, hMm = Math.abs(rect[3] - rect[1]) / MM;
+  const px = (mm: number, ppi: number) => Math.ceil((mm / 25.4) * ppi);
+  const mm = (pxs: number, ppi: number) => (pxs / ppi) * 25.4;
+  const it = mk("resolution", dpi < spec.minPpi * 2 / 3 ? "high" : "medium", p, `이미지 해상도 낮음 (${f0(dpi)}ppi)`,
+    `${f0(wMm)}×${f0(hMm)}mm 자리에 ${im.w}×${im.h}px 사진이 놓여 유효 해상도가 ${f0(dpi)}ppi입니다(권장 ${spec.goodPpi}ppi, 최소 ${spec.minPpi}ppi).`,
+    "같은 사진의 원본(카메라·스톡 원본 파일)으로 바꾸세요. 크기를 줄여 맞출지는 디자인을 정하는 사람이 판단할 일이라 자동으로 하지 않습니다. "
+    + "프로그램으로 키운(업스케일한) 사진은 px만 늘고 선명해지지 않습니다.", rect);
+  it.advice = [
+    { label: `이 자리에 필요한 원본(${spec.goodPpi}ppi)`, value: `${px(wMm, spec.goodPpi)}×${px(hMm, spec.goodPpi)}px 이상` },
+    { label: `최소 기준(${spec.minPpi}ppi)`, value: `${px(wMm, spec.minPpi)}×${px(hMm, spec.minPpi)}px 이상` },
+    { label: "지금 사진으로 키울 수 있는 가로", value: `권장 ${f0(mm(im.w, spec.goodPpi))}mm · 최소 기준 ${f0(mm(im.w, spec.minPpi))}mm까지` },
+  ];
+  return it;
+}
+
+// 잉크 검사 결과를 화면의 항목으로. 문구는 '무엇이 왜 사고인지'와 '사람이 무엇을 하면 되는지'를 같이 쓴다.
+const INK_TEXT: Record<InkFinding["kind"], (f: InkFinding, s: SpecOption, tac: number) => { sev: Sev; title: string; detail: string; fix: string } | null> = {
+  richblack: (f, s) => ({ sev: "medium", title: `작은 글자가 4색 검정 (${f.minSize?.toFixed(1)}pt, ${f.sample})`,
+    detail: `${s.richBlackMaxPt}pt보다 작은 글자 ${f.count}곳이 C·M·Y가 섞인 검정입니다. 네 판이 조금만 어긋나도 글자 테두리에 색이 번지고 획이 두꺼워집니다.`,
+    fix: "본문 검정은 K100(먹 1도)으로 바꾸세요. 인디자인에서는 [검정] 견본을 쓰면 됩니다. 큰 제목·배경의 리치 블랙은 일부러 쓴 것일 수 있어 그대로 둡니다 — 그래서 기계가 견본을 바꾸지 않습니다." }),
+  rgbblack: (f, s) => ({ sev: "medium", title: `작은 글자가 RGB 검정 (${f.minSize?.toFixed(1)}pt)`,
+    detail: `${s.richBlackMaxPt}pt보다 작은 글자 ${f.count}곳이 RGB(0,0,0)입니다. 인쇄용 CMYK로 바꾸면 보통 C·M·Y·K가 다 들어간 4색 검정이 되어 글자가 번집니다.`,
+    fix: "글자 색을 CMYK의 K100으로 지정하세요. 워드·파워포인트에서 만든 PDF에서 자주 생깁니다." }),
+  tac: (f, _s, tac) => ({ sev: (f.maxTac ?? 0) > tac + 20 ? "high" : "medium", title: `면·글자 잉크량 한도 초과 (최대 ${f0(f.maxTac ?? 0)}%, 한도 ${tac}%)`,
+    detail: `사진이 아닌 면이나 글자 ${f.count}곳의 네 판 합이 한도를 넘습니다(예: ${f.sample}). 잉크가 마르지 않아 뒷묻음이 생기거나 종이가 울 수 있습니다.`,
+    fix: `그 색 견본을 한도(${tac}%) 안으로 낮추세요. 진한 검정 면이라면 C40 M30 Y30 K100(200%)처럼 잡는 경우가 많습니다. 정확한 값은 인쇄소에 물으세요.` }),
+  overprint: (f) => ({ sev: "high", title: "흰색에 오버프린트 — 인쇄하면 사라짐",
+    detail: `흰색으로 칠한 글자·면·선 ${f.count}곳에 오버프린트(중복 인쇄)가 켜져 있습니다. 흰색은 잉크가 없어서, 아래 색 위에 겹쳐 찍으면 화면과 달리 아무것도 남지 않습니다.`,
+    fix: "인디자인 [속성] 패널에서 그 개체의 '칠 중복 인쇄'·'선 중복 인쇄'를 끄세요. [출력 미리 보기 → 분판]으로 사라지는지 확인할 수 있습니다." }),
+  registration: (f) => ({ sev: "high", title: "레지스트레이션 색 사용",
+    detail: `레지스트레이션 색(모든 판에 100%)으로 칠한 것이 ${f.count}곳 있습니다. 재단 표시용 색이라, 글자나 면에 쓰면 네 판이 다 찍혀 잉크가 400%가 됩니다.`,
+    fix: "그 개체의 색을 [검정](K100)으로 바꾸세요. 재단선·맞춤표 말고는 레지스트레이션 색을 쓰지 않습니다." }),
+  hairline: (f, s) => ({ sev: f.minWidth === 0 ? "medium" : "low",
+    title: f.minWidth === 0 ? "두께 0인 선" : `너무 가는 선 (${(f.minWidth ?? 0).toFixed(2)}pt)`,
+    detail: f.minWidth === 0
+      ? `두께가 0으로 지정된 선 ${f.count}곳은 출력기마다 '가장 가는 선'으로 찍어 거의 보이지 않거나 사라집니다.`
+      : `${s.minLinePt}pt보다 가는 선 ${f.count}곳은 인쇄에서 끊기거나 흐리게 나옵니다.`,
+    fix: `선 두께를 ${s.minLinePt}pt 이상으로 지정하세요. 일부러 가는 선이면 인쇄소에 출력 가능한 최소 두께를 물으세요.` }),
+  rgbvector: (f, s) => s.pdfx !== "X-1a" ? null : ({ sev: "high", title: "RGB로 칠한 면·글자 (PDF/X-1a 불가)",
+    detail: `RGB 색으로 칠한 면·글자가 ${f.count}곳 있습니다. PDF/X-1a는 CMYK·별색만 받기 때문에 이 파일은 접수에서 막힙니다.`,
+    fix: "그 색 견본을 CMYK로 바꾸거나, PDF/X-1a로 내보낼 때 '대상 프로파일로 변환'을 고르세요." }),
+};
+
+function checkInk(doc: PDFDocument, spec: SpecOption, tacLimit: number, views: number[][]): Issue[] {
+  let rep;
+  try { rep = inspectInk(doc, { tacLimit, minLinePt: spec.minLinePt, richBlackMaxPt: spec.richBlackMaxPt }); }
+  catch { return []; } // 내용 스트림이 깨졌어도 나머지 검사는 산다
+  const out: Issue[] = [];
+  for (const f of rep.findings) {
+    const t = INK_TEXT[f.kind](f, spec, tacLimit);
+    if (!t) continue;
+    const [vx0, vy0, vh, vw] = views[f.page - 1] ?? [0, 0, 0, 0];
+    const cl = (v: number, hi: number) => Math.max(0, Math.min(hi, v));
+    const rect = [cl(f.rect[0] - vx0, vw), cl(vh - (f.rect[3] - vy0), vh), cl(f.rect[2] - vx0, vw), cl(vh - (f.rect[1] - vy0), vh)];
+    out.push(mk(f.kind, t.sev, f.page, t.title, t.detail, t.fix, rect[2] - rect[0] > 0.5 && rect[3] - rect[1] > 0.5 ? rect : null));
+  }
+  for (const g of spotDuplicates(rep.spots)) {
+    out.push(mk("spot", "medium", 1, `별색 이름 중복: ${g.map((x) => `'${x}'`).join(", ")}`,
+      "같은 별색으로 보이는 이름이 글자만 다르게 여러 개 있습니다. 출력소는 이름이 다르면 판을 따로 만듭니다 — 판이 하나 더 생기거나 한쪽이 공정색으로 바뀝니다.",
+      "인디자인 [견본] 패널에서 하나로 합치거나(견본 병합) [잉크 관리자]에서 별칭을 하나로 지정하세요."));
+  }
+  if (rep.spots.length && !spotDuplicates(rep.spots).length && rep.spots.length > 2) {
+    out.push(mk("spot", "low", 1, `별색 ${rep.spots.length}개 사용`, `쓰인 별색: ${rep.spots.join(", ")}. 별색 하나가 판 하나입니다.`,
+      "견적에 넣은 도수와 맞는지 확인하세요. 의도하지 않은 별색은 [잉크 관리자]에서 공정색으로 바꿀 수 있습니다."));
+  }
+  if (spec.pdfx === "X-1a" && rep.transparency) {
+    out.push(mk("transparency", "high", 1, "투명도 사용 (PDF/X-1a 불가)",
+      "그림자·투명도·혼합 모드·투명 배경 사진이 있습니다. PDF/X-1a는 투명도를 받지 않습니다.",
+      "PDF/X-1a로 내보내면 인디자인이 투명도를 병합합니다. 병합 뒤 글자가 래스터로 바뀌지 않았는지 [병합 미리 보기]로 확인하세요."));
+  }
+  if (rep.truncated) out.push(mk("ink", "low", 1, "잉크 검사를 끝까지 하지 못함",
+    "내용이 너무 많아 앞부분만 잉크 검사를 했습니다. 뒷부분의 잉크량·오버프린트는 보지 못했습니다.", "인디자인 [출력 미리 보기]로 나머지를 확인하세요."));
+  return out;
+}
+
+/** 납품처가 요구한 PDF/X로 내보냈는지. 규격을 '보지 않음'으로 두면 묻지 않는다. */
+function checkPdfx(doc: PDFDocument, spec: SpecOption, summary: Record<string, number>): Issue[] {
+  if (spec.pdfx === "any") return [];
+  const out: Issue[] = [];
+  let ver = "";
+  try {
+    const info = doc.context.lookup(doc.context.trailerInfo.Info);
+    const v = info instanceof PDFDict ? info.get(N("GTS_PDFXVersion")) : undefined;
+    ver = v ? String((v as { decodeText?: () => string }).decodeText?.() ?? v).replace(/^\(|\)$/g, "") : "";
+  } catch { ver = ""; }
+  const want = spec.pdfx === "X-1a" ? /^PDF\/X-1/ : /^PDF\/X-4/;
+  if (!want.test(ver)) {
+    out.push(mk("pdfx", "medium", 1, `${spec.pdfx === "X-1a" ? "PDF/X-1a" : "PDF/X-4"}로 내보내지 않음`,
+      ver ? `이 PDF는 ${ver}입니다. 납품처는 ${spec.pdfx === "X-1a" ? "PDF/X-1a" : "PDF/X-4"}를 요구합니다.` : "PDF/X 표시가 없습니다(일반 PDF로 내보냄).",
+      `인디자인 [파일 → Adobe PDF 사전 설정]에서 '${spec.pdfx === "X-1a" ? "PDF/X-1a:2001" : "PDF/X-4:2008"}'을 골라 다시 내보내세요.`));
+  }
+  if (spec.pdfx === "X-1a" && (summary.rgb ?? 0) > 0) {
+    out.push(mk("pdfx", "high", 1, `RGB 사진 ${summary.rgb}장 (PDF/X-1a 불가)`,
+      "PDF/X-1a는 RGB 사진을 받지 않습니다. 이대로 보내면 접수에서 되돌아옵니다.",
+      "PDF/X-1a로 내보낼 때 '대상 프로파일로 변환'을 고르거나, 인쇄소 프로파일로 미리 CMYK로 바꾸세요. 바꾼 뒤 색 차이는 위 '인쇄 색 차이' 항목을 보세요."));
+  }
+  return out;
 }
 
 const HG = "가-힣";
@@ -363,8 +480,91 @@ function checkMisuse(pages: string[]): Issue[] {
   return out;
 }
 
-export function checkText(pages: string[], opts: { misuse?: boolean } = {}): Issue[] {
-  const out: Issue[] = opts.misuse === false ? [] : checkMisuse(pages);
+/** 브랜드 키트의 '우리 회사 표기'. 사전 오용과 같이 '찾아 바꿀 짝'까지 만든다 — 회사가 정한 표기라
+ *  어느 쪽이 맞는지 기계가 판단할 일이 없다. 그래서 자동 수정 대상이다. */
+function checkHouse(pages: string[], terms: HouseTerm[]): Issue[] {
+  const out: Issue[] = [];
+  pages.forEach((text, i) => {
+    for (const { wrong, right } of terms) {
+      if (!wrong || wrong === right || !text.includes(wrong)) continue;
+      // '맞는 표기'가 '틀린 표기'를 품고 있으면(틀림 '사이트' → 맞음 '웹사이트') 이미 맞게 쓴 곳까지 잡힌다. 그만큼 뺀다
+      const n = text.split(wrong).length - 1 - (right.includes(wrong) ? text.split(right).length - 1 : 0);
+      if (n <= 0) continue;
+      const it = mk("typo", "medium", i + 1, `표기 통일(브랜드 키트): '${wrong}' → '${right}'`,
+        `브랜드 키트에서 '${right}'로 쓰기로 정했습니다${n > 1 ? ` (이 쪽에 ${n}번)` : ""}.`,
+        "원본 편집 파일에서 고치세요. 편집 파일로 맡기시면 검수 끝에 묻고 바꿔 드립니다.", null, "proofread");
+      it.edit = { original: wrong, suggestion: right };
+      out.push(it);
+    }
+  });
+  return out;
+}
+
+// 조사를 떼고 비교한다 — '웹사이트를'과 '웹 사이트를'은 같은 말이 다르게 쓰인 것이다
+const JOSA = /(으로|에서|에게|까지|부터|처럼|보다|입니다|이다|을|를|이|가|은|는|의|에|로|와|과|도|만)$/;
+const stem = (w: string) => (w.length > 2 ? w.replace(JOSA, "") : w);
+const MAX_PER_KIND = 15; // 문서 전체가 흔들리는 경우 목록이 이것으로 덮이지 않게
+const UNIT_RE = /\d(\s?)(%|mm|cm|kg|pt|px|ppi|dpi|원|쪽|개|명)(?![A-Za-z])/g;
+
+/** **표기 통일.** 맞춤법이 틀린 것은 아니지만 한 문서 안에서 같은 말을 두 가지로 쓴 곳.
+ *  인쇄물 교정에서 가장 많이 나오는 지적이다. 어느 쪽으로 맞출지는 사람이 정한다(자동 수정 없음). */
+export function checkConsistency(pages: string[]): Issue[] {
+  const out: Issue[] = [];
+  const pageOf = (pred: (t: string) => boolean) => Math.max(1, pages.findIndex(pred) + 1);
+  // 1) 띄어쓰기만 다른 낱말: '웹사이트' ↔ '웹 사이트'
+  const runs = new Map<string, number>();
+  for (const t of pages) for (const m of t.matchAll(new RegExp(`[${HG}]+`, "g"))) { const k = stem(m[0]); runs.set(k, (runs.get(k) ?? 0) + 1); }
+  const spaced = new Map<string, { shown: string; n: number }>();
+  for (const t of pages) for (const m of t.matchAll(new RegExp(`(?<![${HG}])([${HG}]+) ([${HG}]+)`, "g"))) {
+    const joined = stem(m[1] + m[2]);
+    if (joined.length < 3 || !runs.has(joined)) continue;
+    const e = spaced.get(joined) ?? { shown: `${m[1]} ${stem(m[2])}`, n: 0 };
+    e.n++; spaced.set(joined, e);
+  }
+  let k = 0;
+  for (const [joined, e] of spaced) {
+    if (k++ >= MAX_PER_KIND) break;
+    out.push(mk("consistency", "low", pageOf((t) => t.includes(e.shown)), `띄어쓰기 통일: '${joined}' ${runs.get(joined)}번 vs '${e.shown}' ${e.n}번`,
+      "같은 말을 붙여 쓴 곳과 띄어 쓴 곳이 섞여 있습니다. 둘 다 허용되는 말도 있지만, 한 문서 안에서는 하나로 맞춥니다.",
+      "어느 쪽으로 쓸지 정해 문서 전체를 맞추세요. 회사 표기로 정해 두려면 브랜드 키트의 '우리 회사 표기'에 넣으세요.", null, "heuristic"));
+  }
+  // 2) 숫자와 단위 사이 띄어쓰기: '10%'와 '10 %'
+  const units = new Map<string, { tight: number; loose: number; page: number }>();
+  pages.forEach((t, i) => {
+    for (const m of t.matchAll(UNIT_RE)) {
+      const e = units.get(m[2]) ?? { tight: 0, loose: 0, page: 0 };
+      if (m[1]) { e.loose++; e.page ||= i + 1; } else e.tight++;
+      units.set(m[2], e);
+    }
+  });
+  for (const [u, e] of units) {
+    if (!e.tight || !e.loose) continue;
+    out.push(mk("consistency", "low", e.page, `숫자·단위 표기 통일: '10${u}' 꼴 ${e.tight}번 vs '10 ${u}' 꼴 ${e.loose}번`,
+      `숫자와 '${u}' 사이를 붙인 곳과 띄운 곳이 섞여 있습니다.`,
+      "한 가지로 맞추세요. 아라비아 숫자 뒤의 단위는 붙여 쓰는 것이 흔합니다.", null, "heuristic"));
+  }
+  // 3) 영문 대소문자: 'InDesign'과 'Indesign'. 문장 첫 글자만 다른 것('Print'·'print')은 뺀다
+  const latin = new Map<string, Map<string, number>>();
+  for (const t of pages) for (const m of t.matchAll(/(?<![A-Za-z])[A-Za-z][A-Za-z0-9]{2,}(?![A-Za-z])/g)) {
+    const low = m[0].toLowerCase();
+    const v = latin.get(low) ?? new Map<string, number>();
+    v.set(m[0], (v.get(m[0]) ?? 0) + 1); latin.set(low, v);
+  }
+  k = 0;
+  for (const [, v] of latin) {
+    const forms = [...v.keys()];
+    if (forms.length < 2 || new Set(forms.map((f) => f.slice(1))).size < 2) continue;
+    if (k++ >= MAX_PER_KIND) break;
+    out.push(mk("consistency", "low", pageOf((t) => t.includes(forms[1])), `영문 표기 통일: ${forms.map((f) => `'${f}' ${v.get(f)}번`).join(" vs ")}`,
+      "같은 영문 낱말의 대소문자가 섞여 있습니다. 제품·회사 이름이면 그 회사가 쓰는 표기가 맞습니다.",
+      "공식 표기를 확인해 하나로 맞추세요.", null, "heuristic"));
+  }
+  return out;
+}
+
+export function checkText(pages: string[], opts: { misuse?: boolean; terms?: HouseTerm[] } = {}): Issue[] {
+  const out: Issue[] = opts.misuse === false ? [] : [...checkMisuse(pages), ...checkHouse(pages, opts.terms ?? [])];
+  out.push(...checkConsistency(pages));
   const full = pages.join("\n");
   const cnt = new Map<string, number>();
   for (const m of full.matchAll(new RegExp(`(?<![${HG}])[${HG}]{2,}`, "g"))) cnt.set(m[0], (cnt.get(m[0]) ?? 0) + 1);
