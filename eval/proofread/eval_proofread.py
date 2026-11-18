@@ -30,7 +30,10 @@ sys.stdout.reconfigure(encoding="utf-8")
 from pg_agents.config import load_env_files  # noqa: E402
 from pg_agents.proofread import detectors as det  # noqa: E402
 from pg_agents import llm as llm_mod  # noqa: E402
-from pg_agents.proofread.detectors import MISUSE, detect  # noqa: E402
+from pg_agents.proofread.detectors import MISUSE  # noqa: E402
+# detect()는 (제안, 넘어진 방법)을 돌려준다. 넘어진 탐지기(분당 한도 등)를 '못 찾음'으로 세면 재현율이
+# 실제보다 낮게 적히므로, 넘어지면 평가를 멈추는 쪽을 쓴다(실제 원고 평가기와 같은 함수).
+from pg_agents.proofread.evaluate import detect_strict as detect  # noqa: E402
 
 random.seed(7)
 KB = (ROOT / "frontend" / "public" / "kb" / "print_guide.md").read_text(encoding="utf-8")
@@ -106,7 +109,11 @@ METHODS = {"규칙": ["rules"], "Kiwi 오타": ["kiwi_typo"], "Kiwi 띄어쓰기
 # 묻지 않도록 호출을 캐시한다(문서 60개의 오류본·원문 + 전체 원문 1개 = API 호출 121회).
 load_env_files()  # agents/.env 또는 레포 루트 .env의 열쇠를 쓴다
 _WHO = llm_mod.provider()
-LLM_MODEL = ((os.environ.get("PG_CLAUDE_MODEL") or llm_mod.CLAUDE_MODEL) if _WHO == "anthropic"
+if _WHO == "anthropic":
+    # Claude로 잴 때는 Gemini 열쇠를 치운다. 도중에 Claude 쪽이 막혀 Gemini로 넘어가면 한 표 안에 두 모델의
+    # 결과가 섞인다 — 표에는 Claude라고 적힌다.
+    os.environ.pop("GEMINI_API_KEY", None)
+LLM_MODEL = (llm_mod._model_name() if _WHO == "anthropic"
              else os.environ.get("PG_LLM_MODEL", llm_mod.GEMINI_MODEL))
 LLM_ON = bool(_WHO)
 if LLM_ON:

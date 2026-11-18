@@ -8,7 +8,6 @@ import json
 import os
 import time
 
-os.environ["PG_FAKE_AGENTS"] = "1"
 
 from fastapi.testclient import TestClient  # noqa: E402
 

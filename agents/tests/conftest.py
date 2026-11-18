@@ -12,6 +12,13 @@ import tempfile
 
 os.environ.setdefault("PG_DATA_DIR", tempfile.mkdtemp(prefix="pg-test-"))
 
+# 오케스트레이터는 **불러오는 순간** 가짜 부서를 쓸지 정한다(`app.FAKE`). 이것도 파일마다 세우면
+# 순서에 기댄다 — `test_brand.py`가 오케스트레이터를 먼저 불러오면 아직 세워지지 않아서, 시험이
+# **이 PC에 떠 있는 진짜 에이전트**(8702 등)를 불렀다. 전체 실행에서는 알파벳순으로 앞선
+# `test_auth.py`가 먼저 세워 우연히 통과했고, 셋만 골라 돌리면 `test_job_flow_with_input_required`가
+# 깨졌다(진짜 preflight의 답이 섞여서). 시험은 진짜 부서를 부르지 않는다.
+os.environ["PG_FAKE_AGENTS"] = "1"
+
 # `agents/.env`도 읽지 않는다. config는 불러오는 순간 그 파일을 읽으므로(직접 켠 에이전트도
 # 설정이 살아 있게 하려고), 그대로 두면 개발자 PC의 열쇠와 설정이 시험 결과를 바꾼다 —
 # `GEMINI_API_KEY`가 있으면 진짜 LLM을 부르러 가고, `PG_PROOF_METHODS`는 교정 방식을 갈아 버린다.
