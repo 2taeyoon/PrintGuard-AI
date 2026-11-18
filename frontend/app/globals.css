@@ -984,7 +984,7 @@ input, select, textarea, button, .icon_btn, .timeline li, .gatelist li, .aitem, 
 .bk_grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 12px 0 4px; }
 .bk_field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .bk_field input, .bk_field select, .bk_field textarea { width: 100%; }
-.bk_terms textarea { font-size: 1.6rem; padding: 8px 12px; border: 1px solid var(--borderStrong); border-radius: 4px; background: var(--white); color: var(--black); resize: vertical; }
+.bk_terms textarea { font-size: 1.6rem; padding: 8px 12px; border: 1px solid var(--borderStrong); border-radius: 0; background: var(--white); color: var(--black); resize: vertical; }
 .bk_colors, .bk_logo, .bk_terms { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
 .bk_color { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .bk_chead, .bk_chs { display: contents; }
